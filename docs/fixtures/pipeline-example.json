@@ -1,0 +1,6 @@
+{
+  "name": "Daily notifier",
+  "strategy": "daily_notifier",
+  "config_json": {},
+  "schedule_cron": "0 9 * * *"
+}

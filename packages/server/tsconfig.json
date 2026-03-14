@@ -1,11 +1,13 @@
 {
-  "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
+    "outDir": "dist",
+    "rootDir": "src",
     "noEmit": true
-  }
+  },
+  "include": ["src/**/*.ts"]
 }

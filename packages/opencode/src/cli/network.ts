@@ -28,6 +28,11 @@ const options = {
     describe: "additional domains to allow for CORS",
     default: [] as string[],
   },
+  daemon: {
+    type: "boolean" as const,
+    describe: "enable OpenCode Server (scheduler + pipelines) in the same process",
+    default: false,
+  },
 }
 
 export type NetworkOptions = InferredOptionTypes<typeof options>
@@ -55,6 +60,7 @@ export async function resolveNetworkOptions(args: NetworkOptions) {
   const configCors = config?.server?.cors ?? []
   const argsCors = Array.isArray(args.cors) ? args.cors : args.cors ? [args.cors] : []
   const cors = [...configCors, ...argsCors]
+  const daemon = args.daemon ?? config?.server?.daemon ?? false
 
-  return { hostname, port, mdns, mdnsDomain, cors }
+  return { hostname, port, mdns, mdnsDomain, cors, daemon }
 }

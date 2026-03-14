@@ -45,17 +45,25 @@ import { PermissionRoutes } from "./routes/permission"
 import { GlobalRoutes } from "./routes/global"
 import { MDNS } from "./mdns"
 import { lazy } from "@/util/lazy"
+import { createOpenCodeServer, getDefaultDbPath } from "@opencode-ai/server"
+import { Global } from "../global"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
+
+let serverDaemonInstance: ReturnType<typeof createOpenCodeServer> | null = null
 
 export namespace Server {
   const log = Log.create({ service: "server" })
 
   export const Default = lazy(() => createApp({}))
 
-  export const createApp = (opts: { cors?: string[] }): Hono => {
-    const app = new Hono()
+  export const createApp = (opts: {
+    cors?: string[]
+    daemon?: boolean
+    serverDbPath?: string
+  }): Hono => {
+    let app = new Hono()
     return app
       .onError((err, c) => {
         log.error("failed", {
@@ -251,7 +259,19 @@ export namespace Server {
       .route("/", FileRoutes())
       .route("/mcp", McpRoutes())
       .route("/tui", TuiRoutes())
-      .post(
+
+    if (opts.daemon) {
+      const dbPath = opts.serverDbPath ?? getDefaultDbPath(Global.Path.data)
+      serverDaemonInstance = createOpenCodeServer({
+        dbPath,
+        daemon: true,
+      })
+      app = app.route("/server", serverDaemonInstance.routes) as Hono
+      serverDaemonInstance.startDaemon()
+      log.info("OpenCode Server (daemon) enabled", { dbPath })
+    }
+
+    return app.post(
         "/instance/dispose",
         describeRoute({
           summary: "Dispose instance",
@@ -596,6 +616,8 @@ export namespace Server {
     mdns?: boolean
     mdnsDomain?: string
     cors?: string[]
+    daemon?: boolean
+    serverDbPath?: string
   }) {
     url = new URL(`http://${opts.hostname}:${opts.port}`)
     const app = createApp(opts)
@@ -629,6 +651,8 @@ export namespace Server {
 
     const originalStop = server.stop.bind(server)
     server.stop = async (closeActiveConnections?: boolean) => {
+      serverDaemonInstance?.stopDaemon()
+      serverDaemonInstance = null
       if (shouldPublishMDNS) MDNS.unpublish()
       return originalStop(closeActiveConnections)
     }
