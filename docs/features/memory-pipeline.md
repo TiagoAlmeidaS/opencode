@@ -14,6 +14,24 @@ Pipeline do OpenCode Server que extrai memória das conversas e gera MEMORY.md, 
 - **opencode.db:** Deve estar no mesmo data dir (server usa `opencodeDbPath`, por padrão `{dataDir}/opencode.db`).
 - **memoryLlm (opcional):** Se o host injetar `memoryLlm` em `createOpenCodeServer`, a extração e a consolidação usarão LLM para melhor qualidade; caso contrário, usam fallback (transcript bruto / merge simples).
 
+### LLM no standalone (seleção de provedor)
+
+No deploy via **standalone** (`packages/server/standalone.ts`, Docker), o provedor é escolhido por **MEMORY_LLM_PROVIDER**:
+
+- **MEMORY_LLM_PROVIDER** (opcional): `anthropic` | `azure` | `openai` | `openrouter` | `heuristic`
+  - Se definida: usa apenas o provedor indicado; se as env daquele provedor não estiverem preenchidas, o server usa heurísticas e emite aviso no startup.
+  - Se não definida: prioridade implícita Anthropic > OpenRouter > heurísticas (compatível com deploys atuais).
+
+| Provedor   | Variáveis |
+|------------|-----------|
+| **anthropic** | `ANTHROPIC_API_KEY`, `LLM_MODEL` (default: claude-haiku-4-5-20251001) |
+| **azure**     | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_BASE_URL`, `AZURE_OPENAI_DEPLOYMENT`; opcional: `AZURE_OPENAI_API_VERSION` (default: 2024-06-01) |
+| **openai**    | `OPENAI_API_KEY`, `OPENAI_MODEL` (default: gpt-4o-mini) |
+| **openrouter**| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` (default: openrouter/free). Chave em [OpenRouter Keys](https://openrouter.ai/keys). |
+| **heuristic** | Nenhuma; pipelines rodam sem chamar API (zero custo). |
+
+Ver `.env.server.example` para exemplos de configuração.
+
 ## Estratégias de pipeline
 
 | Estratégia              | Descrição |

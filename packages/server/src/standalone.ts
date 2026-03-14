@@ -2,18 +2,25 @@
  * OpenCode Server — Standalone entry point para deploy em VPS/Docker.
  *
  * Variáveis de ambiente:
- *   PORT                  Porta HTTP (default: 3000)
- *   DB_PATH               Caminho do SQLite (default: /data/server.db)
- *   OPENCODE_DB_PATH      Caminho do opencode.db para memory pipelines
- *   ANTHROPIC_API_KEY     API key Anthropic (pago). Se setada, usa para memory LLM.
- *   LLM_MODEL             Modelo Anthropic (default: claude-haiku-4-5-20251001)
- *   OPENROUTER_API_KEY    API key OpenRouter. Se setada (e sem Anthropic), usa LLM free para memory.
- *   OPENROUTER_MODEL      Modelo OpenRouter (default: openrouter/free = gratis)
- *   TELEGRAM_BOT_TOKEN    Token do bot Telegram
- *   TELEGRAM_CHAT_ID      Chat ID para relatórios
- *   QDRANT_URL            URL do Qdrant para RAG (opcional)
- *   API_TOKEN             Token de autenticação da API (opcional)
- *   CORS_ORIGIN           Origem permitida para CORS (default: *)
+ *   PORT                    Porta HTTP (default: 3000)
+ *   DB_PATH                 Caminho do SQLite (default: /data/server.db)
+ *   OPENCODE_DB_PATH        Caminho do opencode.db para memory pipelines
+ *   MEMORY_LLM_PROVIDER     anthropic | azure | openai | openrouter | heuristic (opcional; se não setada: anthropic > openrouter > heuristic)
+ *   ANTHROPIC_API_KEY       API key Anthropic
+ *   LLM_MODEL               Modelo Anthropic (default: claude-haiku-4-5-20251001)
+ *   AZURE_OPENAI_API_KEY    API key Azure OpenAI
+ *   AZURE_OPENAI_BASE_URL   Base URL (ex.: https://xxx.openai.azure.com)
+ *   AZURE_OPENAI_DEPLOYMENT Nome do deployment
+ *   AZURE_OPENAI_API_VERSION (default: 2024-06-01)
+ *   OPENAI_API_KEY          API key OpenAI
+ *   OPENAI_MODEL            Modelo OpenAI (default: gpt-4o-mini)
+ *   OPENROUTER_API_KEY      API key OpenRouter
+ *   OPENROUTER_MODEL        Modelo OpenRouter (default: openrouter/free)
+ *   TELEGRAM_BOT_TOKEN      Token do bot Telegram
+ *   TELEGRAM_CHAT_ID        Chat ID para relatórios
+ *   QDRANT_URL              URL do Qdrant para RAG (opcional)
+ *   API_TOKEN               Token de autenticação da API (opcional)
+ *   CORS_ORIGIN             Origem permitida para CORS (default: *)
  */
 
 import { Hono } from "hono"
@@ -26,8 +33,15 @@ import type { MemoryLlmOptions } from "./types"
 const PORT = parseInt(process.env.PORT ?? "3000")
 const DB_PATH = process.env.DB_PATH ?? "/data/server.db"
 const OPENCODE_DB_PATH = process.env.OPENCODE_DB_PATH ?? path.join(path.dirname(DB_PATH), "opencode.db")
+const MEMORY_LLM_PROVIDER = process.env.MEMORY_LLM_PROVIDER?.toLowerCase().trim() || undefined
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
 const LLM_MODEL = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001"
+const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY
+const AZURE_OPENAI_BASE_URL = process.env.AZURE_OPENAI_BASE_URL
+const AZURE_OPENAI_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT
+const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION ?? "2024-06-01"
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+const OPENAI_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini"
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openrouter/free"
 const QDRANT_URL = process.env.QDRANT_URL
@@ -93,8 +107,104 @@ async function openRouterLlm(opts: MemoryLlmOptions): Promise<string> {
   return typeof content === "string" ? content : ""
 }
 
-// Prioridade: Anthropic (pago) > OpenRouter (free) > nenhum (somente heurísticas)
-const memoryLlm = ANTHROPIC_API_KEY ? anthropicLlm : OPENROUTER_API_KEY ? openRouterLlm : undefined
+// ── LLM via Azure OpenAI (OpenAI-compatible endpoint) ─────────────────────────
+async function azureLlm(opts: MemoryLlmOptions): Promise<string> {
+  if (!AZURE_OPENAI_API_KEY || !AZURE_OPENAI_BASE_URL || !AZURE_OPENAI_DEPLOYMENT) {
+    throw new Error("AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL e AZURE_OPENAI_DEPLOYMENT são obrigatórios")
+  }
+  const base = AZURE_OPENAI_BASE_URL.replace(/\/$/, "")
+  const url = `${base}/openai/deployments/${encodeURIComponent(AZURE_OPENAI_DEPLOYMENT)}/chat/completions?api-version=${encodeURIComponent(AZURE_OPENAI_API_VERSION)}`
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "api-key": AZURE_OPENAI_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      max_tokens: opts.maxTokens ?? 1024,
+      messages: [
+        ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
+        { role: "user" as const, content: opts.prompt },
+      ],
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Azure OpenAI API ${res.status}: ${err.slice(0, 200)}`)
+  }
+
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  const content = data.choices?.[0]?.message?.content
+  return typeof content === "string" ? content : ""
+}
+
+// ── LLM via OpenAI (api.openai.com) ─────────────────────────────────────────
+async function openaiLlm(opts: MemoryLlmOptions): Promise<string> {
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY não configurada")
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      max_tokens: opts.maxTokens ?? 1024,
+      messages: [
+        ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
+        { role: "user" as const, content: opts.prompt },
+      ],
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`OpenAI API ${res.status}: ${err.slice(0, 200)}`)
+  }
+
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  const content = data.choices?.[0]?.message?.content
+  return typeof content === "string" ? content : ""
+}
+
+// ── Resolução do memoryLlm por MEMORY_LLM_PROVIDER ou prioridade implícita ───
+type MemoryLlmFn = (opts: MemoryLlmOptions) => Promise<string>
+function resolveMemoryLlm(): { memoryLlm: MemoryLlmFn | undefined; label: string } {
+  if (MEMORY_LLM_PROVIDER === "heuristic") {
+    return { memoryLlm: undefined, label: "disabled (heurísticas only)" }
+  }
+  if (MEMORY_LLM_PROVIDER === "anthropic") {
+    if (ANTHROPIC_API_KEY) return { memoryLlm: anthropicLlm, label: `Anthropic ${LLM_MODEL} (MEMORY_LLM_PROVIDER=anthropic)` }
+    console.warn("[standalone] MEMORY_LLM_PROVIDER=anthropic mas ANTHROPIC_API_KEY não definida; usando heurísticas.")
+    return { memoryLlm: undefined, label: "disabled (heurísticas only)" }
+  }
+  if (MEMORY_LLM_PROVIDER === "azure") {
+    if (AZURE_OPENAI_API_KEY && AZURE_OPENAI_BASE_URL && AZURE_OPENAI_DEPLOYMENT) {
+      return { memoryLlm: azureLlm, label: `Azure ${AZURE_OPENAI_BASE_URL.replace(/^https?:\/\//, "").split("/")[0]} / ${AZURE_OPENAI_DEPLOYMENT} (MEMORY_LLM_PROVIDER=azure)` }
+    }
+    console.warn("[standalone] MEMORY_LLM_PROVIDER=azure mas AZURE_OPENAI_* não configuradas; usando heurísticas.")
+    return { memoryLlm: undefined, label: "disabled (heurísticas only)" }
+  }
+  if (MEMORY_LLM_PROVIDER === "openai") {
+    if (OPENAI_API_KEY) return { memoryLlm: openaiLlm, label: `OpenAI ${OPENAI_MODEL} (MEMORY_LLM_PROVIDER=openai)` }
+    console.warn("[standalone] MEMORY_LLM_PROVIDER=openai mas OPENAI_API_KEY não definida; usando heurísticas.")
+    return { memoryLlm: undefined, label: "disabled (heurísticas only)" }
+  }
+  if (MEMORY_LLM_PROVIDER === "openrouter") {
+    if (OPENROUTER_API_KEY) return { memoryLlm: openRouterLlm, label: `OpenRouter ${OPENROUTER_MODEL} (MEMORY_LLM_PROVIDER=openrouter)` }
+    console.warn("[standalone] MEMORY_LLM_PROVIDER=openrouter mas OPENROUTER_API_KEY não definida; usando heurísticas.")
+    return { memoryLlm: undefined, label: "disabled (heurísticas only)" }
+  }
+  // Fallback: prioridade Anthropic > OpenRouter > heurísticas
+  if (ANTHROPIC_API_KEY) return { memoryLlm: anthropicLlm, label: `Anthropic ${LLM_MODEL}` }
+  if (OPENROUTER_API_KEY) return { memoryLlm: openRouterLlm, label: `OpenRouter ${OPENROUTER_MODEL}` }
+  return { memoryLlm: undefined, label: "disabled (heurísticas only)" }
+}
+
+const { memoryLlm, label: memoryLlmLabel } = resolveMemoryLlm()
 
 // ── Inicializa servidor ───────────────────────────────────────────────────────
 const instance = createOpenCodeServer({
@@ -138,9 +248,7 @@ console.log(`\n🚀 OpenCode Server running at http://0.0.0.0:${PORT}`)
 console.log(`   Dashboard:  http://0.0.0.0:${PORT}/`)
 console.log(`   API:        http://0.0.0.0:${PORT}/api/`)
 console.log(`   DB:         ${DB_PATH}`)
-console.log(
-  `   LLM:        ${ANTHROPIC_API_KEY ? `Anthropic ${LLM_MODEL}` : OPENROUTER_API_KEY ? `OpenRouter ${OPENROUTER_MODEL} (free)` : "disabled (heurísticas only)"}`
-)
+console.log(`   LLM:        ${memoryLlmLabel}`)
 console.log(`   Auth:       ${API_TOKEN ? "Bearer token enabled" : "disabled"}`)
 console.log(`   Qdrant:     ${QDRANT_URL ?? "disabled"}`)
 console.log()

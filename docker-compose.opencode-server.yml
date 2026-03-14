@@ -28,9 +28,16 @@ services:
       DB_PATH: /data/server.db
       OPENCODE_DB_PATH: /data/opencode.db
 
-      # LLM — prioridade: Anthropic > OpenRouter (free) > heurísticas
+      # LLM — MEMORY_LLM_PROVIDER=anthropic|azure|openai|openrouter|heuristic; se vazio: Anthropic > OpenRouter > heurísticas
+      MEMORY_LLM_PROVIDER: ${MEMORY_LLM_PROVIDER:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5-20251001}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-06-01}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
 

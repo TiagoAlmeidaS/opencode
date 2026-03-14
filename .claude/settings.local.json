@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(which bun:*)",
+      "Bash(cmd /c \"cd E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server && bun run typecheck 2>&1\" | head -50)",
+      "Bash(cmd /c \"bun --version\" 2>&1)",
+      "Read(//c/Users/tiago/.bun/**)",
+      "Read(//mnt/c/Users/tiago/.bun/**)",
+      "Bash(powershell.exe -Command \"bun --version\" 2>&1 | head -5)",
+      "Bash(powershell.exe -Command \"Get-Command bun -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\" 2>&1)",
+      "Bash(powershell.exe -Command \"where.exe bun 2>&1\" 2>&1 | head -3)",
+      "Bash(powershell.exe -Command \"irm bun.sh/install.ps1 | iex\" 2>&1)",
+      "Bash(powershell.exe -Command \"cd E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server; & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\")",
+      "Bash(powershell.exe -Command \"cat E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server\\\\node_modules\\\\drizzle-orm\\\\bun-sqlite\\\\index.d.ts 2>&1 | Select-Object -First 20\" 2>&1)",
+      "Bash(powershell.exe -Command \"cat E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server\\\\node_modules\\\\drizzle-orm\\\\bun-sqlite\\\\driver.d.ts 2>&1 | Select-Object -First 30\" 2>&1)",
+      "Bash(powershell.exe -Command \"cat E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server\\\\node_modules\\\\drizzle-orm\\\\bun-sqlite\\\\driver.d.ts 2>&1 | Select-Object -Last 20\" 2>&1)",
+      "Bash(powershell.exe -Command \"cd E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server; & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1 | Out-String\" 2>&1)",
+      "Bash(powershell.exe -Command \"Set-Location E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server; $out = & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1; $out | ForEach-Object { $_.ToString\\(\\) }\" 2>&1)",
+      "Bash(powershell.exe -Command \"Set-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'; $bunExe = 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe'; Start-Process -FilePath $bunExe -ArgumentList 'run','typecheck' -NoNewWindow -Wait -RedirectStandardOutput 'C:\\\\Temp\\\\tc_out.txt' -RedirectStandardError 'C:\\\\Temp\\\\tc_err.txt'; Get-Content 'C:\\\\Temp\\\\tc_out.txt'; Get-Content 'C:\\\\Temp\\\\tc_err.txt'\" 2>&1)",
+      "Bash(powershell.exe -File - <<'EOF'\nSet-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'\n$result = & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\n$result | ForEach-Object { Write-Output $_.ToString\\(\\) }\nEOF)",
+      "Bash(powershell.exe -File - <<'EOF'\nSet-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'\n$result = & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\n$result | ForEach-Object { Write-Output $_.ToString\\(\\) }\nWrite-Output \"Exit code: $LASTEXITCODE\"\nEOF)",
+      "Bash(powershell.exe -File - <<'EOF'\nSet-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'\n$result = & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\n$result | ForEach-Object { Write-Output $_.ToString\\(\\) }\nWrite-Output \"Exit: $LASTEXITCODE\"\nEOF)",
+      "Bash(grep:*)"
+    ]
+  }
+}
