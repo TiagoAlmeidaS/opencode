@@ -8,6 +8,10 @@ import { scanFreelanceJobsActivity } from "./scan-freelance-jobs"
 import { scoreOpportunityActivity } from "./score-opportunity"
 import { classifyNicheActivity } from "./classify-niche"
 import { analyzeNicheRelationsActivity } from "./analyze-niche-relations"
+import { generateMarketDigestActivity } from "./generate-market-digest"
+import { sendTelegramReportActivity } from "./send-telegram-report"
+import { sendTelegramAlertActivity } from "./send-telegram-alert"
+import { dailyReportActivity } from "./daily-report"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -18,3 +22,7 @@ registerActivity(scanFreelanceJobsActivity)
 registerActivity(scoreOpportunityActivity)
 registerActivity(classifyNicheActivity)
 registerActivity(analyzeNicheRelationsActivity)
+registerActivity(generateMarketDigestActivity)
+registerActivity(sendTelegramReportActivity)
+registerActivity(sendTelegramAlertActivity)
+registerActivity(dailyReportActivity)

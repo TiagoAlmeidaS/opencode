@@ -46,7 +46,7 @@ import { GlobalRoutes } from "./routes/global"
 import { MDNS } from "./mdns"
 import { lazy } from "@/util/lazy"
 import { createOpenCodeServer, getDefaultDbPath } from "@opencode-ai/server"
-import { Global } from "../global"
+import path from "path"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -267,9 +267,21 @@ export namespace Server {
         dbPath,
         daemon: true,
         opencodeDbPath,
+        memoryLlm: async ({ prompt, system, maxTokens }) => {
+          const { generateText } = await import("ai")
+          const defaultModel = await Provider.defaultModel()
+          const model = await Provider.getModel(defaultModel.providerID, defaultModel.modelID)
+          const result = await generateText({
+            model: model as unknown as Parameters<typeof generateText>[0]["model"],
+            system,
+            prompt,
+            maxOutputTokens: maxTokens ?? 1024,
+          })
+          return result.text
+        },
       })
-      app = app.route("/server", serverDaemonInstance.routes) as Hono
-      serverDaemonInstance.startDaemon()
+      app = app.route("/server", serverDaemonInstance!.routes) as Hono
+      serverDaemonInstance!.startDaemon()
       log.info("OpenCode Server (daemon) enabled", { dbPath, opencodeDbPath })
     }
 
