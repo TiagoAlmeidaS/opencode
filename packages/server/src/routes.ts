@@ -2,8 +2,8 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue } from "./schema"
-import { eq, desc, sql, gte, and } from "drizzle-orm"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations } from "./schema"
+import { eq, desc, sql, gte, and, asc } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
 import { listActivities } from "./activity"
@@ -296,6 +296,140 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       displayName: a.displayName,
       description: a.description,
     })))
+  })
+
+  // ── Opportunities ──────────────────────────────────────────────────────────
+  app.get("/opportunities", async (c) => {
+    const status = c.req.query("status")
+    const nicheId = c.req.query("niche_id")
+    const type = c.req.query("type")
+    const minScore = c.req.query("min_score") ? parseFloat(c.req.query("min_score")!) : undefined
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10))
+
+    let rows = await db
+      .select()
+      .from(oppOpportunities)
+      .orderBy(desc(oppOpportunities.score), desc(oppOpportunities.createdAt))
+      .limit(limit)
+      .offset(offset)
+
+    if (status) rows = rows.filter((r) => r.status === status)
+    if (nicheId) rows = rows.filter((r) => r.nicheId === nicheId)
+    if (type) rows = rows.filter((r) => r.type === type)
+    if (minScore !== undefined) rows = rows.filter((r) => (r.score ?? 0) >= minScore!)
+
+    return c.json(rows)
+  })
+
+  app.get("/opportunities/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(oppOpportunities).where(eq(oppOpportunities.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    return c.json(row)
+  })
+
+  app.post("/opportunities/:id/shortlist", async (c) => {
+    const id = c.req.param("id")
+    const now = Math.floor(Date.now() / 1000)
+    await db.update(oppOpportunities).set({ status: "shortlisted", updatedAt: now }).where(eq(oppOpportunities.id, id))
+    const [row] = await db.select().from(oppOpportunities).where(eq(oppOpportunities.id, id))
+    return c.json(row ?? { id })
+  })
+
+  app.post("/opportunities/:id/ignore", async (c) => {
+    const id = c.req.param("id")
+    const now = Math.floor(Date.now() / 1000)
+    await db.update(oppOpportunities).set({ status: "ignored", updatedAt: now }).where(eq(oppOpportunities.id, id))
+    const [row] = await db.select().from(oppOpportunities).where(eq(oppOpportunities.id, id))
+    return c.json(row ?? { id })
+  })
+
+  app.post("/opportunities/:id/execute", async (c) => {
+    const id = c.req.param("id")
+    const body = await c.req.json().catch(() => ({})) as { cwd?: string; dry_run?: boolean }
+    const now = Math.floor(Date.now() / 1000)
+    const queueId = ulid()
+    await db.insert(daemonQueue).values({
+      id: queueId,
+      activityType: "execute-opportunity",
+      status: "pending",
+      priority: 3,
+      inputJson: JSON.stringify({ opportunity_id: id, cwd: body.cwd, dry_run: body.dry_run }),
+      triggeredBy: "manual",
+      createdAt: now,
+    })
+    return c.json({ queue_id: queueId }, 202)
+  })
+
+  app.get("/opportunities/stats", async (c) => {
+    const [total] = await db.select({ count: sql<number>`count(*)` }).from(oppOpportunities)
+    const byStatus = await db
+      .select({ status: oppOpportunities.status, count: sql<number>`count(*)` })
+      .from(oppOpportunities)
+      .groupBy(oppOpportunities.status)
+    const [avgScore] = await db.select({ avg: sql<number>`avg(${oppOpportunities.score})` }).from(oppOpportunities)
+    return c.json({
+      total: Number(total?.count ?? 0),
+      by_status: Object.fromEntries(byStatus.map((r) => [r.status, Number(r.count)])),
+      avg_score: Number(avgScore?.avg ?? 0).toFixed(1),
+    })
+  })
+
+  // ── Niches ────────────────────────────────────────────────────────────────
+  app.get("/niches", async (c) => {
+    const rows = await db
+      .select()
+      .from(oppNiches)
+      .orderBy(desc(oppNiches.aiAgentFit), desc(oppNiches.opportunityCount))
+    return c.json(rows)
+  })
+
+  app.get("/niches/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(oppNiches).where(eq(oppNiches.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    const relations = await db
+      .select()
+      .from(oppNicheRelations)
+      .where(eq(oppNicheRelations.fromNicheId, id))
+      .orderBy(desc(oppNicheRelations.weight))
+    return c.json({ ...row, relations })
+  })
+
+  // ── Market Data ──────────────────────────────────────────────────────────
+  app.get("/market-data", async (c) => {
+    const assetType = c.req.query("asset_type")
+    const hours = Math.min(168, Math.max(1, parseInt(c.req.query("hours") ?? "24", 10)))
+    const since = Math.floor(Date.now() / 1000) - hours * 3600
+    const limit = Math.min(500, Math.max(1, parseInt(c.req.query("limit") ?? "100", 10)))
+
+    let rows = await db
+      .select()
+      .from(oppMarketData)
+      .where(gte(oppMarketData.collectedAt, since))
+      .orderBy(desc(oppMarketData.collectedAt))
+      .limit(limit)
+
+    if (assetType) rows = rows.filter((r) => r.assetType === assetType)
+    return c.json(rows)
+  })
+
+  app.get("/market-data/latest", async (c) => {
+    // Um registro mais recente por símbolo
+    const rows = await db
+      .select()
+      .from(oppMarketData)
+      .orderBy(desc(oppMarketData.collectedAt))
+      .limit(500)
+
+    const seen = new Set<string>()
+    const latest = rows.filter((r) => {
+      if (seen.has(r.symbol)) return false
+      seen.add(r.symbol)
+      return true
+    })
+    return c.json(latest)
   })
 
   app.get("/memory/retrieve", async (c) => {

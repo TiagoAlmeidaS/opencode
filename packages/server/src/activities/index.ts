@@ -12,6 +12,7 @@ import { generateMarketDigestActivity } from "./generate-market-digest"
 import { sendTelegramReportActivity } from "./send-telegram-report"
 import { sendTelegramAlertActivity } from "./send-telegram-alert"
 import { dailyReportActivity } from "./daily-report"
+import { executeOpportunityActivity } from "./execute-opportunity"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -26,3 +27,4 @@ registerActivity(generateMarketDigestActivity)
 registerActivity(sendTelegramReportActivity)
 registerActivity(sendTelegramAlertActivity)
 registerActivity(dailyReportActivity)
+registerActivity(executeOpportunityActivity)
