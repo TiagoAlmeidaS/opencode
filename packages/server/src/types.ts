@@ -56,6 +56,10 @@ export interface ActivityContext {
   db: import("./db").ServerDb
   spawnOpenCode: (task: string, cwd: string) => Promise<string>
   enqueue: (type: string, input: unknown, opts?: { priority?: number; dependsOn?: string }) => Promise<string>
+  /** LLM injetado pelo host (ex: OpenCode provider). Disponível quando daemon é iniciado com memoryLlm. */
+  memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
+  /** Embedding function para RAG. */
+  embed?: (text: string) => Promise<number[]>
 }
 
 export interface ActivityOutput {

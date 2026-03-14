@@ -131,6 +131,100 @@ export const daemonQueue = sqliteTable("daemon_queue", {
   createdAt: integer("created_at").notNull(),
 })
 
+// ─── Opportunity System ───────────────────────────────────────────────────────
+
+export const oppMarketData = sqliteTable("opp_market_data", {
+  id: text("id").primaryKey(),
+  assetType: text("asset_type").notNull(),      // 'crypto'|'stock'|'forex'|'trend'
+  symbol: text("symbol").notNull(),
+  price: real("price"),
+  change24h: real("change_24h"),
+  volume24h: real("volume_24h"),
+  marketCap: real("market_cap"),
+  source: text("source").notNull(),             // 'coingecko'|'yahoo'|'google-trends'
+  rawJson: text("raw_json"),
+  collectedAt: integer("collected_at").notNull(),
+  createdAt: integer("created_at").notNull(),
+})
+
+export const oppNiches = sqliteTable("opp_niches", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  parentNicheId: text("parent_niche_id"),
+  avgRewardUsd: real("avg_reward_usd"),
+  opportunityCount: integer("opportunity_count").notNull().default(0),
+  trendScore: real("trend_score"),              // 0..100
+  aiAgentFit: real("ai_agent_fit"),             // 0..100
+  keywords: text("keywords"),                   // JSON array
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+
+export const oppNicheRelations = sqliteTable("opp_niche_relations", {
+  id: text("id").primaryKey(),
+  fromNicheId: text("from_niche_id").notNull().references(() => oppNiches.id),
+  toNicheId: text("to_niche_id").notNull().references(() => oppNiches.id),
+  relationType: text("relation_type").notNull(), // 'value-chain'|'complement'|'prerequisite'|'competes'
+  weight: real("weight").notNull(),              // 0..1
+  reasoning: text("reasoning"),
+  createdAt: integer("created_at").notNull(),
+})
+
+export const oppOpportunities = sqliteTable("opp_opportunities", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),                 // 'bug-bounty'|'freelance'|'oss-bounty'|'content'|'grant'
+  nicheId: text("niche_id").references(() => oppNiches.id),
+  sourcePlatform: text("source_platform").notNull(),
+  externalId: text("external_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  url: text("url"),
+  rewardMin: real("reward_min"),
+  rewardMax: real("reward_max"),
+  rewardCurrency: text("reward_currency").notNull().default("USD"),
+  rewardType: text("reward_type"),              // 'fixed'|'range'|'tip'|'equity'|'token'
+  skillsRequired: text("skills_required"),      // JSON array
+  difficulty: text("difficulty"),               // 'easy'|'medium'|'hard'|'expert'
+  deadline: integer("deadline"),
+  status: text("status").notNull().default("new"), // 'new'|'scored'|'shortlisted'|'applied'|'won'|'expired'|'ignored'
+  score: real("score"),                         // 0..100
+  scoreReason: text("score_reason"),
+  llmAnalysis: text("llm_analysis"),            // JSON análise completa
+  firstSeenAt: integer("first_seen_at").notNull(),
+  lastSeenAt: integer("last_seen_at").notNull(),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+
+export const oppAnalyses = sqliteTable("opp_analyses", {
+  id: text("id").primaryKey(),
+  analysisType: text("analysis_type").notNull(), // 'opportunity-score'|'niche-map'|'market-digest'|'value-chain'
+  scope: text("scope").notNull(),               // 'opportunity'|'niche'|'market'|'portfolio'
+  scopeId: text("scope_id"),
+  promptHash: text("prompt_hash"),
+  llmModel: text("llm_model"),
+  llmTokens: integer("llm_tokens"),
+  llmCostUsd: real("llm_cost_usd"),
+  inputSummary: text("input_summary"),
+  output: text("output"),
+  structured: text("structured"),               // JSON parseado
+  qualityScore: real("quality_score"),
+  createdAt: integer("created_at").notNull(),
+})
+
+export const oppTelegramReports = sqliteTable("opp_telegram_reports", {
+  id: text("id").primaryKey(),
+  reportType: text("report_type").notNull(),    // 'daily'|'weekly'|'alert'|'digest'
+  chatId: text("chat_id").notNull(),
+  messageId: text("message_id"),
+  contentHash: text("content_hash").notNull(),
+  opportunityIds: text("opportunity_ids"),       // JSON array
+  sentAt: integer("sent_at"),
+  createdAt: integer("created_at").notNull(),
+})
+
 /** Stage-1 memory extractions per OpenCode session (for memory pipeline). */
 export const memoryExtractions = sqliteTable("memory_extractions", {
   id: text("id").primaryKey(),

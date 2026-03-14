@@ -57,7 +57,11 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
       embed: opts.memoryEmbed,
     },
   })
-  const queue = createQueueProcessor({ db })
+  const queue = createQueueProcessor({
+    db,
+    memoryLlm: opts.memoryLlm,
+    embed: opts.memoryEmbed,
+  })
   const routes = ServerRoutes(db, {
     memoryEmbed: opts.memoryEmbed,
     qdrantUrl: opts.qdrantUrl,

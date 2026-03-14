@@ -4,7 +4,7 @@ import type { ServerDb } from "./db"
 import { daemonQueue } from "./schema"
 import { getActivity } from "./activity"
 import { spawnOpenCode } from "./spawn"
-import type { ActivityContext } from "./types"
+import type { ActivityContext, MemoryLlmOptions } from "./types"
 
 const TICK_MS = 10_000
 const MAX_CONCURRENT = 3
@@ -14,10 +14,14 @@ export interface QueueProcessorOpts {
   db: ServerDb
   tickIntervalMs?: number
   maxConcurrent?: number
+  /** LLM injetado pelo host para Activities que precisam de análise. */
+  memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
+  /** Embedding function para Activities de RAG. */
+  embed?: (text: string) => Promise<number[]>
 }
 
 export function createQueueProcessor(opts: QueueProcessorOpts) {
-  const { db, tickIntervalMs = TICK_MS, maxConcurrent = MAX_CONCURRENT } = opts
+  const { db, tickIntervalMs = TICK_MS, maxConcurrent = MAX_CONCURRENT, memoryLlm, embed } = opts
   const workerId = ulid()
   let intervalId: ReturnType<typeof setInterval> | null = null
 
@@ -102,6 +106,8 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
       input: JSON.parse(item.inputJson ?? "{}"),
       db,
       spawnOpenCode,
+      memoryLlm,
+      embed,
       async enqueue(type, input, opts) {
         const newId = ulid()
         const ts = Math.floor(Date.now() / 1000)

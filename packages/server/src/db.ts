@@ -140,6 +140,103 @@ CREATE TABLE IF NOT EXISTS daemon_queue (
 );
 CREATE INDEX IF NOT EXISTS idx_queue_status_priority ON daemon_queue(status, priority, created_at);
 CREATE INDEX IF NOT EXISTS idx_queue_depends ON daemon_queue(depends_on);
+CREATE TABLE IF NOT EXISTS opp_market_data (
+  id           TEXT PRIMARY KEY,
+  asset_type   TEXT NOT NULL,
+  symbol       TEXT NOT NULL,
+  price        REAL,
+  change_24h   REAL,
+  volume_24h   REAL,
+  market_cap   REAL,
+  source       TEXT NOT NULL,
+  raw_json     TEXT,
+  collected_at INTEGER NOT NULL,
+  created_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_market_data_symbol ON opp_market_data(symbol, collected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_market_data_type ON opp_market_data(asset_type, collected_at DESC);
+CREATE TABLE IF NOT EXISTS opp_niches (
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL UNIQUE,
+  display_name      TEXT NOT NULL,
+  description       TEXT,
+  parent_niche_id   TEXT REFERENCES opp_niches(id),
+  avg_reward_usd    REAL,
+  opportunity_count INTEGER NOT NULL DEFAULT 0,
+  trend_score       REAL,
+  ai_agent_fit      REAL,
+  keywords          TEXT,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_niches_fit ON opp_niches(ai_agent_fit DESC);
+CREATE TABLE IF NOT EXISTS opp_niche_relations (
+  id            TEXT PRIMARY KEY,
+  from_niche_id TEXT NOT NULL REFERENCES opp_niches(id),
+  to_niche_id   TEXT NOT NULL REFERENCES opp_niches(id),
+  relation_type TEXT NOT NULL,
+  weight        REAL NOT NULL,
+  reasoning     TEXT,
+  created_at    INTEGER NOT NULL,
+  UNIQUE(from_niche_id, to_niche_id, relation_type)
+);
+CREATE TABLE IF NOT EXISTS opp_opportunities (
+  id              TEXT PRIMARY KEY,
+  type            TEXT NOT NULL,
+  niche_id        TEXT REFERENCES opp_niches(id),
+  source_platform TEXT NOT NULL,
+  external_id     TEXT NOT NULL,
+  title           TEXT NOT NULL,
+  description     TEXT,
+  url             TEXT,
+  reward_min      REAL,
+  reward_max      REAL,
+  reward_currency TEXT NOT NULL DEFAULT 'USD',
+  reward_type     TEXT,
+  skills_required TEXT,
+  difficulty      TEXT,
+  deadline        INTEGER,
+  status          TEXT NOT NULL DEFAULT 'new',
+  score           REAL,
+  score_reason    TEXT,
+  llm_analysis    TEXT,
+  first_seen_at   INTEGER NOT NULL,
+  last_seen_at    INTEGER NOT NULL,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  UNIQUE(source_platform, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_opp_status_score ON opp_opportunities(status, score DESC);
+CREATE INDEX IF NOT EXISTS idx_opp_niche ON opp_opportunities(niche_id, score DESC);
+CREATE INDEX IF NOT EXISTS idx_opp_deadline ON opp_opportunities(deadline ASC);
+CREATE TABLE IF NOT EXISTS opp_analyses (
+  id             TEXT PRIMARY KEY,
+  analysis_type  TEXT NOT NULL,
+  scope          TEXT NOT NULL,
+  scope_id       TEXT,
+  prompt_hash    TEXT,
+  llm_model      TEXT,
+  llm_tokens     INTEGER,
+  llm_cost_usd   REAL,
+  input_summary  TEXT,
+  output         TEXT,
+  structured     TEXT,
+  quality_score  REAL,
+  created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_analyses_type ON opp_analyses(analysis_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analyses_scope ON opp_analyses(scope, scope_id);
+CREATE TABLE IF NOT EXISTS opp_telegram_reports (
+  id              TEXT PRIMARY KEY,
+  report_type     TEXT NOT NULL,
+  chat_id         TEXT NOT NULL,
+  content_hash    TEXT NOT NULL,
+  message_id      TEXT,
+  opportunity_ids TEXT,
+  sent_at         INTEGER,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_telegram_reports ON opp_telegram_reports(report_type, created_at DESC);
 `
 
 let state: { sqlite: BunDatabase | undefined; dbPath: string | null } = {
