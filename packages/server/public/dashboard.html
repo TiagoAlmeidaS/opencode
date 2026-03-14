@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenCode Server — Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0e0e10; --surface: #18181c; --surface2: #222226;
+    --border: #2a2a30; --text: #e8e8ee; --text-weak: #888898;
+    --accent: #6c73ff; --success: #4ade80; --warn: #fbbf24;
+    --danger: #f87171; --info: #60a5fa;
+    --radius: 8px; --font: 'Inter', system-ui, sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  header h1 { font-size: 15px; font-weight: 600; }
+  .tabs { display: flex; gap: 4px; }
+  .tab { padding: 6px 14px; border-radius: var(--radius); font-size: 12px; font-weight: 500; cursor: pointer; border: none; background: none; color: var(--text-weak); transition: all .15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .header-actions { display: flex; align-items: center; gap: 10px; }
+  .btn { padding: 6px 14px; border-radius: var(--radius); font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text); transition: all .15s; }
+  .btn:hover { background: var(--surface); border-color: var(--accent); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { opacity: .85; }
+  .status-bar { display: flex; align-items: center; gap: 20px; padding: 8px 24px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-weak); flex-shrink: 0; }
+  .status-bar strong { color: var(--text); }
+  main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+  /* Queue board */
+  .board { display: flex; gap: 16px; padding: 20px 24px; height: 100%; overflow-x: auto; overflow-y: hidden; }
+  .column { display: flex; flex-direction: column; width: 280px; flex-shrink: 0; min-height: 0; }
+  .col-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  .col-title { font-size: 12px; font-weight: 600; }
+  .col-count { font-size: 11px; color: var(--text-weak); }
+  .col-pending .col-title { color: var(--warn); }
+  .col-running .col-title { color: var(--info); }
+  .col-completed .col-title { color: var(--success); }
+  .col-failed .col-title { color: var(--danger); }
+  .cards { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .card-type { font-size: 12px; font-weight: 600; word-break: break-all; }
+  .card-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-weak); margin-top: 4px; }
+  .card-error { font-size: 11px; color: var(--danger); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-summary { font-size: 11px; color: var(--text-weak); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-cancel { font-size: 11px; color: var(--text-weak); margin-top: 6px; background: none; border: none; cursor: pointer; padding: 0; display: none; }
+  .card:hover .card-cancel { display: block; }
+  .card-cancel:hover { color: var(--danger); }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+
+  /* Opportunities table */
+  .table-wrap { flex: 1; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { position: sticky; top: 0; background: var(--bg); z-index: 1; }
+  th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; color: var(--text-weak); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: 12px; vertical-align: middle; }
+  tr:hover td { background: var(--surface); }
+  .score-high { color: var(--success); font-weight: 600; }
+  .score-mid  { color: var(--warn);    font-weight: 600; }
+  .score-low  { color: var(--text-weak); }
+  .change-up  { color: var(--success); }
+  .change-dn  { color: var(--danger); }
+  .opp-actions { display: none; gap: 8px; }
+  tr:hover .opp-actions { display: flex; }
+  .link-btn { background: none; border: none; cursor: pointer; font-size: 11px; padding: 0; }
+  .link-btn.exec { color: var(--success); }
+  .link-btn.shortlist { color: var(--info); }
+  .link-btn.ignore { color: var(--text-weak); }
+  .link-btn:hover { text-decoration: underline; }
+
+  /* Niches grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 20px 24px; overflow-y: auto; height: 100%; }
+  .niche-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .niche-name { font-size: 13px; font-weight: 600; }
+  .niche-slug { font-size: 10px; color: var(--text-weak); font-family: monospace; margin-top: 2px; }
+  .niche-desc { font-size: 11px; color: var(--text-weak); margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .niche-meta { display: flex; align-items: center; gap: 14px; margin-top: 10px; font-size: 11px; color: var(--text-weak); }
+  .fit-score { font-size: 18px; font-weight: 700; }
+  .fit-high { color: var(--success); }
+  .fit-mid  { color: var(--warn); }
+  .fit-low  { color: var(--text-weak); }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 16px; }
+  .modal h2 { font-size: 15px; font-weight: 600; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-weak); }
+  select, input, textarea { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 12px; color: var(--text); outline: none; width: 100%; font-family: inherit; }
+  textarea { font-family: monospace; resize: none; }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
+  .error-msg { font-size: 12px; color: var(--danger); }
+  .empty { padding: 40px; text-align: center; color: var(--text-weak); font-size: 13px; }
+  .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display:flex;align-items:center;gap:16px">
+    <h1>⚡ OpenCode Server</h1>
+    <div class="tabs">
+      <button class="tab active" data-tab="queue">Activity Queue</button>
+      <button class="tab" data-tab="opportunities">Opportunities</button>
+      <button class="tab" data-tab="niches">Niches</button>
+      <button class="tab" data-tab="market">Market Data</button>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span id="last-refresh" style="font-size:11px;color:var(--text-weak)"></span>
+    <button class="btn" onclick="refresh()">↻ Refresh</button>
+    <button class="btn btn-primary" id="add-btn" onclick="openModal()" style="display:none">+ Add Activity</button>
+  </div>
+</header>
+
+<div class="status-bar" id="status-bar">
+  <span>Loading...</span>
+</div>
+
+<main id="main-content"></main>
+
+<!-- Add Activity Modal -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2>Add Activity</h2>
+    <label>Activity Type
+      <select id="f-type">
+        <option value="">— select —</option>
+      </select>
+    </label>
+    <label>Priority (1=highest, 10=lowest)
+      <input type="number" id="f-priority" value="5" min="1" max="10">
+    </label>
+    <label>Input (JSON)
+      <textarea id="f-input" rows="5">{}</textarea>
+    </label>
+    <div id="f-error" class="error-msg" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="submit-btn" onclick="submitActivity()">Add</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api'
+let currentTab = 'queue'
+let activityTypes = []
+let autoRefreshInterval
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'))
+    t.classList.add('active')
+    currentTab = t.dataset.tab
+    document.getElementById('add-btn').style.display = currentTab === 'queue' ? '' : 'none'
+    refresh()
+  })
+})
+
+// ── Fetch helpers ─────────────────────────────────────────────────────────────
+async function apiFetch(path, opts) {
+  const token = localStorage.getItem('api_token')
+  const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+  const res = await fetch(API + path, { headers, ...opts })
+  if (!res.ok) throw new Error(`API ${res.status}`)
+  return res.json()
+}
+
+// ── Status bar ────────────────────────────────────────────────────────────────
+async function loadStatus() {
+  try {
+    const s = await apiFetch('/status')
+    document.getElementById('status-bar').innerHTML = `
+      <span>Pipelines: <strong>${s.pipelines.enabled}/${s.pipelines.total}</strong></span>
+      <span>Jobs running: <strong>${s.jobs.running}</strong></span>
+      <span>Proposals: <strong>${s.proposals.pending}</strong></span>
+      <span>Revenue 30d: <strong>$${s.revenue.total_usd_30d.toFixed(2)}</strong></span>
+    `
+  } catch { document.getElementById('status-bar').innerHTML = '<span style="color:var(--danger)">API unavailable</span>' }
+}
+
+// ── Queue ─────────────────────────────────────────────────────────────────────
+const COLS = [
+  { status: 'pending',   label: 'Pending',   cls: 'col-pending' },
+  { status: 'running',   label: 'Running',   cls: 'col-running' },
+  { status: 'completed', label: 'Completed', cls: 'col-completed' },
+  { status: 'failed',    label: 'Failed',    cls: 'col-failed' },
+]
+
+function elapsed(start, end) {
+  if (!start) return '—'
+  const s = (end || Math.floor(Date.now()/1000)) - start
+  if (s < 60) return s + 's'
+  if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's'
+  return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm'
+}
+
+async function renderQueue() {
+  const items = await apiFetch('/queue?limit=200').catch(() => [])
+  const byStatus = {}
+  COLS.forEach(c => byStatus[c.status] = items.filter(i => i.status === c.status))
+
+  let html = '<div class="board">'
+  for (const col of COLS) {
+    const list = byStatus[col.status]
+    html += `<div class="column ${col.cls}">
+      <div class="col-header">
+        <span class="col-title">${col.label}</span>
+        <span class="col-count">${list.length}</span>
+      </div>
+      <div class="cards">`
+    if (list.length === 0) html += '<div style="color:var(--text-weak);font-size:11px;padding:8px 0">Empty</div>'
+    for (const item of list) {
+      let summary = ''
+      try { const out = JSON.parse(item.outputJson || '{}'); if (out.summary) summary = out.summary } catch {}
+      html += `<div class="card">
+        <div class="card-type">${esc(item.activityType)}</div>
+        <div class="card-meta">
+          <span>p${item.priority}</span>
+          <span>${elapsed(item.startedAt, item.completedAt)}</span>
+          ${item.triggeredBy ? `<span>${item.triggeredBy === 'manual' ? 'manual' : '→' + item.triggeredBy.slice(-6)}</span>` : ''}
+        </div>
+        ${item.errorMessage ? `<div class="card-error">${esc(item.errorMessage)}</div>` : ''}
+        ${summary ? `<div class="card-summary">${esc(summary)}</div>` : ''}
+        ${item.status === 'pending' ? `<button class="card-cancel" onclick="cancelItem('${item.id}')">✕ Cancel</button>` : ''}
+      </div>`
+    }
+    html += '</div></div>'
+  }
+  html += '</div>'
+  document.getElementById('main-content').innerHTML = html
+}
+
+async function cancelItem(id) {
+  await apiFetch('/queue/' + id, { method: 'DELETE' })
+  refresh()
+}
+
+// ── Opportunities ─────────────────────────────────────────────────────────────
+async function renderOpportunities() {
+  const [opps, stats] = await Promise.all([
+    apiFetch('/opportunities?limit=100').catch(() => []),
+    apiFetch('/opportunities/stats').catch(() => null),
+  ])
+
+  const statsBar = stats ? `
+    <div class="status-bar" style="border-bottom:1px solid var(--border)">
+      <span>Total: <strong>${stats.total}</strong></span>
+      ${Object.entries(stats.by_status).map(([k,v]) => `<span>${k}: <strong>${v}</strong></span>`).join('')}
+      <span>Avg score: <strong>${stats.avg_score}</strong></span>
+    </div>` : ''
+
+  const STATUS_COLORS = { new:'var(--text-weak)', scored:'var(--info)', shortlisted:'var(--warn)', applied:'var(--success)', won:'var(--success)', ignored:'var(--text-weak)', expired:'var(--danger)' }
+
+  let rows = opps.map(o => {
+    const reward = o.rewardMax || o.rewardMin || 0
+    const sc = o.score ?? null
+    const cls = sc === null ? 'score-low' : sc >= 80 ? 'score-high' : sc >= 60 ? 'score-mid' : 'score-low'
+    const title = o.url ? `<a href="${esc(o.url)}" target="_blank" style="color:inherit">${esc(o.title)}</a>` : esc(o.title)
+    const canExec = o.status === 'scored' || o.status === 'shortlisted'
+    return `<tr>
+      <td style="max-width:320px">${title}</td>
+      <td>${esc(o.type)}</td>
+      <td class="${cls}">${sc !== null ? sc.toFixed(0) : '—'}</td>
+      <td>${reward ? '$' + reward.toLocaleString() : '—'}</td>
+      <td><span class="badge" style="color:${STATUS_COLORS[o.status]||'inherit'}">${esc(o.status)}</span></td>
+      <td style="color:var(--text-weak)">${esc(o.sourcePlatform)}</td>
+      <td>
+        <div class="opp-actions">
+          ${canExec ? `<button class="link-btn exec" onclick="executeOpp('${o.id}')">Execute</button>` : ''}
+          ${o.status !== 'shortlisted' ? `<button class="link-btn shortlist" onclick="shortlistOpp('${o.id}')">Shortlist</button>` : ''}
+          ${o.status !== 'ignored' && o.status !== 'won' ? `<button class="link-btn ignore" onclick="ignoreOpp('${o.id}')">Ignore</button>` : ''}
+        </div>
+      </td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('main-content').innerHTML = statsBar + `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Title</th><th>Type</th><th>Score</th><th>Reward</th><th>Status</th><th>Source</th><th></th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="empty">No opportunities yet. Run opportunity-collector pipeline.</td></tr>'}</tbody>
+      </table>
+    </div>`
+}
+
+async function executeOpp(id)  { await apiFetch('/opportunities/' + id + '/execute', { method: 'POST', body: '{}' }); refresh() }
+async function shortlistOpp(id){ await apiFetch('/opportunities/' + id + '/shortlist', { method: 'POST' }); refresh() }
+async function ignoreOpp(id)   { await apiFetch('/opportunities/' + id + '/ignore', { method: 'POST' }); refresh() }
+
+// ── Niches ────────────────────────────────────────────────────────────────────
+async function renderNiches() {
+  const niches = await apiFetch('/niches').catch(() => [])
+  if (!niches.length) {
+    document.getElementById('main-content').innerHTML = '<div class="empty">No niches yet. Run seed-niches activity or opportunity-collector pipeline.</div>'
+    return
+  }
+  const cards = niches.map(n => {
+    const cls = n.aiAgentFit >= 70 ? 'fit-high' : n.aiAgentFit >= 40 ? 'fit-mid' : 'fit-low'
+    return `<div class="niche-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div class="niche-name">${esc(n.displayName)}</div>
+          <div class="niche-slug">${esc(n.name)}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="fit-score ${cls}">${n.aiAgentFit}</div>
+          <div style="font-size:10px;color:var(--text-weak)">AI fit</div>
+        </div>
+      </div>
+      ${n.description ? `<div class="niche-desc">${esc(n.description)}</div>` : ''}
+      <div class="niche-meta">
+        <span>${n.opportunityCount} opps</span>
+        ${n.trendScore !== null ? `<span>trend: ${n.trendScore}</span>` : ''}
+      </div>
+    </div>`
+  }).join('')
+  document.getElementById('main-content').innerHTML = `<div class="grid">${cards}</div>`
+}
+
+// ── Market Data ───────────────────────────────────────────────────────────────
+async function renderMarket() {
+  const rows = await apiFetch('/market-data/latest').catch(() => [])
+  if (!rows.length) {
+    document.getElementById('main-content').innerHTML = '<div class="empty">No market data yet. Run market-data-collector pipeline.</div>'
+    return
+  }
+  const trs = rows.map(r => {
+    const chg = r.change24h
+    const chgClass = chg === null ? '' : chg >= 0 ? 'change-up' : 'change-dn'
+    const chgStr = chg !== null ? (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%' : '—'
+    const price = r.price !== null ? '$' + r.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : '—'
+    const vol = r.volume24h !== null ? '$' + (r.volume24h / 1_000_000).toFixed(1) + 'M' : '—'
+    const time = new Date(r.collectedAt * 1000).toLocaleTimeString()
+    return `<tr>
+      <td><strong>${esc(r.symbol)}</strong></td>
+      <td style="color:var(--text-weak)">${esc(r.assetType)}</td>
+      <td style="text-align:right">${price}</td>
+      <td style="text-align:right" class="${chgClass}">${chgStr}</td>
+      <td style="text-align:right;color:var(--text-weak)">${vol}</td>
+      <td style="color:var(--text-weak)">${esc(r.source)}</td>
+      <td style="color:var(--text-weak)">${time}</td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('main-content').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Symbol</th><th>Type</th><th style="text-align:right">Price</th>
+          <th style="text-align:right">24h %</th><th style="text-align:right">Volume 24h</th>
+          <th>Source</th><th>Collected</th>
+        </tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>`
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+async function openModal() {
+  if (!activityTypes.length) {
+    activityTypes = await apiFetch('/activities/types').catch(() => [])
+    const sel = document.getElementById('f-type')
+    activityTypes.forEach(at => {
+      const opt = document.createElement('option')
+      opt.value = at.type; opt.textContent = `${at.displayName} (${at.type})`
+      sel.appendChild(opt)
+    })
+  }
+  document.getElementById('modal').style.display = 'flex'
+}
+function closeModal() { document.getElementById('modal').style.display = 'none'; document.getElementById('f-error').style.display = 'none' }
+
+async function submitActivity() {
+  const btn = document.getElementById('submit-btn')
+  const errEl = document.getElementById('f-error')
+  errEl.style.display = 'none'
+
+  const type = document.getElementById('f-type').value
+  const priority = parseInt(document.getElementById('f-priority').value)
+  let input
+  try { input = JSON.parse(document.getElementById('f-input').value) } catch { errEl.textContent = 'Invalid JSON input'; errEl.style.display = ''; return }
+  if (!type) { errEl.textContent = 'Select an activity type'; errEl.style.display = ''; return }
+
+  btn.textContent = 'Adding…'; btn.disabled = true
+  try {
+    await apiFetch('/queue', { method: 'POST', body: JSON.stringify({ activity_type: type, input, priority, triggered_by: 'manual' }) })
+    closeModal()
+    refresh()
+  } catch (e) {
+    errEl.textContent = e.message; errEl.style.display = ''
+  } finally { btn.textContent = 'Add'; btn.disabled = false }
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
+async function refresh() {
+  await loadStatus()
+  if (currentTab === 'queue')         await renderQueue()
+  else if (currentTab === 'opportunities') await renderOpportunities()
+  else if (currentTab === 'niches')   await renderNiches()
+  else if (currentTab === 'market')   await renderMarket()
+  document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString()
+}
+
+function esc(str) {
+  if (!str) return ''
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('add-btn').style.display = ''
+refresh()
+autoRefreshInterval = setInterval(refresh, 30_000)
+</script>
+</body>
+</html>

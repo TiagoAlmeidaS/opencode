@@ -1,0 +1,120 @@
+# =============================================================================
+# OpenCode Server — Painel autônomo para VPS
+# =============================================================================
+# Uso:
+#   docker compose -f docker-compose.opencode-server.yml up -d
+#
+# Para integrar com a infra existente (Qdrant, Redis, Postgres):
+#   docker compose -f docker-compose.vps.yml -f docker-compose.opencode-server.yml up -d
+#
+# Copie .env.server.example → .env.server e ajuste as variáveis antes de subir.
+# =============================================================================
+
+services:
+
+  # ── OpenCode Server ──────────────────────────────────────────────────────────
+  opencode-server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    container_name: opencode-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3000}:3000"
+    volumes:
+      - server_data:/data
+    environment:
+      # Banco de dados
+      DB_PATH: /data/server.db
+      OPENCODE_DB_PATH: /data/opencode.db
+
+      # LLM — deixe vazio para usar somente heurísticas (sem custo)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5-20251001}
+
+      # Telegram — relatórios automáticos (opcional)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+
+      # GitHub — para pipeline de bounties (opcional)
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+
+      # Autenticação da API (opcional mas recomendado em produção)
+      API_TOKEN: ${API_TOKEN:-}
+
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+
+      # Qdrant para RAG (conecta ao serviço da infra vps se disponível)
+      QDRANT_URL: ${QDRANT_URL:-}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - opencode-net
+      - jarvis-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.opencode-server.rule=Host(`${SERVER_DOMAIN:-opencode.localhost}`)"
+      - "traefik.http.routers.opencode-server.entrypoints=web"
+      - "traefik.http.services.opencode-server.loadbalancer.server.port=3000"
+
+  # ── RabbitMQ ─────────────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: opencode-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"          # AMQP
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"   # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-opencode}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-opencode_change_me}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-opencode}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - opencode-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rabbitmq.rule=Host(`${RABBITMQ_DOMAIN:-rabbitmq.localhost}`)"
+      - "traefik.http.routers.rabbitmq.entrypoints=web"
+      - "traefik.http.services.rabbitmq.loadbalancer.server.port=15672"
+
+  # ── Nginx reverse proxy (opcional — remove se usar Traefik ou Caddy) ─────────
+  nginx:
+    image: nginx:alpine
+    container_name: opencode-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8090}:80"
+    volumes:
+      - ./infra/nginx/opencode-server.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - opencode-server
+    networks:
+      - opencode-net
+    profiles:
+      - nginx   # ativa somente com: docker compose --profile nginx up
+
+volumes:
+  server_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+
+networks:
+  opencode-net:
+    name: opencode-net
+    driver: bridge
+  # Rede compartilhada com docker-compose.vps.yml (Qdrant, Redis, Postgres)
+  # Se não usar o compose vps, remova a seção abaixo e o `jarvis-network` nos services
+  jarvis-network:
+    external: true
+    name: jarvis-network
