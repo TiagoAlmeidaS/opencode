@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations } from "./schema"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions } from "./schema"
 import { eq, desc, sql, gte, and, asc } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
@@ -430,6 +430,110 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       return true
     })
     return c.json(latest)
+  })
+
+  // ── Submissions ───────────────────────────────────────────────────────────
+  app.get("/submissions", async (c) => {
+    const status = c.req.query("status")
+    const platform = c.req.query("platform")
+    const opportunityId = c.req.query("opportunity_id")
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10))
+
+    let rows = await db
+      .select()
+      .from(oppSubmissions)
+      .orderBy(desc(oppSubmissions.createdAt))
+      .limit(limit)
+      .offset(offset)
+
+    if (status) rows = rows.filter((r) => r.status === status)
+    if (platform) rows = rows.filter((r) => r.platform === platform)
+    if (opportunityId) rows = rows.filter((r) => r.opportunityId === opportunityId)
+    return c.json(rows)
+  })
+
+  app.get("/submissions/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(oppSubmissions).where(eq(oppSubmissions.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    return c.json(row)
+  })
+
+  app.post("/submissions/:id/approve", async (c) => {
+    const id = c.req.param("id")
+    const now = Math.floor(Date.now() / 1000)
+    const [row] = await db.select().from(oppSubmissions).where(eq(oppSubmissions.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    if (row.status !== "pending-approval") return c.json({ error: `Cannot approve submission with status: ${row.status}` }, 400)
+
+    await db.update(oppSubmissions).set({ status: "submitted", approvedAt: now, updatedAt: now }).where(eq(oppSubmissions.id, id))
+
+    // Enfileira a submissão real de acordo com a plataforma
+    let activityType = "verify-submission-outcome"
+    if (row.platform === "gitcoin") activityType = "submit-gitcoin-proposal"
+    const queueId = ulid()
+    await db.insert(daemonQueue).values({
+      id: queueId,
+      activityType,
+      status: "pending",
+      priority: 3,
+      inputJson: JSON.stringify({ submission_id: id }),
+      triggeredBy: "manual-approval",
+      createdAt: now,
+    })
+
+    const [updated] = await db.select().from(oppSubmissions).where(eq(oppSubmissions.id, id))
+    return c.json({ submission: updated, queue_id: queueId })
+  })
+
+  app.post("/submissions/:id/reject", async (c) => {
+    const id = c.req.param("id")
+    const now = Math.floor(Date.now() / 1000)
+    const [row] = await db.select().from(oppSubmissions).where(eq(oppSubmissions.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    if (!["pending-approval", "draft"].includes(row.status)) return c.json({ error: `Cannot reject submission with status: ${row.status}` }, 400)
+
+    await db.update(oppSubmissions).set({ status: "rejected", updatedAt: now }).where(eq(oppSubmissions.id, id))
+    const [updated] = await db.select().from(oppSubmissions).where(eq(oppSubmissions.id, id))
+    return c.json(updated)
+  })
+
+  // Trigger submission activities manually per opportunity
+  app.post("/opportunities/:id/submit-pr", async (c) => {
+    const id = c.req.param("id")
+    const body = await c.req.json().catch(() => ({})) as { force?: boolean }
+    const now = Math.floor(Date.now() / 1000)
+    const queueId = ulid()
+    await db.insert(daemonQueue).values({
+      id: queueId,
+      activityType: "submit-github-pr",
+      status: "pending",
+      priority: 3,
+      inputJson: JSON.stringify({ opportunity_id: id, force: body.force }),
+      triggeredBy: "manual",
+      createdAt: now,
+    })
+    return c.json({ queue_id: queueId }, 202)
+  })
+
+  app.post("/opportunities/:id/generate-proposal", async (c) => {
+    const id = c.req.param("id")
+    const body = await c.req.json().catch(() => ({})) as { platform?: string }
+    const platform = body.platform ?? "gitcoin"
+    const now = Math.floor(Date.now() / 1000)
+    const activityType = platform === "gitcoin" ? "generate-gitcoin-proposal" : "send-freelance-email"
+    const queueId = ulid()
+    await db.insert(daemonQueue).values({
+      id: queueId,
+      activityType,
+      status: "pending",
+      priority: 3,
+      inputJson: JSON.stringify({ opportunity_id: id }),
+      triggeredBy: "manual",
+      createdAt: now,
+    })
+    return c.json({ queue_id: queueId }, 202)
   })
 
   app.get("/memory/retrieve", async (c) => {

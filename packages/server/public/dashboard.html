@@ -82,6 +82,16 @@
   .fit-mid  { color: var(--warn); }
   .fit-low  { color: var(--text-weak); }
 
+  /* Submissions */
+  .sub-pending  { color: var(--warn); }
+  .sub-submitted { color: var(--info); }
+  .sub-accepted { color: var(--success); }
+  .sub-rejected { color: var(--danger); }
+  .sub-draft    { color: var(--text-weak); }
+  .proposal-preview { font-size: 11px; color: var(--text-weak); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sub-actions { display: none; gap: 8px; }
+  tr:hover .sub-actions { display: flex; }
+
   /* Modal */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
   .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 16px; }
@@ -110,6 +120,7 @@
       <button class="tab" data-tab="opportunities">Opportunities</button>
       <button class="tab" data-tab="niches">Niches</button>
       <button class="tab" data-tab="market">Market Data</button>
+      <button class="tab" data-tab="submissions">Submissions</button>
     </div>
   </div>
   <div class="header-actions">
@@ -366,6 +377,105 @@ async function renderMarket() {
     </div>`
 }
 
+// ── Submissions ───────────────────────────────────────────────────────────────
+async function renderSubmissions() {
+  const statusFilter = window._submissionFilter || ''
+  const url = '/submissions?limit=100' + (statusFilter ? '&status=' + statusFilter : '')
+  const subs = await apiFetch(url).catch(() => [])
+
+  const FILTERS = ['', 'pending-approval', 'submitted', 'accepted', 'rejected']
+  const filterBar = `
+    <div class="status-bar" style="border-bottom:1px solid var(--border);gap:8px">
+      ${FILTERS.map(f => `<button class="btn${window._submissionFilter===f?' btn-primary':''}" onclick="setSubFilter('${f}')">${f||'All'}</button>`).join('')}
+    </div>`
+
+  if (!subs.length) {
+    document.getElementById('main-content').innerHTML = filterBar + '<div class="empty">No submissions yet. Run submit-github-pr, generate-gitcoin-proposal, or send-freelance-email activities.</div>'
+    return
+  }
+
+  const STATUS_CLS = { 'pending-approval':'sub-pending','submitted':'sub-submitted','accepted':'sub-accepted','rejected':'sub-rejected','draft':'sub-draft' }
+
+  const rows = subs.map(s => {
+    const cls = STATUS_CLS[s.status] || ''
+    const preview = s.proposalText ? s.proposalText.slice(0, 120).replace(/\n/g, ' ') : ''
+    const isPendingApproval = s.status === 'pending-approval'
+    const canReject = ['pending-approval','draft'].includes(s.status)
+    const date = s.createdAt ? new Date(s.createdAt * 1000).toLocaleDateString() : '—'
+    const reward = s.rewardUsd ? `$${s.rewardUsd.toLocaleString()}` : '—'
+    const extLink = s.externalUrl ? `<a href="${esc(s.externalUrl)}" target="_blank" style="color:var(--accent);font-size:11px">↗</a>` : ''
+    return `<tr>
+      <td style="color:var(--text-weak);font-family:monospace;font-size:10px">${s.id.slice(-8)}</td>
+      <td style="max-width:200px"><span class="badge ${cls}">${esc(s.status)}</span></td>
+      <td>${esc(s.platform)}</td>
+      <td>${esc(s.submissionType)}</td>
+      <td>${reward}</td>
+      <td style="max-width:320px"><div class="proposal-preview">${esc(preview)}</div></td>
+      <td>${date} ${extLink}</td>
+      <td>
+        <div class="sub-actions">
+          ${isPendingApproval ? `<button class="link-btn exec" onclick="approveSub('${s.id}')">✓ Approve</button>` : ''}
+          ${canReject ? `<button class="link-btn ignore" onclick="rejectSub('${s.id}')">✗ Reject</button>` : ''}
+          ${s.proposalText ? `<button class="link-btn shortlist" onclick="viewProposal('${s.id}')">View</button>` : ''}
+        </div>
+      </td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('main-content').innerHTML = filterBar + `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>ID</th><th>Status</th><th>Platform</th><th>Type</th><th>Reward</th><th>Proposal Preview</th><th>Date</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+
+  // Store proposals for view modal
+  window._submissions = subs
+}
+
+function setSubFilter(f) { window._submissionFilter = f; renderSubmissions() }
+
+async function approveSub(id) {
+  if (!confirm('Approve and submit this proposal?')) return
+  try {
+    await apiFetch('/submissions/' + id + '/approve', { method: 'POST' })
+    refresh()
+  } catch (e) { alert('Error: ' + e.message) }
+}
+
+async function rejectSub(id) {
+  if (!confirm('Reject this submission?')) return
+  try {
+    await apiFetch('/submissions/' + id + '/reject', { method: 'POST' })
+    refresh()
+  } catch (e) { alert('Error: ' + e.message) }
+}
+
+function viewProposal(id) {
+  const sub = (window._submissions || []).find(s => s.id === id)
+  if (!sub?.proposalText) return
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.style.display = 'flex'
+  overlay.innerHTML = `<div class="modal" style="max-width:700px;max-height:80vh">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2>Proposal — ${esc(sub.platform)} / ${esc(sub.submissionType)}</h2>
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">✕</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:12px;white-space:pre-wrap;font-family:monospace;line-height:1.6;max-height:60vh">${esc(sub.proposalText)}</div>
+    ${sub.status === 'pending-approval' ? `<div class="modal-footer">
+      <button class="btn" onclick="this.closest('.modal-overlay').remove()">Close</button>
+      <button class="btn" onclick="rejectSub('${sub.id}');this.closest('.modal-overlay').remove()">Reject</button>
+      <button class="btn btn-primary" onclick="approveSub('${sub.id}');this.closest('.modal-overlay').remove()">✓ Approve & Submit</button>
+    </div>` : `<div class="modal-footer"><button class="btn" onclick="this.closest('.modal-overlay').remove()">Close</button></div>`}
+  </div>`
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+  document.body.appendChild(overlay)
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 async function openModal() {
   if (!activityTypes.length) {
@@ -408,7 +518,8 @@ async function refresh() {
   if (currentTab === 'queue')         await renderQueue()
   else if (currentTab === 'opportunities') await renderOpportunities()
   else if (currentTab === 'niches')   await renderNiches()
-  else if (currentTab === 'market')   await renderMarket()
+  else if (currentTab === 'market')        await renderMarket()
+  else if (currentTab === 'submissions')   await renderSubmissions()
   document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString()
 }
 

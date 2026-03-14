@@ -192,6 +192,8 @@ export const oppOpportunities = sqliteTable("opp_opportunities", {
   score: real("score"),                         // 0..100
   scoreReason: text("score_reason"),
   llmAnalysis: text("llm_analysis"),            // JSON análise completa
+  workspaceStrategy: text("workspace_strategy"), // 'fork-temp'|'dedicated-repo'|'extend-repo'
+  workspaceRepoUrl: text("workspace_repo_url"),  // URL do repo dedicado se criado
   firstSeenAt: integer("first_seen_at").notNull(),
   lastSeenAt: integer("last_seen_at").notNull(),
   createdAt: integer("created_at").notNull(),
@@ -223,6 +225,26 @@ export const oppTelegramReports = sqliteTable("opp_telegram_reports", {
   opportunityIds: text("opportunity_ids"),       // JSON array
   sentAt: integer("sent_at"),
   createdAt: integer("created_at").notNull(),
+})
+
+export const oppSubmissions = sqliteTable("opp_submissions", {
+  id: text("id").primaryKey(),
+  opportunityId: text("opportunity_id").notNull().references(() => oppOpportunities.id),
+  platform: text("platform").notNull(),           // 'github'|'gitcoin'|'freelance-email'|'manual'
+  submissionType: text("submission_type").notNull(), // 'pr'|'proposal'|'email'|'gitcoin-bid'
+  externalUrl: text("external_url"),              // URL do PR, proposta Gitcoin, etc.
+  status: text("status").notNull().default("draft"), // 'draft'|'pending-approval'|'submitted'|'accepted'|'rejected'|'paid'
+  proposalText: text("proposal_text"),            // texto gerado para aprovar no painel
+  repoUrl: text("repo_url"),                      // repo usado (dedicated-repo)
+  prNumber: integer("pr_number"),                 // número do PR no GitHub
+  approvedAt: integer("approved_at"),
+  submittedAt: integer("submitted_at"),
+  outcomeCheckedAt: integer("outcome_checked_at"),
+  rewardUsd: real("reward_usd"),                  // valor efetivamente recebido
+  errorMessage: text("error_message"),
+  triggeredBy: text("triggered_by"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
 })
 
 /** Stage-1 memory extractions per OpenCode session (for memory pipeline). */

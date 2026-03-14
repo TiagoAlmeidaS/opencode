@@ -237,6 +237,27 @@ CREATE TABLE IF NOT EXISTS opp_telegram_reports (
   created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_telegram_reports ON opp_telegram_reports(report_type, created_at DESC);
+CREATE TABLE IF NOT EXISTS opp_submissions (
+  id                  TEXT PRIMARY KEY,
+  opportunity_id      TEXT NOT NULL REFERENCES opp_opportunities(id),
+  platform            TEXT NOT NULL,
+  submission_type     TEXT NOT NULL,
+  external_url        TEXT,
+  status              TEXT NOT NULL DEFAULT 'draft',
+  proposal_text       TEXT,
+  repo_url            TEXT,
+  pr_number           INTEGER,
+  approved_at         INTEGER,
+  submitted_at        INTEGER,
+  outcome_checked_at  INTEGER,
+  reward_usd          REAL,
+  error_message       TEXT,
+  triggered_by        TEXT,
+  created_at          INTEGER NOT NULL,
+  updated_at          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_submissions_opp    ON opp_submissions(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_status ON opp_submissions(status, created_at DESC);
 `
 
 let state: { sqlite: BunDatabase | undefined; dbPath: string | null } = {
@@ -259,6 +280,14 @@ export function getDb(dbPath: string) {
   for (const stmt of MIGRATION_SQL.split(";").filter(Boolean)) {
     const s = stmt.trim()
     if (s) sqlite.run(s)
+  }
+  // ALTER TABLE migrations — idempotent (ignoram erro se coluna já existe)
+  const alterMigrations = [
+    "ALTER TABLE opp_opportunities ADD COLUMN workspace_strategy TEXT",
+    "ALTER TABLE opp_opportunities ADD COLUMN workspace_repo_url TEXT",
+  ]
+  for (const stmt of alterMigrations) {
+    try { sqlite.run(stmt) } catch { /* column already exists */ }
   }
   return drizzle({ client: sqlite, schema })
 }
