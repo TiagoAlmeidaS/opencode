@@ -28,9 +28,11 @@ services:
       DB_PATH: /data/server.db
       OPENCODE_DB_PATH: /data/opencode.db
 
-      # LLM — deixe vazio para usar somente heurísticas (sem custo)
+      # LLM — prioridade: Anthropic > OpenRouter (free) > heurísticas
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5-20251001}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
 
       # Telegram — relatórios automáticos (opcional)
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

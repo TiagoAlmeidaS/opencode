@@ -5,8 +5,10 @@
  *   PORT                  Porta HTTP (default: 3000)
  *   DB_PATH               Caminho do SQLite (default: /data/server.db)
  *   OPENCODE_DB_PATH      Caminho do opencode.db para memory pipelines
- *   ANTHROPIC_API_KEY     API key Anthropic para LLM nas activities
- *   LLM_MODEL             Modelo a usar (default: claude-haiku-4-5-20251001)
+ *   ANTHROPIC_API_KEY     API key Anthropic (pago). Se setada, usa para memory LLM.
+ *   LLM_MODEL             Modelo Anthropic (default: claude-haiku-4-5-20251001)
+ *   OPENROUTER_API_KEY    API key OpenRouter. Se setada (e sem Anthropic), usa LLM free para memory.
+ *   OPENROUTER_MODEL      Modelo OpenRouter (default: openrouter/free = gratis)
  *   TELEGRAM_BOT_TOKEN    Token do bot Telegram
  *   TELEGRAM_CHAT_ID      Chat ID para relatórios
  *   QDRANT_URL            URL do Qdrant para RAG (opcional)
@@ -26,11 +28,13 @@ const DB_PATH = process.env.DB_PATH ?? "/data/server.db"
 const OPENCODE_DB_PATH = process.env.OPENCODE_DB_PATH ?? path.join(path.dirname(DB_PATH), "opencode.db")
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
 const LLM_MODEL = process.env.LLM_MODEL ?? "claude-haiku-4-5-20251001"
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openrouter/free"
 const QDRANT_URL = process.env.QDRANT_URL
 const API_TOKEN = process.env.API_TOKEN
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*"
 
-// ── LLM via Anthropic API direta (sem depender do OpenCode provider) ──────────
+// ── LLM via Anthropic API direta (pago) ──────────────────────────────────────
 async function anthropicLlm(opts: MemoryLlmOptions): Promise<string> {
   if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY não configurada")
 
@@ -58,12 +62,46 @@ async function anthropicLlm(opts: MemoryLlmOptions): Promise<string> {
   return data.content.find((c) => c.type === "text")?.text ?? ""
 }
 
+// ── LLM via OpenRouter (free tier: openrouter/free) ───────────────────────────
+async function openRouterLlm(opts: MemoryLlmOptions): Promise<string> {
+  if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY não configurada")
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://opencode.dev",
+    },
+    body: JSON.stringify({
+      model: OPENROUTER_MODEL,
+      max_tokens: opts.maxTokens ?? 1024,
+      messages: [
+        ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
+        { role: "user" as const, content: opts.prompt },
+      ],
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`OpenRouter API ${res.status}: ${err.slice(0, 200)}`)
+  }
+
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+  const content = data.choices?.[0]?.message?.content
+  return typeof content === "string" ? content : ""
+}
+
+// Prioridade: Anthropic (pago) > OpenRouter (free) > nenhum (somente heurísticas)
+const memoryLlm = ANTHROPIC_API_KEY ? anthropicLlm : OPENROUTER_API_KEY ? openRouterLlm : undefined
+
 // ── Inicializa servidor ───────────────────────────────────────────────────────
 const instance = createOpenCodeServer({
   dbPath: DB_PATH,
   daemon: true,
   opencodeDbPath: OPENCODE_DB_PATH,
-  memoryLlm: ANTHROPIC_API_KEY ? anthropicLlm : undefined,
+  memoryLlm,
   qdrantUrl: QDRANT_URL,
 })
 
@@ -100,7 +138,9 @@ console.log(`\n🚀 OpenCode Server running at http://0.0.0.0:${PORT}`)
 console.log(`   Dashboard:  http://0.0.0.0:${PORT}/`)
 console.log(`   API:        http://0.0.0.0:${PORT}/api/`)
 console.log(`   DB:         ${DB_PATH}`)
-console.log(`   LLM:        ${ANTHROPIC_API_KEY ? LLM_MODEL : "disabled (no ANTHROPIC_API_KEY)"}`)
+console.log(
+  `   LLM:        ${ANTHROPIC_API_KEY ? `Anthropic ${LLM_MODEL}` : OPENROUTER_API_KEY ? `OpenRouter ${OPENROUTER_MODEL} (free)` : "disabled (heurísticas only)"}`
+)
 console.log(`   Auth:       ${API_TOKEN ? "Bearer token enabled" : "disabled"}`)
 console.log(`   Qdrant:     ${QDRANT_URL ?? "disabled"}`)
 console.log()
