@@ -5,10 +5,17 @@ import { daemonJobs, daemonContent, daemonLogs } from "./schema"
 import { eq } from "drizzle-orm"
 import { ulid } from "ulid"
 
+export interface RunJobExtra {
+  opencodeDbPath?: string
+  memoryLlm?: PipelineContext["memoryLlm"]
+  embed?: PipelineContext["embed"]
+}
+
 export async function runJob(
   db: ServerDb,
   pipelineId: string,
-  pipelineRow: { id: string; name: string; strategy: string; configJson: string }
+  pipelineRow: { id: string; name: string; strategy: string; configJson: string },
+  extra?: RunJobExtra
 ): Promise<{ jobId: string; ok: boolean; error?: string }> {
   const pipeline = getPipeline(pipelineRow.strategy)
   if (!pipeline) {
@@ -33,6 +40,9 @@ export async function runJob(
     jobId,
     config: JSON.parse(pipelineRow.configJson || "{}"),
     db,
+    opencodeDbPath: extra?.opencodeDbPath,
+    memoryLlm: extra?.memoryLlm,
+    embed: extra?.embed,
   }
 
   try {

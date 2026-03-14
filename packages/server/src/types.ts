@@ -3,6 +3,12 @@
  * Pipeline context and interface aligned with Jarvis daemon for migration.
  */
 
+export interface MemoryLlmOptions {
+  prompt: string
+  system?: string
+  maxTokens?: number
+}
+
 export interface PipelineContext {
   pipelineId: string
   jobId: string
@@ -11,6 +17,12 @@ export interface PipelineContext {
   directory?: string
   /** DB instance (optional; runner may pass it for pipelines that need it) */
   db?: import("./db").ServerDb
+  /** Path to opencode.db for memory pipelines (sessions/messages). */
+  opencodeDbPath?: string
+  /** Optional LLM for memory extraction/consolidation (injected by host). */
+  memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
+  /** Optional embedding function for RAG (injected by host). */
+  embed?: (text: string) => Promise<number[]>
 }
 
 export interface ContentOutput {
@@ -37,6 +49,26 @@ export interface Pipeline {
 }
 
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
+
+export interface ActivityContext {
+  queueItemId: string
+  input: Record<string, unknown>
+  db: import("./db").ServerDb
+  spawnOpenCode: (task: string, cwd: string) => Promise<string>
+  enqueue: (type: string, input: unknown, opts?: { priority?: number; dependsOn?: string }) => Promise<string>
+}
+
+export interface ActivityOutput {
+  summary?: string
+  extra?: Record<string, unknown>
+}
+
+export interface Activity {
+  type: string
+  displayName: string
+  description: string
+  execute(ctx: ActivityContext): Promise<ActivityOutput | void>
+}
 
 export interface DaemonPipelineRow {
   id: string

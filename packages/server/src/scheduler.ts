@@ -1,5 +1,5 @@
 import type { ServerDb } from "./db"
-import { runJob } from "./runner"
+import { runJob, type RunJobExtra } from "./runner"
 import { cronMatches } from "./cron"
 import { executePendingProposals } from "./executor"
 import { daemonPipelines, daemonJobs } from "./schema"
@@ -10,10 +10,12 @@ const TICK_MS = 60_000
 export interface SchedulerOpts {
   db: ServerDb
   tickIntervalMs?: number
+  /** Extra context passed to runJob (e.g. opencodeDbPath, memoryLlm for memory pipelines). */
+  runJobExtra?: RunJobExtra
 }
 
 export function createScheduler(opts: SchedulerOpts) {
-  const { db, tickIntervalMs = TICK_MS } = opts
+  const { db, tickIntervalMs = TICK_MS, runJobExtra } = opts
   let intervalId: ReturnType<typeof setInterval> | null = null
 
   async function tick() {
@@ -51,12 +53,17 @@ export function createScheduler(opts: SchedulerOpts) {
         .limit(1)
       if (pending) continue
 
-      await runJob(db, row.id, {
-        id: row.id,
-        name: row.name,
-        strategy: row.strategy,
-        configJson: row.configJson,
-      })
+      await runJob(
+        db,
+        row.id,
+        {
+          id: row.id,
+          name: row.name,
+          strategy: row.strategy,
+          configJson: row.configJson,
+        },
+        runJobExtra
+      )
     }
 
     await executePendingProposals(db).catch((err) => {

@@ -262,13 +262,15 @@ export namespace Server {
 
     if (opts.daemon) {
       const dbPath = opts.serverDbPath ?? getDefaultDbPath(Global.Path.data)
+      const opencodeDbPath = path.join(Global.Path.data, "opencode.db")
       serverDaemonInstance = createOpenCodeServer({
         dbPath,
         daemon: true,
+        opencodeDbPath,
       })
       app = app.route("/server", serverDaemonInstance.routes) as Hono
       serverDaemonInstance.startDaemon()
-      log.info("OpenCode Server (daemon) enabled", { dbPath })
+      log.info("OpenCode Server (daemon) enabled", { dbPath, opencodeDbPath })
     }
 
     return app.post(

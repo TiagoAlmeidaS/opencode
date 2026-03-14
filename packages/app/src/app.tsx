@@ -48,6 +48,7 @@ import { useCheckServerHealth } from "./utils/server-health"
 
 const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
+const Board = lazy(() => import("@/pages/board"))
 const Loading = () => <div class="size-full" />
 
 const HomeRoute = () => (
@@ -282,6 +283,11 @@ export function AppInterface(props: {
               root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
             >
               <Route path="/" component={HomeRoute} />
+              <Route path="/board" component={() => (
+                <Suspense fallback={<Loading />}>
+                  <Board />
+                </Suspense>
+              )} />
               <Route path="/:dir" component={DirectoryLayout}>
                 <Route path="/" component={SessionIndexRoute} />
                 <Route path="/session/:id?" component={SessionRoute} />

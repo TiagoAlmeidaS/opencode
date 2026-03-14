@@ -112,3 +112,31 @@ export const daemonGoals = sqliteTable("daemon_goals", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })
+
+export const daemonQueue = sqliteTable("daemon_queue", {
+  id: text("id").primaryKey(),
+  activityType: text("activity_type").notNull(),
+  status: text("status").notNull().default("pending"),
+  priority: integer("priority").notNull().default(5),
+  dependsOn: text("depends_on"),
+  lockedBy: text("locked_by"),
+  lockedAt: integer("locked_at"),
+  inputJson: text("input_json").notNull().default("{}"),
+  outputJson: text("output_json"),
+  errorMessage: text("error_message"),
+  startedAt: integer("started_at"),
+  completedAt: integer("completed_at"),
+  durationMs: integer("duration_ms"),
+  triggeredBy: text("triggered_by"),
+  createdAt: integer("created_at").notNull(),
+})
+
+/** Stage-1 memory extractions per OpenCode session (for memory pipeline). */
+export const memoryExtractions = sqliteTable("memory_extractions", {
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").notNull(),
+  rawMemory: text("raw_memory").notNull(),
+  sessionSummary: text("session_summary").notNull(),
+  sourceUpdatedAt: integer("source_updated_at").notNull(),
+  createdAt: integer("created_at").notNull(),
+})

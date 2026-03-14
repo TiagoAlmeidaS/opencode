@@ -2,13 +2,26 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs } from "./schema"
-import { eq, desc, sql, and, gte } from "drizzle-orm"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue } from "./schema"
+import { eq, desc, sql, gte, and } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
+import { listActivities } from "./activity"
+import { setRagConfig, search } from "./memory/rag"
 
-export function ServerRoutes(db: ServerDb) {
+export interface ServerRoutesRagOpts {
+  memoryEmbed?: (text: string) => Promise<number[]>
+  qdrantUrl?: string
+}
+
+export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
   const app = new Hono()
+  if (ragOpts?.memoryEmbed && ragOpts?.qdrantUrl) {
+    setRagConfig({
+      qdrantUrl: ragOpts.qdrantUrl,
+      embed: ragOpts.memoryEmbed,
+    })
+  }
 
   app.get("/status", async (c) => {
     const [pipelines] = await db
@@ -62,7 +75,7 @@ export function ServerRoutes(db: ServerDb) {
   app.post("/pipelines", zValidator("json", z.object({
     name: z.string(),
     strategy: z.string(),
-    config_json: z.record(z.unknown()).optional(),
+    config_json: z.record(z.string(), z.unknown()).optional(),
     schedule_cron: z.string().optional(),
   })), async (c) => {
     const body = c.req.valid("json")
@@ -223,6 +236,74 @@ export function ServerRoutes(db: ServerDb) {
         revenue: { total_usd: Number(revenue?.totalUsd ?? 0) },
       },
     })
+  })
+
+  // Queue routes
+  app.get("/queue", async (c) => {
+    const status = c.req.query("status")
+    const activityType = c.req.query("activity_type")
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10))
+
+    let rows = await db.select().from(daemonQueue).orderBy(daemonQueue.priority, desc(daemonQueue.createdAt)).limit(limit).offset(offset)
+    if (status) rows = rows.filter((r) => r.status === status)
+    if (activityType) rows = rows.filter((r) => r.activityType === activityType)
+    return c.json(rows)
+  })
+
+  app.post("/queue", zValidator("json", z.object({
+    activity_type: z.string(),
+    input: z.record(z.string(), z.unknown()).optional(),
+    priority: z.number().int().min(1).max(10).optional(),
+    depends_on: z.string().optional(),
+    triggered_by: z.string().optional(),
+  })), async (c) => {
+    const body = c.req.valid("json")
+    const id = ulid()
+    const now = Math.floor(Date.now() / 1000)
+    await db.insert(daemonQueue).values({
+      id,
+      activityType: body.activity_type,
+      status: "pending",
+      priority: body.priority ?? 5,
+      dependsOn: body.depends_on ?? null,
+      inputJson: JSON.stringify(body.input ?? {}),
+      triggeredBy: body.triggered_by ?? "manual",
+      createdAt: now,
+    })
+    const [row] = await db.select().from(daemonQueue).where(eq(daemonQueue.id, id))
+    return c.json(row!, 201)
+  })
+
+  app.get("/queue/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(daemonQueue).where(eq(daemonQueue.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    return c.json(row)
+  })
+
+  app.delete("/queue/:id", async (c) => {
+    const id = c.req.param("id")
+    await db.update(daemonQueue).set({ status: "cancelled" }).where(and(eq(daemonQueue.id, id), eq(daemonQueue.status, "pending")))
+    const [row] = await db.select().from(daemonQueue).where(eq(daemonQueue.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    return c.json(row)
+  })
+
+  app.get("/activities/types", async (c) => {
+    return c.json(listActivities().map((a) => ({
+      type: a.type,
+      displayName: a.displayName,
+      description: a.description,
+    })))
+  })
+
+  app.get("/memory/retrieve", async (c) => {
+    const q = c.req.query("q")?.trim()
+    const limit = Math.min(20, Math.max(1, parseInt(c.req.query("limit") ?? "5", 10)))
+    if (!q) return c.json({ chunks: [] })
+    const chunks = await search(q, limit)
+    return c.json({ chunks })
   })
 
   return app

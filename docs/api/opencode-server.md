@@ -31,6 +31,7 @@ All Server endpoints are under **`/server`**. Base URL example: `http://localhos
 | GET | `/server/proposals` | List proposals |
 | GET | `/server/dashboard` | Dashboard metrics (optional `?days=30`) |
 | GET | `/server/logs` | List daemon logs (optional `?pipeline_id=`, `?limit=100`) |
+| GET | `/server/memory/retrieve` | RAG retrieval: `?q=...&limit=5` — returns `{ chunks: { text, source, score }[] }`. Requires Qdrant and memoryEmbed. |
 
 ## Config
 
@@ -39,7 +40,12 @@ All Server endpoints are under **`/server`**. Base URL example: `http://localhos
 
 ## Pipeline strategies
 
-Built-in strategies are registered by the `@opencode-ai/server` package. The default placeholder is **`noop`**. Additional strategies (e.g. `seo_blog`, `metrics_collector`, `strategy_analyzer`) can be added as built-ins or via plugins.
+Built-in strategies are registered by the `@opencode-ai/server` package. The default placeholder is **`noop`**. Other built-ins include:
+
+- **`seo_blog`**, **`metrics_collector`**, **`strategy_analyzer`**, **`daily_notifier`** — daemon/SEO/metrics.
+- **`memory_extract`** — Phase 1 of the memory pipeline: reads OpenCode sessions from `opencode.db`, extracts raw memory and session summary, stores in `memory_extractions`.
+- **`memory_consolidation`** — Phase 2: consolidates extractions into `MEMORY.md`, `memory_summary.md`, and optional skills on disk. See [Memory pipeline runbook](../runbooks/runbook-memory-pipeline.md) and [architecture](../architecture/memory-pipeline.md).
+- **`memory_rag_index`** — Indexes MEMORY.md, memory_summary.md, and skills into Qdrant for retrieval. Requires `OPENCODE_QDRANT_URL` and `memoryEmbed`. See [Memory RAG](../features/memory-rag.md).
 
 ## Cron format
 

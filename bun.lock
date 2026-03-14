@@ -335,6 +335,7 @@
         "@opencode-ai/plugin": "workspace:*",
         "@opencode-ai/script": "workspace:*",
         "@opencode-ai/sdk": "workspace:*",
+        "@opencode-ai/server": "workspace:*",
         "@opencode-ai/util": "workspace:*",
         "@openrouter/ai-sdk-provider": "1.5.4",
         "@opentui/core": "0.1.87",
@@ -449,6 +450,23 @@
         "typescript": "catalog:",
       },
     },
+    "packages/server": {
+      "name": "@opencode-ai/server",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hono/zod-validator": "catalog:",
+        "@octokit/rest": "catalog:",
+        "drizzle-orm": "catalog:",
+        "hono": "catalog:",
+        "ulid": "catalog:",
+        "zod": "catalog:",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/slack": {
       "name": "@opencode-ai/slack",
       "version": "1.2.26",
@@ -482,6 +500,18 @@
         "storybook-solidjs-vite": "^10.0.9",
         "typescript": "catalog:",
         "vite": "catalog:",
+      },
+    },
+    "packages/telegram": {
+      "name": "@opencode-ai/telegram",
+      "version": "0.1.0",
+      "dependencies": {
+        "@opencode-ai/plugin": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/ui": {
@@ -571,6 +601,18 @@
         "@astrojs/check": "0.9.6",
         "@types/node": "catalog:",
         "opencode": "workspace:*",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/whatsapp": {
+      "name": "@opencode-ai/whatsapp",
+      "version": "0.1.0",
+      "dependencies": {
+        "@opencode-ai/plugin": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1422,15 +1464,21 @@
 
     "@opencode-ai/sdk": ["@opencode-ai/sdk@workspace:packages/sdk/js"],
 
+    "@opencode-ai/server": ["@opencode-ai/server@workspace:packages/server"],
+
     "@opencode-ai/slack": ["@opencode-ai/slack@workspace:packages/slack"],
 
     "@opencode-ai/storybook": ["@opencode-ai/storybook@workspace:packages/storybook"],
+
+    "@opencode-ai/telegram": ["@opencode-ai/telegram@workspace:packages/telegram"],
 
     "@opencode-ai/ui": ["@opencode-ai/ui@workspace:packages/ui"],
 
     "@opencode-ai/util": ["@opencode-ai/util@workspace:packages/util"],
 
     "@opencode-ai/web": ["@opencode-ai/web@workspace:packages/web"],
+
+    "@opencode-ai/whatsapp": ["@opencode-ai/whatsapp@workspace:packages/whatsapp"],
 
     "@openrouter/ai-sdk-provider": ["@openrouter/ai-sdk-provider@1.5.4", "", { "dependencies": { "@openrouter/sdk": "^0.1.27" }, "peerDependencies": { "ai": "^5.0.0", "zod": "^3.24.1 || ^v4" } }, "sha512-xrSQPUIH8n9zuyYZR0XK7Ba0h2KsjJcMkxnwaYfmv13pKs3sDkjPzVPPhlhzqBGddHb5cFEwJ9VFuFeDcxCDSw=="],
 

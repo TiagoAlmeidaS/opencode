@@ -111,6 +111,35 @@ CREATE INDEX IF NOT EXISTS idx_logs_job ON daemon_logs(job_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_logs_pipeline ON daemon_logs(pipeline_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_proposals_status ON daemon_proposals(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_goals_status ON daemon_goals(status);
+CREATE TABLE IF NOT EXISTS memory_extractions (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  raw_memory TEXT NOT NULL,
+  session_summary TEXT NOT NULL,
+  source_updated_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_extractions_session ON memory_extractions(session_id);
+CREATE INDEX IF NOT EXISTS idx_memory_extractions_source_updated ON memory_extractions(source_updated_at DESC);
+CREATE TABLE IF NOT EXISTS daemon_queue (
+  id TEXT PRIMARY KEY,
+  activity_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  priority INTEGER NOT NULL DEFAULT 5,
+  depends_on TEXT,
+  locked_by TEXT,
+  locked_at INTEGER,
+  input_json TEXT NOT NULL DEFAULT '{}',
+  output_json TEXT,
+  error_message TEXT,
+  started_at INTEGER,
+  completed_at INTEGER,
+  duration_ms INTEGER,
+  triggered_by TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_queue_status_priority ON daemon_queue(status, priority, created_at);
+CREATE INDEX IF NOT EXISTS idx_queue_depends ON daemon_queue(depends_on);
 `
 
 let state: { sqlite: BunDatabase | undefined; dbPath: string | null } = {
@@ -122,7 +151,7 @@ export type ServerDb = ReturnType<typeof getDb>
 
 export function getDb(dbPath: string) {
   if (state.sqlite && state.dbPath === dbPath) {
-    return drizzle(state.sqlite, { schema })
+    return drizzle({ client: state.sqlite, schema })
   }
   state.dbPath = dbPath
   const sqlite = new BunDatabase(dbPath, { create: true })
@@ -134,7 +163,7 @@ export function getDb(dbPath: string) {
     const s = stmt.trim()
     if (s) sqlite.run(s)
   }
-  return drizzle(sqlite, { schema })
+  return drizzle({ client: sqlite, schema })
 }
 
 export function closeDb() {
