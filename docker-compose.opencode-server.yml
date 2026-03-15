@@ -21,43 +21,16 @@ services:
       dockerfile: packages/server/Dockerfile
     container_name: opencode-server
     restart: unless-stopped
+    env_file:
+      - .env.server
     ports:
       - "${SERVER_PORT:-3000}:3000"
     volumes:
       - server_data:/data
     environment:
-      # Banco de dados
+      # Paths fixos no container; demais variáveis vêm de env_file: .env.server
       DB_PATH: /data/server.db
       OPENCODE_DB_PATH: /data/opencode.db
-
-      # LLM — MEMORY_LLM_PROVIDER=anthropic|azure|openai|openrouter|heuristic; se vazio: Anthropic > OpenRouter > heurísticas
-      MEMORY_LLM_PROVIDER: ${MEMORY_LLM_PROVIDER:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5-20251001}
-      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
-      AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:-}
-      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
-      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-06-01}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.0-flash}
-
-      # Telegram — relatórios automáticos (opcional)
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
-
-      # GitHub — para pipeline de bounties (opcional)
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-
-      # Autenticação da API (opcional mas recomendado em produção)
-      API_TOKEN: ${API_TOKEN:-}
-
-      # CORS
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
-
-      # Qdrant para RAG. Com docker-compose.vps.yml na mesma rede: http://qdrant:6333
-      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
     depends_on:
       rabbitmq:
         condition: service_healthy

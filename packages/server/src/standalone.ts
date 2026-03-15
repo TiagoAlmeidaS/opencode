@@ -244,9 +244,13 @@ instance.startDaemon()
 
 const server = Bun.serve({ port: PORT, hostname: "0.0.0.0", fetch: app.fetch })
 
+const publicUrl = process.env.PUBLIC_URL?.replace(/\/$/, "") ?? null
+const base = publicUrl ?? `http://0.0.0.0:${PORT}`
+
 console.log(`\n🚀 OpenCode Server running at http://0.0.0.0:${PORT}`)
-console.log(`   Dashboard:  http://0.0.0.0:${PORT}/`)
-console.log(`   API:        http://0.0.0.0:${PORT}/api/`)
+console.log(`   Dashboard:  ${base}/`)
+console.log(`   API:        ${base}/api/`)
+if (!publicUrl) console.log(`   (Para ver a URL pública no log, defina PUBLIC_URL no .env.server, ex: http://76.13.96.99:3000)`)
 console.log(`   DB:         ${DB_PATH}`)
 console.log(`   LLM:        ${memoryLlmLabel}`)
 console.log(`   Auth:       ${API_TOKEN ? "Bearer token enabled" : "disabled"}`)
