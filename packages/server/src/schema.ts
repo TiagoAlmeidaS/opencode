@@ -256,3 +256,16 @@ export const memoryExtractions = sqliteTable("memory_extractions", {
   sourceUpdatedAt: integer("source_updated_at").notNull(),
   createdAt: integer("created_at").notNull(),
 })
+
+/** Discovery reports: project/venture idea analysis (project_discovery pipeline or manual enqueue). */
+export const discoveryReports = sqliteTable("discovery_reports", {
+  id: text("id").primaryKey(),
+  idea_text: text("idea_text").notNull(),
+  status: text("status").notNull().default("pending"),
+  report_md: text("report_md"),
+  report_json: text("report_json"),
+  session_id: text("session_id"),
+  job_id: text("job_id"),
+  created_at: integer("created_at").notNull(),
+  updated_at: integer("updated_at").notNull(),
+})

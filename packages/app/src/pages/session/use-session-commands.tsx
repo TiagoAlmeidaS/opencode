@@ -489,6 +489,17 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         disabled: !params.id || visibleUserMessages().length === 0,
         onSelect: () => dialog.show(() => <DialogFork />),
       }),
+      sessionCommand({
+        id: "discovery.analyze",
+        title: language.t("command.discovery.analyze"),
+        description: language.t("command.discovery.analyze.description"),
+        slash: "discovery",
+        onSelect: () => {
+          const text = "/project-discovery "
+          prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+          focusInput()
+        },
+      }),
       ...share,
     ]
   })

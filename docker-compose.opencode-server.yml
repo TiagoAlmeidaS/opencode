@@ -4,8 +4,10 @@
 # Uso:
 #   docker compose -f docker-compose.opencode-server.yml up -d
 #
-# Para integrar com a infra existente (Qdrant, Redis, Postgres):
+# Para integrar com a infra existente (Qdrant, Redis, Postgres) na mesma rede:
+#   docker compose -f docker-compose.vps.yml up -d   # cria jarvis-network
 #   docker compose -f docker-compose.vps.yml -f docker-compose.opencode-server.yml up -d
+# O OpenCode Server usa QDRANT_URL=http://qdrant:6333 (hostname do serviço na rede).
 #
 # Copie .env.server.example → .env.server e ajuste as variáveis antes de subir.
 # =============================================================================
@@ -39,7 +41,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.0-flash}
 
       # Telegram — relatórios automáticos (opcional)
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -54,8 +56,8 @@ services:
       # CORS
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
 
-      # Qdrant para RAG (conecta ao serviço da infra vps se disponível)
-      QDRANT_URL: ${QDRANT_URL:-}
+      # Qdrant para RAG. Com docker-compose.vps.yml na mesma rede: http://qdrant:6333
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
     depends_on:
       rabbitmq:
         condition: service_healthy

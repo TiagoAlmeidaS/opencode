@@ -1,0 +1,25 @@
+# Dependencies and build outputs
+node_modules
+**/node_modules
+.git
+.gitignore
+.dockerignore
+*.md
+!packages/server/**/*.md
+
+# IDE and env (don't ship secrets)
+.env
+.env.*
+!.env.server.example
+
+# Tests and coverage
+**/coverage
+**/.turbo
+**/dist
+**/build
+**/.next
+**/.cache
+
+# OS
+.DS_Store
+Thumbs.db

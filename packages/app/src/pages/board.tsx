@@ -68,6 +68,18 @@ interface MarketEntry {
   collectedAt: number
 }
 
+interface DiscoveryReport {
+  id: string
+  idea_text: string
+  status: "pending" | "done" | "failed"
+  report_md: string | null
+  report_json: string | null
+  session_id: string | null
+  job_id: string | null
+  created_at: number
+  updated_at: number
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const COLUMNS: { status: QueueItem["status"]; label: string; color: string }[] = [
@@ -118,7 +130,7 @@ export default function Board() {
     return url.replace(/\/$/, "") + "/server"
   }
 
-  const [tab, setTab] = createSignal<"queue" | "opportunities" | "niches" | "market">("queue")
+  const [tab, setTab] = createSignal<"queue" | "opportunities" | "niches" | "market" | "discovery">("queue")
   const [tick, setTick] = createSignal(0)
   const refresh = () => setTick((n) => n + 1)
   const interval = setInterval(refresh, 30_000)
@@ -163,6 +175,78 @@ export default function Board() {
     if (!res.ok) return [] as MarketEntry[]
     return (await res.json()) as MarketEntry[]
   })
+
+  // ── Discovery ─────────────────────────────────────────────────────────────
+  const [discoveryList] = createResource(tick, async () => {
+    const res = await fetch(`${apiBase()}/discovery?limit=100`)
+    if (!res.ok) return [] as DiscoveryReport[]
+    return (await res.json()) as DiscoveryReport[]
+  })
+
+  interface PipelineRow {
+    id: string
+    name: string
+    strategy: string
+    enabled: number
+  }
+  const [pipelines] = createResource(tick, async () => {
+    const res = await fetch(`${apiBase()}/pipelines`)
+    if (!res.ok) return [] as PipelineRow[]
+    return (await res.json()) as PipelineRow[]
+  })
+  const discoveryPipelineId = () => pipelines()?.find((p) => p.strategy === "project_discovery")?.id
+
+  const [discoveryFormOpen, setDiscoveryFormOpen] = createSignal(false)
+  const [discoveryIdea, setDiscoveryIdea] = createSignal("")
+  const [discoveryTriggerPipeline, setDiscoveryTriggerPipeline] = createSignal(false)
+  const [discoverySubmitting, setDiscoverySubmitting] = createSignal(false)
+  const [discoveryError, setDiscoveryError] = createSignal("")
+  const [discoveryViewId, setDiscoveryViewId] = createSignal<string | null>(null)
+  const [discoveryViewReport] = createResource(discoveryViewId, async (id) => {
+    if (!id) return null
+    const res = await fetch(`${apiBase()}/discovery/${id}`)
+    if (!res.ok) return null
+    return (await res.json()) as DiscoveryReport
+  })
+  const [discoveryRunning, setDiscoveryRunning] = createSignal(false)
+
+  async function submitDiscovery(e: Event) {
+    e.preventDefault()
+    setDiscoveryError("")
+    const text = discoveryIdea().trim()
+    if (!text) { setDiscoveryError("Enter an idea"); return }
+    setDiscoverySubmitting(true)
+    try {
+      const res = await fetch(`${apiBase()}/discovery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea_text: text, trigger_pipeline: discoveryTriggerPipeline() }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Request failed" }))
+        setDiscoveryError((err as { error?: string }).error ?? "Request failed")
+        return
+      }
+      setDiscoveryFormOpen(false)
+      setDiscoveryIdea("")
+      setDiscoveryTriggerPipeline(false)
+      refresh()
+    } catch (err) {
+      setDiscoveryError(err instanceof Error ? err.message : "Network error")
+    } finally { setDiscoverySubmitting(false) }
+  }
+
+  async function runDiscoveryPipeline() {
+    const id = discoveryPipelineId()
+    if (!id) return
+    setDiscoveryRunning(true)
+    try {
+      const res = await fetch(`${apiBase()}/pipelines/${id}/run`, { method: "POST" })
+      if (res.ok) refresh()
+    } finally { setDiscoveryRunning(false) }
+  }
+
+  const discoveryPendingCount = () => (discoveryList() ?? []).filter((r) => r.status === "pending").length
 
   // ── Add Activity Form ────────────────────────────────────────────────────
   const [showForm, setShowForm] = createSignal(false)
@@ -225,6 +309,7 @@ export default function Board() {
     { id: "opportunities" as const, label: "Opportunities" },
     { id: "niches" as const, label: "Niches" },
     { id: "market" as const, label: "Market Data" },
+    { id: "discovery" as const, label: "Discovery" },
   ]
 
   return (
@@ -259,6 +344,27 @@ export default function Board() {
             >
               + Add Activity
             </button>
+          </Show>
+          <Show when={tab() === "discovery"}>
+            <div class="flex items-center gap-2">
+              <Show when={discoveryPipelineId() && discoveryPendingCount() > 0}>
+                <button
+                  type="button"
+                  disabled={discoveryRunning()}
+                  class="px-3 py-1.5 rounded-md bg-surface-raised-base text-12-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors border border-border-base disabled:opacity-50"
+                  onClick={runDiscoveryPipeline}
+                >
+                  {discoveryRunning() ? "Running…" : "Process now"}
+                </button>
+              </Show>
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-md bg-surface-raised-base text-12-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors border border-border-base"
+                onClick={() => setDiscoveryFormOpen(true)}
+              >
+                + New idea
+              </button>
+            </div>
           </Show>
         </div>
       </div>
@@ -450,6 +556,62 @@ export default function Board() {
           </div>
         </Show>
 
+        {/* ── Discovery Tab ── */}
+        <Show when={tab() === "discovery"}>
+          <div class="flex flex-col h-full overflow-hidden">
+            <div class="flex-1 overflow-y-auto">
+              <table class="w-full text-12-regular">
+                <thead class="sticky top-0 bg-background-base border-b border-border-base">
+                  <tr>
+                    <th class="text-left px-4 py-2 text-text-weak font-medium">Idea</th>
+                    <th class="text-left px-3 py-2 text-text-weak font-medium w-24">Status</th>
+                    <th class="text-left px-3 py-2 text-text-weak font-medium w-36">Created</th>
+                    <th class="px-3 py-2 w-20"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={discoveryList() ?? []}>
+                    {(r) => (
+                      <tr class="border-b border-border-base hover:bg-surface-base transition-colors group">
+                        <td class="px-4 py-2 text-text-strong max-w-md">
+                          <span class="line-clamp-2">{r.idea_text}</span>
+                        </td>
+                        <td class="px-3 py-2">
+                          <span
+                            class={`px-2 py-0.5 rounded text-11-regular ${
+                              r.status === "done"
+                                ? "text-text-success bg-surface-raised-base"
+                                : r.status === "failed"
+                                  ? "text-text-critical bg-surface-raised-base"
+                                  : "text-text-warning bg-surface-raised-base"
+                            }`}
+                          >
+                            {r.status}
+                          </span>
+                        </td>
+                        <td class="px-3 py-2 text-text-weak">
+                          {new Date(r.created_at * 1000).toLocaleString()}
+                        </td>
+                        <td class="px-3 py-2">
+                          <Show when={r.report_md || r.status === "pending"}>
+                            <button
+                              type="button"
+                              class="text-11-regular text-text-info hover:underline opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={() => setDiscoveryViewId(r.id)}
+                            >
+                              {r.status === "done" ? "View" : r.status === "pending" ? "…" : "View"}
+                            </button>
+                          </Show>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Show>
+
         {/* ── Market Data Tab ── */}
         <Show when={tab() === "market"}>
           <div class="flex-1 overflow-y-auto h-full">
@@ -492,6 +654,90 @@ export default function Board() {
           </div>
         </Show>
       </div>
+
+      {/* Discovery View Modal */}
+      <Show when={discoveryViewId()}>
+        <div
+          class="fixed inset-0 bg-background-base/80 backdrop-blur-sm flex items-center justify-center z-50 p-6"
+          onClick={(e) => { if (e.target === e.currentTarget) setDiscoveryViewId(null) }}
+        >
+          <div class="bg-surface-base border border-border-base rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-lg">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-border-base shrink-0">
+              <h2 class="text-15-medium text-text-strong">Discovery report</h2>
+              <button type="button" class="text-text-weak hover:text-text-base" onClick={() => setDiscoveryViewId(null)}>✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 min-h-0">
+              <Show when={discoveryViewReport()} fallback={<p class="text-text-weak">Loading…</p>}>
+                {(report) => (
+                  <>
+                    <Show when={report().status === "pending"}>
+                      <p class="text-text-warning text-12-regular mb-4">Report is pending. Run the project_discovery pipeline to process it.</p>
+                    </Show>
+                    <Show when={report().idea_text}>
+                      <p class="text-12-regular text-text-weak mb-4 line-clamp-2">{report().idea_text}</p>
+                    </Show>
+                    <Show when={report().report_md}>
+                      <div class="prose prose-sm dark:prose-invert max-w-none text-text-base whitespace-pre-wrap font-sans">
+                        {report().report_md}
+                      </div>
+                    </Show>
+                  </>
+                )}
+              </Show>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Discovery New Idea Modal */}
+      <Show when={discoveryFormOpen()}>
+        <div
+          class="fixed inset-0 bg-background-base/80 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={(e) => { if (e.target === e.currentTarget) setDiscoveryFormOpen(false) }}
+        >
+          <form
+            class="bg-surface-base border border-border-base rounded-xl p-6 w-full max-w-lg flex flex-col gap-4 shadow-lg"
+            onSubmit={submitDiscovery}
+          >
+            <h2 class="text-15-medium text-text-strong">New discovery idea</h2>
+            <p class="text-12-regular text-text-weak">Enqueue a project/venture idea. Process it by running the project_discovery pipeline (or use the chat with /project-discovery).</p>
+            <label class="flex flex-col gap-1">
+              <span class="text-12-medium text-text-base">Idea</span>
+              <textarea
+                class="bg-surface-raised-base border border-border-base rounded-md px-3 py-2 text-13-regular text-text-strong focus:outline-none focus:border-border-focus-base resize-none"
+                rows={4}
+                placeholder="Describe your project or venture idea…"
+                value={discoveryIdea()}
+                onInput={(e) => setDiscoveryIdea(e.currentTarget.value)}
+              />
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={discoveryTriggerPipeline()}
+                onInput={(e) => setDiscoveryTriggerPipeline(e.currentTarget.checked)}
+                class="rounded border-border-base"
+              />
+              <span class="text-12-regular text-text-base">Process now (run pipeline after adding)</span>
+            </label>
+            <Show when={discoveryError()}>
+              <p class="text-12-regular text-text-critical">{discoveryError()}</p>
+            </Show>
+            <div class="flex items-center justify-end gap-3 pt-1">
+              <button type="button" class="px-4 py-2 text-13-regular text-text-weak hover:text-text-base transition-colors" onClick={() => setDiscoveryFormOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={discoverySubmitting()}
+                class="px-4 py-2 rounded-md bg-surface-raised-base border border-border-base text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors disabled:opacity-50"
+              >
+                {discoverySubmitting() ? "Adding…" : "Add"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Show>
 
       {/* Add Activity Modal */}
       <Show when={showForm()}>

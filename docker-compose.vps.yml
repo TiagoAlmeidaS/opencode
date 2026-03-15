@@ -4,7 +4,9 @@
 # Uso:  docker compose -f docker-compose.vps.yml up -d
 #
 # Serviços: Qdrant (vetores), Redis (cache), Postgres (dados), Adminer (UI).
-# Daemon: use docker-compose.homeserver.yml separadamente.
+# Rede jarvis-network: compartilhada com docker-compose.opencode-server.yml.
+# Para subir OpenCode na mesma rede: subir este compose primeiro, depois:
+#   docker compose -f docker-compose.vps.yml -f docker-compose.opencode-server.yml up -d
 # =============================================================================
 
 version: '3.8'

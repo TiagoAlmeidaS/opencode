@@ -21,7 +21,20 @@
       "Bash(powershell.exe -File - <<'EOF'\nSet-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'\n$result = & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\n$result | ForEach-Object { Write-Output $_.ToString\\(\\) }\nEOF)",
       "Bash(powershell.exe -File - <<'EOF'\nSet-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'\n$result = & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\n$result | ForEach-Object { Write-Output $_.ToString\\(\\) }\nWrite-Output \"Exit code: $LASTEXITCODE\"\nEOF)",
       "Bash(powershell.exe -File - <<'EOF'\nSet-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'\n$result = & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\n$result | ForEach-Object { Write-Output $_.ToString\\(\\) }\nWrite-Output \"Exit: $LASTEXITCODE\"\nEOF)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Read(//mnt/e/projects/ia/opencode/packages/**)",
+      "Bash(~/.bun/bin/bun run:*)",
+      "Bash(cmd.exe /c \"cd /d E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server && bun run typecheck 2>&1\" | head -100)",
+      "Bash(cmd.exe /c \"cd /d E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server && bun run typecheck\" 2>&1)",
+      "Bash(powershell.exe -Command \"Set-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'; bun run typecheck 2>&1\")",
+      "Bash(powershell.exe -Command \"Set-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'; & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck 2>&1\")",
+      "Bash(powershell.exe -Command \"Set-Location 'E:\\\\projects\\\\ia\\\\opencode\\\\packages\\\\server'; & 'C:\\\\Users\\\\tiago\\\\.bun\\\\bin\\\\bun.exe' run typecheck\" 2>&1; echo \"EXIT: $?\")",
+      "Bash(powershell.exe -Command \"Set-Location 'E:\\\\projects\\\\ia\\\\opencode'; git status --short\" 2>&1)",
+      "Bash(powershell.exe -Command @\"\nSet-Location 'E:\\\\projects\\\\ia\\\\opencode'\ngit add .env.server.example packages/server/Dockerfile packages/server/public/dashboard.html packages/server/src/activities/index.ts packages/server/src/db.ts packages/server/src/routes.ts packages/server/src/schema.ts packages/server/src/activities/classify-workspace-strategy.ts packages/server/src/activities/create-dedicated-repo.ts packages/server/src/activities/generate-gitcoin-proposal.ts packages/server/src/activities/send-freelance-email.ts packages/server/src/activities/submit-github-pr.ts packages/server/src/activities/verify-submission-outcome.ts\ngit status --short\n\"@ 2>&1)",
+      "Bash(powershell.exe -Command \"Set-Location 'E:\\\\projects\\\\ia\\\\opencode'; git add .env.server.example packages/server/Dockerfile packages/server/public/dashboard.html packages/server/src/activities/index.ts packages/server/src/db.ts packages/server/src/routes.ts packages/server/src/schema.ts packages/server/src/activities/classify-workspace-strategy.ts packages/server/src/activities/create-dedicated-repo.ts packages/server/src/activities/generate-gitcoin-proposal.ts packages/server/src/activities/send-freelance-email.ts packages/server/src/activities/submit-github-pr.ts packages/server/src/activities/verify-submission-outcome.ts; git status --short\" 2>&1)",
+      "Bash(powershell.exe -Command \"Set-Location 'E:\\\\projects\\\\ia\\\\opencode'; git push origin homolog\" 2>&1)",
+      "Bash(cmd.exe /c \"set PATH=C:\\\\Users\\\\tiago\\\\.bun\\\\bin;%PATH% && cd /d E:\\\\projects\\\\ia\\\\opencode && git push origin homolog\" 2>&1)",
+      "Bash(cmd.exe /c \"set PATH=C:\\\\Users\\\\tiago\\\\.bun\\\\bin;%PATH% && cd /d E:\\\\projects\\\\ia\\\\opencode && git push origin homolog 2>&1\")"
     ]
   }
 }

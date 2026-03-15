@@ -25,6 +25,7 @@
 - **Deploy OpenCode Server na VPS:** [runbooks/runbook-deploy-opencode-server-vps.md](runbooks/runbook-deploy-opencode-server-vps.md) — procedimento com systemd ou Docker.
 - **Plugins Telegram e WhatsApp:** [features/plugins-telegram-whatsapp.md](features/plugins-telegram-whatsapp.md) — configuração e env; variáveis em [features/env-vars.md](features/env-vars.md).
 - **Goals e proposals:** [runbooks/runbook-daemon-goals.md](runbooks/runbook-daemon-goals.md) — uso de metas e executor de propostas.
+- **Project Discovery:** [features/project-discovery-validator.md](features/project-discovery-validator.md) — validação de ideias de projeto no chat; [runbooks/runbook-project-discovery.md](runbooks/runbook-project-discovery.md) — prática e formato do relatório.
 
 ## Padrão de documentação
 

@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions } from "./schema"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, discoveryReports } from "./schema"
 import { eq, desc, sql, gte, and, asc } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
@@ -12,6 +12,10 @@ import { setRagConfig, search } from "./memory/rag"
 export interface ServerRoutesRagOpts {
   memoryEmbed?: (text: string) => Promise<number[]>
   qdrantUrl?: string
+  /** Run a pipeline once by id (used by POST /server/pipelines/:id/run). */
+  runPipelineNow?: (pipelineId: string) => Promise<{ jobId: string; ok: boolean; error?: string }>
+  /** Run the first enabled pipeline with the given strategy (e.g. project_discovery). */
+  runPipelineByStrategy?: (strategy: string) => Promise<{ jobId: string; ok: boolean; error?: string }>
 }
 
 export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
@@ -122,6 +126,15 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     await db.update(daemonPipelines).set({ enabled: 0, updatedAt: now }).where(eq(daemonPipelines.id, id))
     const [row] = await db.select().from(daemonPipelines).where(eq(daemonPipelines.id, id))
     return c.json(row ?? { id })
+  })
+
+  app.post("/pipelines/:id/run", async (c) => {
+    const id = c.req.param("id")
+    const run = ragOpts?.runPipelineNow
+    if (!run) return c.json({ error: "Pipeline run not available (daemon context)" }, 503)
+    const result = await run(id)
+    if (!result.ok) return c.json({ error: result.error ?? "Run failed", jobId: result.jobId }, 400)
+    return c.json({ jobId: result.jobId, ok: true }, 202)
   })
 
   app.get("/jobs", async (c) => {
@@ -542,6 +555,51 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     if (!q) return c.json({ chunks: [] })
     const chunks = await search(q, limit)
     return c.json({ chunks })
+  })
+
+  // ── Discovery (project/venture idea validation) ─────────────────────────────
+  app.get("/discovery", async (c) => {
+    const status = c.req.query("status")
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10))
+    let rows = await db
+      .select()
+      .from(discoveryReports)
+      .orderBy(desc(discoveryReports.created_at))
+      .limit(limit)
+      .offset(offset)
+    if (status) rows = rows.filter((r) => r.status === status)
+    return c.json(rows)
+  })
+
+  app.post("/discovery", zValidator("json", z.object({
+    idea_text: z.string().min(1),
+    session_id: z.string().optional(),
+    trigger_pipeline: z.boolean().optional(),
+  })), async (c) => {
+    const body = c.req.valid("json")
+    const id = ulid()
+    const now = Math.floor(Date.now() / 1000)
+    await db.insert(discoveryReports).values({
+      id,
+      idea_text: body.idea_text,
+      status: "pending",
+      session_id: body.session_id ?? null,
+      created_at: now,
+      updated_at: now,
+    })
+    if (body.trigger_pipeline && ragOpts?.runPipelineByStrategy) {
+      await ragOpts.runPipelineByStrategy("project_discovery").catch(() => {})
+    }
+    const [row] = await db.select().from(discoveryReports).where(eq(discoveryReports.id, id))
+    return c.json(row!, 201)
+  })
+
+  app.get("/discovery/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(discoveryReports).where(eq(discoveryReports.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    return c.json(row)
   })
 
   return app

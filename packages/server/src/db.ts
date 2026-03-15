@@ -121,6 +121,19 @@ CREATE TABLE IF NOT EXISTS memory_extractions (
 );
 CREATE INDEX IF NOT EXISTS idx_memory_extractions_session ON memory_extractions(session_id);
 CREATE INDEX IF NOT EXISTS idx_memory_extractions_source_updated ON memory_extractions(source_updated_at DESC);
+CREATE TABLE IF NOT EXISTS discovery_reports (
+  id TEXT PRIMARY KEY,
+  idea_text TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  report_md TEXT,
+  report_json TEXT,
+  session_id TEXT,
+  job_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_reports_status ON discovery_reports(status);
+CREATE INDEX IF NOT EXISTS idx_discovery_reports_created ON discovery_reports(created_at DESC);
 CREATE TABLE IF NOT EXISTS daemon_queue (
   id TEXT PRIMARY KEY,
   activity_type TEXT NOT NULL,

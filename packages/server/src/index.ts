@@ -3,10 +3,13 @@
  * Use with `opencode serve --daemon` or config `server.daemon: true`.
  */
 import path from "path"
+import { eq, and } from "drizzle-orm"
 import { getDb, closeDb, getDefaultDbPath, type ServerDb } from "./db"
 import { createScheduler } from "./scheduler"
 import { createQueueProcessor } from "./queue"
 import { ServerRoutes } from "./routes"
+import { runJob, type RunJobExtra } from "./runner"
+import { daemonPipelines } from "./schema"
 import "./pipelines"
 import "./activities"
 import type { MemoryLlmOptions } from "./types"
@@ -48,23 +51,42 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
   const db = getDb(opts.dbPath)
   const opencodeDbPath =
     opts.opencodeDbPath ?? path.join(path.dirname(opts.dbPath), "opencode.db")
+  const runJobExtra: RunJobExtra = {
+    opencodeDbPath,
+    memoryLlm: opts.memoryLlm,
+    embed: opts.memoryEmbed,
+  }
   const scheduler = createScheduler({
     db,
     tickIntervalMs: opts.tickIntervalMs,
-    runJobExtra: {
-      opencodeDbPath,
-      memoryLlm: opts.memoryLlm,
-      embed: opts.memoryEmbed,
-    },
+    runJobExtra,
   })
   const queue = createQueueProcessor({
     db,
     memoryLlm: opts.memoryLlm,
     embed: opts.memoryEmbed,
   })
+
+  const runPipelineNow = async (pipelineId: string) => {
+    const [row] = await db.select().from(daemonPipelines).where(eq(daemonPipelines.id, pipelineId))
+    if (!row) return { jobId: "", ok: false, error: "Not found" }
+    return runJob(db, pipelineId, row, runJobExtra)
+  }
+  const runPipelineByStrategy = async (strategy: string) => {
+    const [row] = await db
+      .select()
+      .from(daemonPipelines)
+      .where(and(eq(daemonPipelines.strategy, strategy), eq(daemonPipelines.enabled, 1)))
+      .limit(1)
+    if (!row) return { jobId: "", ok: false, error: `No enabled pipeline with strategy: ${strategy}` }
+    return runJob(db, row.id, row, runJobExtra)
+  }
+
   const routes = ServerRoutes(db, {
     memoryEmbed: opts.memoryEmbed,
     qdrantUrl: opts.qdrantUrl,
+    runPipelineNow,
+    runPipelineByStrategy,
   })
 
   return {
