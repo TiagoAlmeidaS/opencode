@@ -589,9 +589,31 @@ export namespace Server {
         },
       )
       .all("/*", async (c) => {
-        const path = c.req.path
-
-        const response = await proxy(`https://app.opencode.ai${path}`, {
+        const appDist = process.env.OPENCODE_APP_DIST
+        if (appDist) {
+          const reqPath = c.req.path === "/" ? "index.html" : c.req.path.replace(/^\//, "")
+          const safe = path.resolve(appDist, path.normalize(reqPath))
+          const root = path.resolve(appDist)
+          if (safe !== root && !safe.startsWith(root + path.sep)) return c.notFound()
+          const file = Bun.file(safe)
+          const exists = await file.exists()
+          const fallback = exists ? file : Bun.file(path.join(appDist, "index.html"))
+          if (!(await fallback.exists())) return c.notFound()
+          const contentType =
+            safe.endsWith(".html") ? "text/html"
+            : safe.endsWith(".js") ? "application/javascript"
+            : safe.endsWith(".css") ? "text/css"
+            : safe.endsWith(".json") ? "application/json"
+            : safe.endsWith(".ico") ? "image/x-icon"
+            : safe.endsWith(".svg") ? "image/svg+xml"
+            : safe.endsWith(".woff2") ? "font/woff2"
+            : undefined
+          return new Response(fallback, {
+            headers: contentType ? { "Content-Type": contentType } : undefined,
+          })
+        }
+        const pathReq = c.req.path
+        const response = await proxy(`https://app.opencode.ai${pathReq}`, {
           ...c.req,
           headers: {
             ...c.req.raw.headers,

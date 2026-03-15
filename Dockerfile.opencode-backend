@@ -1,0 +1,22 @@
+# Backend OpenCode (serve --daemon) — API de sessões/chat + rotas /server
+# Com build do app: a interface de chat é servida na mesma origem (porta 4096).
+FROM oven/bun:1.2-alpine AS app-build
+WORKDIR /app
+COPY . .
+RUN bun install --frozen-lockfile
+RUN bun run --filter @opencode-ai/app build
+RUN mv packages/app/dist /app/dist-app
+
+# ── Runtime ─────────────────────────────────────────────────────────────────
+FROM oven/bun:1.2-alpine
+WORKDIR /app
+COPY . .
+RUN bun install --frozen-lockfile
+
+COPY --from=app-build /app/dist-app /app/app-dist
+
+ENV XDG_DATA_HOME=/data
+ENV OPENCODE_APP_DIST=/app/app-dist
+EXPOSE 4096
+
+CMD ["bun", "run", "--conditions=browser", "packages/opencode/src/index.ts", "serve", "--daemon", "--port", "4096", "--hostname", "0.0.0.0"]

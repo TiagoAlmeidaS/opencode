@@ -1,8 +1,13 @@
 # =============================================================================
-# OpenCode Server — Painel autônomo para VPS
+# OpenCode Server — Painel autônomo para VPS (chat + queue/discovery)
 # =============================================================================
 # Uso:
 #   docker compose -f docker-compose.opencode-server.yml up -d
+#
+# Um único comando sobe:
+#   - Chat + Board:  http://<host>:4096  (interface integrada, mesma origem que a API)
+#   - Dashboard/API: http://<host>:3000  (queue, discovery, atividades)
+#   - RabbitMQ:      portas 5672 (AMQP), 15672 (management)
 #
 # Para integrar com a infra existente (Qdrant, Redis, Postgres) na mesma rede:
 #   docker compose -f docker-compose.vps.yml up -d   # cria jarvis-network
@@ -13,6 +18,22 @@
 # =============================================================================
 
 services:
+
+  # ── Backend OpenCode (chat + /server) — serve a interface de chat na mesma URL ─
+  opencode-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.opencode-backend
+    container_name: opencode-backend
+    restart: unless-stopped
+    ports:
+      - "${OPENCODE_BACKEND_PORT:-4096}:4096"
+    environment:
+      XDG_DATA_HOME: /data
+    volumes:
+      - opencode_backend_data:/data
+    networks:
+      - opencode-net
 
   # ── OpenCode Server ──────────────────────────────────────────────────────────
   opencode-server:
@@ -89,6 +110,8 @@ services:
 
 volumes:
   server_data:
+    driver: local
+  opencode_backend_data:
     driver: local
   rabbitmq_data:
     driver: local
