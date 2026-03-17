@@ -312,6 +312,10 @@ export function getDb(dbPath: string) {
   const alterMigrations = [
     "ALTER TABLE opp_opportunities ADD COLUMN workspace_strategy TEXT",
     "ALTER TABLE opp_opportunities ADD COLUMN workspace_repo_url TEXT",
+    "ALTER TABLE opp_telegram_reports ADD COLUMN digest TEXT",
+    "ALTER TABLE opp_telegram_reports ADD COLUMN opp_count INTEGER",
+    "ALTER TABLE opp_telegram_reports ADD COLUMN market_count INTEGER",
+    "ALTER TABLE opp_telegram_reports ADD COLUMN queue_item_id TEXT",
   ]
   for (const stmt of alterMigrations) {
     try { sqlite.run(stmt) } catch { /* column already exists */ }

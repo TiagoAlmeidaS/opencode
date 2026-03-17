@@ -225,6 +225,11 @@ export const oppTelegramReports = sqliteTable("opp_telegram_reports", {
   opportunityIds: text("opportunity_ids"),       // JSON array
   sentAt: integer("sent_at"),
   createdAt: integer("created_at").notNull(),
+  // Ciclo de atividade — o que foi analisado
+  digest: text("digest"),                       // texto do relatório enviado
+  oppCount: integer("opp_count"),               // qtd oportunidades analisadas
+  marketCount: integer("market_count"),          // qtd ativos de mercado
+  queueItemId: text("queue_item_id"),           // link para daemon_queue (duração, triggered_by)
 })
 
 export const oppSubmissions = sqliteTable("opp_submissions", {

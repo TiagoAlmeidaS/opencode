@@ -33,6 +33,8 @@ The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /pro
 | GET | `/server/proposals` | List proposals |
 | GET | `/server/dashboard` | Dashboard metrics (optional `?days=30`) |
 | GET | `/server/logs` | List daemon logs (optional `?pipeline_id=`, `?limit=100`) |
+| GET | `/server/reports` | List relatórios Telegram enviados (ciclo de atividade). Query: `?limit=50`, `?report_type=daily|weekly`. Retorna digest, opp_count, market_count, durationMs. |
+| GET | `/server/reports/:id` | Detalhe de um relatório (digest completo, metadados, duração). |
 | GET | `/server/memory/retrieve` | RAG retrieval: `?q=...&limit=5` — returns `{ chunks: { text, source, score }[] }`. Requires Qdrant and memoryEmbed. |
 | GET | `/server/discovery` | List discovery reports (optional `?status=`, `?limit=`, `?offset=`) |
 | POST | `/server/discovery` | Enqueue a discovery idea (body: `idea_text`, `session_id?`, `trigger_pipeline?`). Creates a row with status `pending`. If `trigger_pipeline: true`, runs the first enabled pipeline with strategy `project_discovery` (when the daemon provides run callbacks). |

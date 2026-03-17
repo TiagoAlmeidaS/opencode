@@ -159,6 +159,10 @@ Inclua: 📊 Resumo (2 frases) | 🏆 Top 3 oportunidades | 💹 Destaque de mer
       contentHash,
       sentAt: now,
       createdAt: now,
+      digest,
+      oppCount: opps.length,
+      marketCount: marketMoves.length,
+      queueItemId: ctx.queueItemId,
     })
 
     return {

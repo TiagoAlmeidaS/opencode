@@ -17,12 +17,19 @@ Procedimento para diagnosticar e corrigir problemas com pipelines agendados (sch
 
 ## Pipelines padrão (seed automático)
 
-Na primeira inicialização, o servidor cria automaticamente dois pipelines se não existirem:
+Na primeira inicialização, o servidor cria automaticamente os pipelines abaixo se não existirem:
 
-| Strategy | Nome | Cron |
-|----------|------|------|
-| `daily-opportunity-report` | Relatório Diário | `0 8 * * *` (8h diariamente) |
-| `weekly-opportunity-report` | Relatório Semanal | `0 9 * * 1` (segunda às 9h) |
+| Strategy | Nome | Cron | Função |
+|----------|------|------|--------|
+| `opportunity-collector` | Coletor de Oportunidades | `0 */4 * * *` (a cada 4h) | Busca bounties GitHub, Gitcoin, freelance → `opp_opportunities` |
+| `market-data-collector` | Coletor de Mercado | `0 * * * *` (a cada hora) | Preços cripto via CoinGecko → `opp_market_data` |
+| `opportunity-analyst` | Analista de Oportunidades | `30 */2 * * *` (a cada 2h) | Pontua oportunidades "new" → status "scored" |
+| `daily-opportunity-report` | Relatório Diário | `0 8 * * *` (8h diariamente) | Lê dados e envia digest ao Telegram |
+| `weekly-opportunity-report` | Relatório Semanal | `0 9 * * 1` (segunda às 9h) | Idem, período 7 dias |
+
+**Ordem do fluxo:** Coletor → Analista → Relatório. O relatório **só tem conteúdo** se os coletores tiverem rodado antes. Sem `opportunity-collector` e `market-data-collector`, o relatório fica vazio.
+
+**GITHUB_TOKEN** — necessário para `scan-github-bounties`. Sem ele, a coleta de bounties GitHub falha (Gitcoin e freelance podem funcionar).
 
 Para desativar o seed: `SEED_DEFAULT_PIPELINES=false`.
 
@@ -39,7 +46,17 @@ Para desativar o seed: `SEED_DEFAULT_PIPELINES=false`.
 | **Rede `jarvis-network` inexistente** (Docker) | `docker compose -f docker-compose.scheduler.yml up` falha | Remover `jarvis-network` do compose ou criar: `docker network create jarvis-network` |
 | **RabbitMQ não healthy** | Container `opencode-rabbitmq` não passa no healthcheck | Verificar logs; RabbitMQ é dependência do `opencode-server` |
 
-### 2. Relatórios não chegam no Telegram
+### 2. Relatório vazio ("Nenhuma oportunidade", "Sem dados de mercado")
+
+| Causa | Como verificar | Solução |
+|-------|----------------|---------|
+| **Coletores não rodaram** | Dashboard → Activity Queue: ausência de `scan-github-bounties`, `market-data-crypto` | Criar pipelines `opportunity-collector` e `market-data-collector`; rodar manualmente ou aguardar o cron |
+| **Oportunidades não pontuadas** | `opp_opportunities` tem status `new` mas não `scored` | Rodar pipeline `opportunity-analyst` |
+| **GITHUB_TOKEN ausente** | Logs: erro 401 ou "Bad credentials" em scan-github-bounties | Configurar `GITHUB_TOKEN` no `.env.server` |
+
+O relatório **não dispara a CLI** nem faz coleta — ele apenas **lê** `opp_opportunities` e `opp_market_data`. Os dados vêm dos pipelines de coleta.
+
+### 3. Relatórios não chegam no Telegram
 
 | Causa | Como verificar | Solução |
 |-------|----------------|---------|
@@ -98,6 +115,27 @@ Cron sugerido: `0 9 * * 1` = toda segunda às 9h.
 curl -X POST http://localhost:3000/api/pipelines/{id}/run
 ```
 
+### Popular dados para o relatório (coletores)
+
+Se o relatório está vazio, execute na ordem:
+
+```bash
+# 1. Coletor de oportunidades (GitHub, Gitcoin, freelance)
+curl -s http://localhost:3000/api/pipelines | jq '.[] | select(.strategy=="opportunity-collector") | .id'
+# Use o id retornado:
+curl -X POST http://localhost:3000/api/pipelines/{ID_COLLECTOR}/run
+
+# 2. Coletor de mercado (cripto)
+curl -s http://localhost:3000/api/pipelines | jq '.[] | select(.strategy=="market-data-collector") | .id'
+curl -X POST http://localhost:3000/api/pipelines/{ID_MARKET}/run
+
+# 3. Analista (pontua oportunidades)
+curl -s http://localhost:3000/api/pipelines | jq '.[] | select(.strategy=="opportunity-analyst") | .id'
+curl -X POST http://localhost:3000/api/pipelines/{ID_ANALYST}/run
+```
+
+Aguarde a fila processar (Dashboard → Activity Queue). Depois execute o relatório diário ou aguarde o próximo cron.
+
 ### Verificar fila de activities
 
 ```bash
@@ -112,6 +150,16 @@ Formato: `minuto hora dia_mês mês dia_semana`
 - `0 8 * * *` = 8h todo dia
 - `0 9 * * 1` = 9h toda segunda (0=domingo, 1=segunda, …)
 - `*/15 * * * *` = a cada 15 minutos
+
+## OpenRouter — modelo válido
+
+Se usar `MEMORY_LLM_PROVIDER=openrouter`, o `OPENROUTER_MODEL` deve ser um ID válido. Exemplos:
+
+- `openrouter/free` — tier gratuito (limitado)
+- `google/gemini-2.0-flash-001` — Gemini 2.0 Flash (~$0.10/M)
+- `google/gemini-2.0-flash-exp` — experimental
+
+**Não use** `google/gemini-2.0-flash` (sem sufixo) — retorna 400. Use `google/gemini-2.0-flash-001`.
 
 ## Variáveis de ambiente para relatórios
 
@@ -137,6 +185,7 @@ O painel em `/` ou `/dashboard` exibe:
 
 - **Activity Queue** — itens da fila (pending, running, completed, failed). Use "+ Add Activity" para enfileirar manualmente.
 - **Pipelines** — pipelines cadastrados e seus crons. Use "▶ Run" para executar manualmente.
+- **Reports** — ciclo de atividade: relatórios enviados ao Telegram. Mostra data, tipo, qtd oportunidades/mercado, duração e preview. Use "Ver" para ver o relatório completo.
 - **Opportunities, Niches, Market, Submissions, Discovery, Specs** — demais abas.
 
 ### API Token

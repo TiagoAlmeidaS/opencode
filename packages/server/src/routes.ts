@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, discoveryReports, projectSpecs } from "./schema"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs } from "./schema"
 import { eq, desc, sql, gte, and, asc } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
@@ -310,6 +310,49 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       displayName: a.displayName,
       description: a.description,
     })))
+  })
+
+  // ── Reports (ciclo de atividade) ────────────────────────────────────────────
+  app.get("/reports", async (c) => {
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    const reportType = c.req.query("report_type")
+    const rows = await db
+      .select()
+      .from(oppTelegramReports)
+      .orderBy(desc(oppTelegramReports.createdAt))
+      .limit(limit)
+    const list = reportType ? rows.filter((r) => r.reportType === reportType) : rows
+    // Enriquecer com duração da queue item quando existir
+    const enriched = await Promise.all(
+      list.map(async (r) => {
+        if (!r.queueItemId) return r
+        const [q] = await db
+          .select({ durationMs: daemonQueue.durationMs, triggeredBy: daemonQueue.triggeredBy })
+          .from(daemonQueue)
+          .where(eq(daemonQueue.id, r.queueItemId))
+          .limit(1)
+        return { ...r, durationMs: q?.durationMs ?? null, triggeredBy: q?.triggeredBy ?? null }
+      })
+    )
+    return c.json(enriched)
+  })
+
+  app.get("/reports/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(oppTelegramReports).where(eq(oppTelegramReports.id, id)).limit(1)
+    if (!row) return c.json({ error: "Not found" }, 404)
+    let durationMs: number | null = null
+    let triggeredBy: string | null = null
+    if (row.queueItemId) {
+      const [q] = await db
+        .select({ durationMs: daemonQueue.durationMs, triggeredBy: daemonQueue.triggeredBy })
+        .from(daemonQueue)
+        .where(eq(daemonQueue.id, row.queueItemId))
+        .limit(1)
+      durationMs = q?.durationMs ?? null
+      triggeredBy = q?.triggeredBy ?? null
+    }
+    return c.json({ ...row, durationMs, triggeredBy })
   })
 
   // ── Opportunities ──────────────────────────────────────────────────────────

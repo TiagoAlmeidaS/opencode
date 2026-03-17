@@ -154,6 +154,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="queue">Activity Queue</button>
       <button class="tab" data-tab="pipelines">Pipelines</button>
+      <button class="tab" data-tab="reports">Reports</button>
       <button class="tab" data-tab="opportunities">Opportunities</button>
       <button class="tab" data-tab="niches">Niches</button>
       <button class="tab" data-tab="market">Market Data</button>
@@ -486,6 +487,76 @@ function runFirstPipeline() {
     if (p) runPipeline(p.id)
     else alert('Nenhum pipeline habilitado')
   }).catch(e => alert('Erro: ' + e.message))
+}
+
+// ── Reports (ciclo de atividade) ───────────────────────────────────────────────
+function durationStr(ms) {
+  if (!ms) return '—'
+  if (ms < 1000) return ms + 'ms'
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's'
+  return Math.floor(ms / 60000) + 'm'
+}
+async function renderReports() {
+  let reports
+  try {
+    reports = await apiFetch('/reports?limit=50')
+  } catch (e) {
+    document.getElementById('main-content').innerHTML = `<div class="empty" style="color:var(--danger)">${esc(e.message)}</div>`
+    return
+  }
+  if (!reports.length) {
+    document.getElementById('main-content').innerHTML = '<div class="empty">Nenhum relatório enviado ainda. Execute o pipeline daily-opportunity-report ou weekly-opportunity-report.</div>'
+    return
+  }
+  const rows = reports.map(r => {
+    const date = r.sentAt ? new Date(r.sentAt * 1000).toLocaleString() : (r.createdAt ? new Date(r.createdAt * 1000).toLocaleString() : '—')
+    const oppCount = r.oppCount ?? '—'
+    const marketCount = r.marketCount ?? '—'
+    const dur = durationStr(r.durationMs)
+    const digestPreview = r.digest ? (r.digest.slice(0, 80) + (r.digest.length > 80 ? '…' : '')) : ''
+    return `<tr>
+      <td style="color:var(--text-weak);white-space:nowrap">${date}</td>
+      <td><span class="badge" style="color:var(--info)">${esc(r.reportType)}</span></td>
+      <td style="text-align:center">${oppCount}</td>
+      <td style="text-align:center">${marketCount}</td>
+      <td style="text-align:center">${dur}</td>
+      <td style="max-width:200px;color:var(--text-weak);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(digestPreview)}">${esc(digestPreview)}</td>
+      <td><button class="link-btn view" onclick="viewReport('${r.id}')">Ver</button></td>
+    </tr>`
+  }).join('')
+  document.getElementById('main-content').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Enviado</th><th>Tipo</th><th>Opps</th><th>Mercado</th><th>Duração</th><th>Preview</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+}
+async function viewReport(id) {
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.style.display = 'flex'
+  overlay.innerHTML = '<div class="modal" style="max-width:720px;max-height:85vh"><div style="display:flex;justify-content:space-between;align-items:center"><h2>Relatório</h2><button class="btn btn-sm" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div><div id="report-detail-content" style="flex:1;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:12px;white-space:pre-wrap;line-height:1.6;max-height:60vh">Carregando…</div></div>'
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove() })
+  document.body.appendChild(overlay)
+  try {
+    const r = await apiFetch('/reports/' + id)
+    const date = r.sentAt ? new Date(r.sentAt * 1000).toLocaleString() : (r.createdAt ? new Date(r.createdAt * 1000).toLocaleString() : '—')
+    const meta = [
+      `📅 Enviado: ${date}`,
+      `📋 Tipo: ${r.reportType}`,
+      r.oppCount != null ? `🏆 Oportunidades analisadas: ${r.oppCount}` : '',
+      r.marketCount != null ? `💹 Ativos de mercado: ${r.marketCount}` : '',
+      r.durationMs != null ? `⏱ Duração: ${durationStr(r.durationMs)}` : '',
+      r.triggeredBy ? `🔗 Disparado por: ${r.triggeredBy}` : '',
+    ].filter(Boolean).join('\n')
+    const content = document.getElementById('report-detail-content')
+    content.textContent = meta + '\n\n---\n\n' + (r.digest || '[Sem conteúdo]')
+  } catch (e) {
+    document.getElementById('report-detail-content').textContent = 'Erro: ' + e.message
+  }
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────────
@@ -1095,6 +1166,7 @@ async function refresh() {
   await loadStatus()
   if      (currentTab === 'queue')         await renderQueue()
   else if (currentTab === 'pipelines')    await renderPipelines()
+  else if (currentTab === 'reports')     await renderReports()
   else if (currentTab === 'opportunities') await renderOpportunities()
   else if (currentTab === 'niches')        await renderNiches()
   else if (currentTab === 'market')        await renderMarket()

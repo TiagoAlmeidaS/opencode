@@ -14,6 +14,26 @@ const DEFAULTS: Array<{
   scheduleCron: string
   configJson?: Record<string, unknown>
 }> = [
+  // Coleta de dados — precisa rodar ANTES do relatório ter conteúdo
+  {
+    strategy: "opportunity-collector",
+    name: "Coletor de Oportunidades",
+    scheduleCron: "0 */4 * * *", // a cada 4h
+    configJson: { sources: ["github-bounties", "gitcoin-bounties", "freelance-jobs"], limit_per_source: 30 },
+  },
+  {
+    strategy: "market-data-collector",
+    name: "Coletor de Mercado",
+    scheduleCron: "0 * * * *", // a cada hora
+    configJson: {},
+  },
+  {
+    strategy: "opportunity-analyst",
+    name: "Analista de Oportunidades",
+    scheduleCron: "30 */2 * * *", // a cada 2h (offset 30min)
+    configJson: { batch_size: 20 },
+  },
+  // Relatórios — consomem os dados coletados
   {
     strategy: "daily-opportunity-report",
     name: "Relatório Diário",
