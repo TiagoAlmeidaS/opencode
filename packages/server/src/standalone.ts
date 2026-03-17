@@ -18,6 +18,7 @@
  *   OPENROUTER_MODEL        Modelo OpenRouter (default: openrouter/free)
  *   TELEGRAM_BOT_TOKEN      Token do bot Telegram
  *   TELEGRAM_CHAT_ID        Chat ID para relatórios
+ *   SEED_DEFAULT_PIPELINES  false para desativar criação automática de pipelines (default: true)
  *   QDRANT_URL              URL do Qdrant para RAG (opcional)
  *   API_TOKEN               Token de autenticação da API (opcional)
  *   CORS_ORIGIN             Origem permitida para CORS (default: *)

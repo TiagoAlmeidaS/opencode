@@ -10,6 +10,7 @@ import { createQueueProcessor } from "./queue"
 import { ServerRoutes } from "./routes"
 import { runJob, type RunJobExtra } from "./runner"
 import { daemonPipelines } from "./schema"
+import { seedDefaultPipelines } from "./seed-pipelines"
 import "./pipelines"
 import "./activities"
 import type { MemoryLlmOptions } from "./types"
@@ -96,8 +97,12 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
     queue,
     startDaemon() {
       if (opts.daemon) {
-        scheduler.start()
-        queue.start()
+        seedDefaultPipelines(db)
+          .catch((err) => console.error("[opencode-server] seed pipelines error:", err))
+          .finally(() => {
+            scheduler.start()
+            queue.start()
+          })
       }
     },
     stopDaemon() {
