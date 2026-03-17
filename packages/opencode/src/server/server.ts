@@ -256,6 +256,33 @@ export namespace Server {
       .route("/permission", PermissionRoutes())
       .route("/question", QuestionRoutes())
       .route("/provider", ProviderRoutes())
+      .use(async (c, next) => {
+        const appDist = process.env.OPENCODE_APP_DIST
+        if (!appDist) return next()
+        const p = c.req.path
+        const apiPrefixes = ["/global", "/auth", "/doc", "/project", "/pty", "/config", "/experimental", "/session", "/permission", "/question", "/provider", "/mcp", "/tui", "/server", "/path", "/event", "/instance", "/openapi"]
+        if (apiPrefixes.some((prefix) => p === prefix || p.startsWith(prefix + "/"))) return next()
+        const reqPath = p === "/" ? "index.html" : p.replace(/^\//, "")
+        const safe = path.resolve(appDist, path.normalize(reqPath))
+        const root = path.resolve(appDist)
+        if (safe !== root && !safe.startsWith(root + path.sep)) return next()
+        const file = Bun.file(safe)
+        const exists = await file.exists()
+        const fallback = exists ? file : Bun.file(path.join(appDist, "index.html"))
+        if (!(await fallback.exists())) return next()
+        const contentType =
+          safe.endsWith(".html") ? "text/html"
+          : safe.endsWith(".js") ? "application/javascript"
+          : safe.endsWith(".css") ? "text/css"
+          : safe.endsWith(".json") ? "application/json"
+          : safe.endsWith(".ico") ? "image/x-icon"
+          : safe.endsWith(".svg") ? "image/svg+xml"
+          : safe.endsWith(".woff2") ? "font/woff2"
+          : undefined
+        return new Response(fallback, {
+          headers: contentType ? { "Content-Type": contentType } : undefined,
+        })
+      })
       .route("/", FileRoutes())
       .route("/mcp", McpRoutes())
       .route("/tui", TuiRoutes())

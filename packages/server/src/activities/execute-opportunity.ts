@@ -4,13 +4,15 @@
  * Atualiza o status da oportunidade para 'applied' ao iniciar e 'won'/'ignored' ao final.
  */
 import { eq } from "drizzle-orm"
-import { oppOpportunities } from "../schema"
+import { oppOpportunities, projectSpecs } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
+import { compileSpecToPrompt } from "../spec-compiler"
 
 interface ExecuteOpportunityInput {
   opportunity_id: string
   cwd?: string           // diretório de trabalho (default: process.cwd())
   dry_run?: boolean      // se true, apenas loga sem executar
+  spec_id?: string       // optional spec for domain context
 }
 
 export const executeOpportunityActivity: Activity = {
@@ -46,7 +48,13 @@ export const executeOpportunityActivity: Activity = {
       }
     }
 
-    const task = buildTask(opp)
+    let specContext = ""
+    if (input.spec_id) {
+      const [spec] = await ctx.db.select().from(projectSpecs).where(eq(projectSpecs.id, input.spec_id)).limit(1)
+      if (spec) specContext = compileSpecToPrompt(spec) + "\n\n---\n\n"
+    }
+
+    const task = specContext + buildTask(opp)
 
     try {
       const output = await ctx.spawnOpenCode(task, cwd)

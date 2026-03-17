@@ -177,7 +177,11 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       if (!directory || directory === sdk.directory) return current()
       return globalSync.child(directory)
     }
-    const absolute = (path: string) => (current()[0].path.directory + "/" + path).replace("//", "/")
+    const absolute = (path: string) => {
+      const store = current()?.[0]
+      if (!store?.path?.directory) return path
+      return (store.path.directory + "/" + path).replace("//", "/")
+    }
     const messagePageSize = 200
     const inflight = new Map<string, Promise<void>>()
     const inflightDiff = new Map<string, Promise<void>>()
@@ -193,7 +197,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     })
 
     const getSession = (sessionID: string) => {
-      const store = current()[0]
+      const store = current()?.[0]
+      if (!store) return undefined
       const match = Binary.search(store.session, sessionID, (s) => s.id)
       if (match.found) return store.session[match.index]
       return undefined
@@ -363,22 +368,24 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         })
     }
 
+    const store = () => current()?.[0]
     return {
       get data() {
-        return current()[0]
+        return store()
       },
       get set(): Setter {
-        return current()[1]
+        return current()?.[1]!
       },
       get status() {
-        return current()[0].status
+        return store()?.status ?? "loading"
       },
       get ready() {
-        return current()[0].status !== "loading"
+        return store()?.status !== "loading"
       },
       get project() {
-        const store = current()[0]
-        const match = Binary.search(globalSync.data.project, store.project, (p) => p.id)
+        const s = store()
+        if (!s) return undefined
+        const match = Binary.search(globalSync.data.project, s.project, (p) => p.id)
         if (match.found) return globalSync.data.project[match.index]
         return undefined
       },
@@ -540,9 +547,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
         },
         history: {
           more(sessionID: string) {
-            const store = current()[0]
+            const s = current()?.[0]
+            if (!s) return false
             const key = keyFor(sdk.directory, sessionID)
-            if (store.message[sessionID] === undefined) return false
+            if (s.message[sessionID] === undefined) return false
             if (meta.limit[key] === undefined) return false
             if (meta.complete[key]) return false
             return !!meta.cursor[key]
@@ -592,7 +600,10 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             setStore("session", reconcile(sessions, { key: "id" }))
           })
         },
-        more: createMemo(() => current()[0].session.length >= current()[0].limit),
+        more: createMemo(() => {
+          const s = current()?.[0]
+          return s ? s.session.length >= s.limit : false
+        }),
         archive: async (sessionID: string) => {
           const directory = sdk.directory
           const client = sdk.client
@@ -608,7 +619,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       },
       absolute,
       get directory() {
-        return current()[0].path.directory
+        return store()?.path?.directory ?? ""
       },
     }
   },

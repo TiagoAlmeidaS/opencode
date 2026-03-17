@@ -318,16 +318,18 @@ export const SortableProject = (props: {
     return `${kind} : ${name}`
   }
 
-  const projectStore = createMemo(() => globalSync.child(props.project.worktree, { bootstrap: false })[0])
-  const projectSessions = createMemo(() => sortedRootSessions(projectStore(), props.sortNow()))
-  const projectChildren = createMemo(() => childMapByParent(projectStore().session))
+  const projectStore = createMemo(() => globalSync.child(props.project.worktree, { bootstrap: false })?.[0])
+  const fallbackStore = () =>
+    projectStore() ?? { session: [], path: { directory: props.project.worktree } }
+  const projectSessions = createMemo(() => sortedRootSessions(fallbackStore(), props.sortNow()))
+  const projectChildren = createMemo(() => childMapByParent(fallbackStore().session))
   const workspaceSessions = (directory: string) => {
-    const [data] = globalSync.child(directory, { bootstrap: false })
-    return sortedRootSessions(data, props.sortNow())
+    const data = globalSync.child(directory, { bootstrap: false })?.[0]
+    return data ? sortedRootSessions(data, props.sortNow()) : []
   }
   const workspaceChildren = (directory: string) => {
-    const [data] = globalSync.child(directory, { bootstrap: false })
-    return childMapByParent(data.session)
+    const data = globalSync.child(directory, { bootstrap: false })?.[0]
+    return data ? childMapByParent(data.session) : new Map<string, string[]>()
   }
   const tile = () => (
     <ProjectTile

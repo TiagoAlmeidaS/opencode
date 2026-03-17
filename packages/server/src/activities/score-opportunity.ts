@@ -1,10 +1,12 @@
 import { ulid } from "ulid"
 import { eq } from "drizzle-orm"
-import { oppOpportunities, oppAnalyses } from "../schema"
+import { oppOpportunities, oppAnalyses, projectSpecs } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
+import { compileSpecToPrompt } from "../spec-compiler"
 
 interface ScoreOpportunityInput {
   opportunity_id: string
+  spec_id?: string
 }
 
 interface ScoreResult {
@@ -117,8 +119,14 @@ export const scoreOpportunityActivity: Activity = {
     const prompt = buildPrompt(opp)
     const now = Math.floor(Date.now() / 1000)
 
+    let specPrefix = ""
+    if (input.spec_id) {
+      const [spec] = await ctx.db.select().from(projectSpecs).where(eq(projectSpecs.id, input.spec_id)).limit(1)
+      if (spec) specPrefix = compileSpecToPrompt(spec) + "\n\n---\n\n"
+    }
+
     const rawOutput = await ctx.memoryLlm({
-      system: SCORE_SYSTEM,
+      system: specPrefix + SCORE_SYSTEM,
       prompt,
       maxTokens: 512,
     })

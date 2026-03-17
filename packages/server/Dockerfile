@@ -6,8 +6,9 @@ WORKDIR /app
 # Copia o monorepo (workspaces são exigidos pelo root package.json)
 COPY . .
 
-# Instala somente as dependências do pacote server
-RUN bun install --frozen-lockfile --filter @opencode-ai/server
+# Instala somente as dependências do pacote server. Retry em caso de ConnectionRefused
+# (ex.: GitHub ou rede instável no build).
+RUN for i in 1 2 3; do bun install --filter @opencode-ai/server && break; sleep 30; done
 
 # ── Runtime stage ──────────────────────────────────────────────────────────────
 FROM oven/bun:1.2-alpine AS runtime

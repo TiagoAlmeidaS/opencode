@@ -3,8 +3,9 @@
  */
 import type { Pipeline } from "../types"
 import { registerPipeline } from "../registry"
-import { discoveryReports } from "../schema"
+import { discoveryReports, projectSpecs } from "../schema"
 import { eq, asc } from "drizzle-orm"
+import { compileSpecToPrompt } from "../spec-compiler"
 
 const DISCOVERY_SYSTEM = `You are performing a Project Discovery analysis. Produce a structured Markdown report that validates the project or venture idea.
 
@@ -74,9 +75,20 @@ const projectDiscovery: Pipeline = {
 
     for (const row of pending) {
       try {
+        let specFragment = ""
+        if (row.report_json) {
+          try {
+            const meta = JSON.parse(row.report_json) as { spec_id?: string }
+            if (meta.spec_id) {
+              const [spec] = await db.select().from(projectSpecs).where(eq(projectSpecs.id, meta.spec_id))
+              if (spec) specFragment = compileSpecToPrompt(spec) + "\n\n---\n\n"
+            }
+          } catch { /* malformed report_json — skip */ }
+        }
+
         const reportMd = await ctx.memoryLlm({
           prompt: `Analyze the following project/venture idea and produce the structured discovery report.\n\nIdea:\n${row.idea_text}`,
-          system: DISCOVERY_SYSTEM,
+          system: specFragment + DISCOVERY_SYSTEM,
           maxTokens: 4000,
         })
         await db

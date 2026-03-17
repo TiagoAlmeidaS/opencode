@@ -269,3 +269,18 @@ export const discoveryReports = sqliteTable("discovery_reports", {
   created_at: integer("created_at").notNull(),
   updated_at: integer("updated_at").notNull(),
 })
+
+/** Project specs: structured domain context for AI agents (ontology, contracts, constraints, architecture). */
+export const projectSpecs = sqliteTable("project_specs", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  ontologyJson: text("ontology_json"),       // JSON: [{term, definition, canonical_name}]
+  contracts: text("contracts"),              // TypeScript interfaces (freeform)
+  constraintsJson: text("constraints_json"), // JSON: [{rule, reason}]
+  architecture: text("architecture"),        // Mermaid diagram code
+  context: text("context"),                  // Background business context
+  linkedProjectId: text("linked_project_id"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})

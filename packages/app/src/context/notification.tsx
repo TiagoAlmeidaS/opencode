@@ -207,7 +207,8 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     const lookup = async (directory: string, sessionID?: string) => {
       if (!sessionID) return undefined
-      const [syncStore] = globalSync.child(directory, { bootstrap: false })
+      const syncStore = globalSync.child(directory, { bootstrap: false })?.[0]
+      if (!syncStore) return undefined
       const match = Binary.search(syncStore.session, sessionID, (s) => s.id)
       if (match.found) return syncStore.session[match.index]
       return globalSDK.client.session

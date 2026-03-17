@@ -2,12 +2,13 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, discoveryReports } from "./schema"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, discoveryReports, projectSpecs } from "./schema"
 import { eq, desc, sql, gte, and, asc } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
 import { listActivities } from "./activity"
 import { setRagConfig, search } from "./memory/rag"
+import { compileSpecToPrompt } from "./spec-compiler"
 
 export interface ServerRoutesRagOpts {
   memoryEmbed?: (text: string) => Promise<number[]>
@@ -360,7 +361,7 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
 
   app.post("/opportunities/:id/execute", async (c) => {
     const id = c.req.param("id")
-    const body = await c.req.json().catch(() => ({})) as { cwd?: string; dry_run?: boolean }
+    const body = await c.req.json().catch(() => ({})) as { cwd?: string; dry_run?: boolean; spec_id?: string }
     const now = Math.floor(Date.now() / 1000)
     const queueId = ulid()
     await db.insert(daemonQueue).values({
@@ -368,7 +369,7 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       activityType: "execute-opportunity",
       status: "pending",
       priority: 3,
-      inputJson: JSON.stringify({ opportunity_id: id, cwd: body.cwd, dry_run: body.dry_run }),
+      inputJson: JSON.stringify({ opportunity_id: id, cwd: body.cwd, dry_run: body.dry_run, spec_id: body.spec_id }),
       triggeredBy: "manual",
       createdAt: now,
     })
@@ -576,15 +577,18 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     idea_text: z.string().min(1),
     session_id: z.string().optional(),
     trigger_pipeline: z.boolean().optional(),
+    spec_id: z.string().optional(),
   })), async (c) => {
     const body = c.req.valid("json")
     const id = ulid()
     const now = Math.floor(Date.now() / 1000)
+    const reportJson = body.spec_id ? JSON.stringify({ spec_id: body.spec_id }) : null
     await db.insert(discoveryReports).values({
       id,
       idea_text: body.idea_text,
       status: "pending",
       session_id: body.session_id ?? null,
+      report_json: reportJson,
       created_at: now,
       updated_at: now,
     })
@@ -600,6 +604,101 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     const [row] = await db.select().from(discoveryReports).where(eq(discoveryReports.id, id))
     if (!row) return c.json({ error: "Not found" }, 404)
     return c.json(row)
+  })
+
+  // ── Project Specs ─────────────────────────────────────────────────────────
+  app.get("/specs", async (c) => {
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    const offset = Math.max(0, parseInt(c.req.query("offset") ?? "0", 10))
+    const rows = await db
+      .select()
+      .from(projectSpecs)
+      .orderBy(desc(projectSpecs.createdAt))
+      .limit(limit)
+      .offset(offset)
+    return c.json(rows)
+  })
+
+  app.post("/specs", zValidator("json", z.object({
+    name: z.string().min(1),
+    description: z.string().optional(),
+    ontologyJson: z.string().optional(),
+    contracts: z.string().optional(),
+    constraintsJson: z.string().optional(),
+    architecture: z.string().optional(),
+    context: z.string().optional(),
+    linkedProjectId: z.string().optional(),
+  })), async (c) => {
+    const body = c.req.valid("json")
+    const id = ulid()
+    const now = Math.floor(Date.now() / 1000)
+    await db.insert(projectSpecs).values({
+      id,
+      name: body.name,
+      description: body.description ?? null,
+      ontologyJson: body.ontologyJson ?? null,
+      contracts: body.contracts ?? null,
+      constraintsJson: body.constraintsJson ?? null,
+      architecture: body.architecture ?? null,
+      context: body.context ?? null,
+      linkedProjectId: body.linkedProjectId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    const [row] = await db.select().from(projectSpecs).where(eq(projectSpecs.id, id))
+    return c.json(row!, 201)
+  })
+
+  app.get("/specs/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(projectSpecs).where(eq(projectSpecs.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    return c.json(row)
+  })
+
+  app.patch("/specs/:id", zValidator("json", z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().nullable().optional(),
+    ontologyJson: z.string().nullable().optional(),
+    contracts: z.string().nullable().optional(),
+    constraintsJson: z.string().nullable().optional(),
+    architecture: z.string().nullable().optional(),
+    context: z.string().nullable().optional(),
+    linkedProjectId: z.string().nullable().optional(),
+  })), async (c) => {
+    const id = c.req.param("id")
+    const body = c.req.valid("json")
+    const now = Math.floor(Date.now() / 1000)
+    const [existing] = await db.select().from(projectSpecs).where(eq(projectSpecs.id, id))
+    if (!existing) return c.json({ error: "Not found" }, 404)
+    const updates: Record<string, unknown> = { updatedAt: now }
+    if (body.name !== undefined) updates.name = body.name
+    if (body.description !== undefined) updates.description = body.description
+    if (body.ontologyJson !== undefined) updates.ontologyJson = body.ontologyJson
+    if (body.contracts !== undefined) updates.contracts = body.contracts
+    if (body.constraintsJson !== undefined) updates.constraintsJson = body.constraintsJson
+    if (body.architecture !== undefined) updates.architecture = body.architecture
+    if (body.context !== undefined) updates.context = body.context
+    if (body.linkedProjectId !== undefined) updates.linkedProjectId = body.linkedProjectId
+    await db.update(projectSpecs).set(updates).where(eq(projectSpecs.id, id))
+    const [row] = await db.select().from(projectSpecs).where(eq(projectSpecs.id, id))
+    return c.json(row!)
+  })
+
+  app.delete("/specs/:id", async (c) => {
+    const id = c.req.param("id")
+    const [existing] = await db.select().from(projectSpecs).where(eq(projectSpecs.id, id))
+    if (!existing) return c.json({ error: "Not found" }, 404)
+    await db.delete(projectSpecs).where(eq(projectSpecs.id, id))
+    return c.json({ deleted: true })
+  })
+
+  app.get("/specs/:id/prompt", async (c) => {
+    const id = c.req.param("id")
+    const [spec] = await db.select().from(projectSpecs).where(eq(projectSpecs.id, id))
+    if (!spec) return c.json({ error: "Not found" }, 404)
+    const prompt = compileSpecToPrompt(spec)
+    return c.json({ spec_id: id, prompt })
   })
 
   return app

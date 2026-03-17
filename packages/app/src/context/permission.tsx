@@ -54,7 +54,9 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     const permissionsEnabled = createMemo(() => {
       const directory = decode64(params.dir)
       if (!directory) return false
-      const [store] = globalSync.child(directory)
+      const childResult = globalSync.child(directory)
+      const store = childResult?.[0]
+      if (!store) return false
       return hasPermissionPromptRules(store.config.permission)
     })
 
@@ -86,7 +88,8 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       if (!ready()) return
       const directory = decode64(params.dir)
       if (!directory) return
-      const [childStore] = globalSync.child(directory)
+      const childStore = globalSync.child(directory)?.[0]
+      if (!childStore) return
       const perm = childStore.config.permission
       if (typeof perm === "string" && perm === "allow") {
         const key = directoryAcceptKey(directory)
@@ -139,7 +142,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     }
 
     function isAutoAccepting(sessionID: string, directory?: string) {
-      const session = directory ? globalSync.child(directory, { bootstrap: false })[0].session : []
+      const session = directory ? globalSync.child(directory, { bootstrap: false })?.[0]?.session ?? [] : []
       return autoRespondsPermission(store.autoAccept, session, { sessionID }, directory)
     }
 
@@ -148,7 +151,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     }
 
     function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
-      const session = directory ? globalSync.child(directory, { bootstrap: false })[0].session : []
+      const session = directory ? globalSync.child(directory, { bootstrap: false })?.[0]?.session ?? [] : []
       return autoRespondsPermission(store.autoAccept, session, permission, directory)
     }
 
@@ -268,7 +271,8 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       },
       permissionsEnabled,
       isPermissionAllowAll(directory: string) {
-        const [childStore] = globalSync.child(directory)
+        const childStore = globalSync.child(directory)?.[0]
+        if (!childStore) return false
         const perm = childStore.config.permission
         return typeof perm === "string" && perm === "allow"
       },

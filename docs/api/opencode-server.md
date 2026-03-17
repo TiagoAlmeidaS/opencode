@@ -13,6 +13,8 @@ When enabled, the same process that serves the OpenCode API also runs the schedu
 
 All Server endpoints are under **`/server`**. Base URL example: `http://localhost:4096/server`.
 
+The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /project/add-by-url`). For adding projects by repository URL and `GITHUB_TOKEN`, see [runbook-app-backend-requirements](../runbooks/runbook-app-backend-requirements.md#adicionar-repositório-por-url).
+
 ## Endpoints
 
 | Method | Path | Description |

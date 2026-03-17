@@ -3,6 +3,7 @@ import { describeRoute, validator } from "hono-openapi"
 import { resolver } from "hono-openapi"
 import { Instance } from "../../project/instance"
 import { Project } from "../../project/project"
+import { addProjectByUrl } from "../../project/add-by-url"
 import z from "zod"
 import { ProjectID } from "../../project/schema"
 import { errors } from "../error"
@@ -11,6 +12,50 @@ import { InstanceBootstrap } from "../../project/bootstrap"
 
 export const ProjectRoutes = lazy(() =>
   new Hono()
+    .post(
+      "/add-by-url",
+      describeRoute({
+        summary: "Add project by repository URL",
+        description:
+          "Clone a GitHub repository and register it as a project. Requires GITHUB_TOKEN. Idempotent if the project already exists.",
+        operationId: "project.addByUrl",
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: resolver(
+                z.object({
+                  url: z.string().url().describe("GitHub repository URL (e.g. https://github.com/owner/repo)"),
+                  branch: z.string().optional().describe("Branch to clone (default: default branch)"),
+                }),
+              ),
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Project information",
+            content: {
+              "application/json": {
+                schema: resolver(Project.Info),
+              },
+            },
+          },
+          ...errors(400),
+        },
+      }),
+      validator("json", z.object({ url: z.string().url(), branch: z.string().optional() })),
+      async (c) => {
+        const body = c.req.valid("json")
+        try {
+          const project = await addProjectByUrl({ url: body.url, branch: body.branch })
+          return c.json(project, 200)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          if (msg.includes("GITHUB_TOKEN") || msg.includes("URL") || msg.includes("GitHub")) return c.json({ error: msg }, 400)
+          return c.json({ error: msg }, 500)
+        }
+      },
+    )
     .get(
       "/",
       describeRoute({

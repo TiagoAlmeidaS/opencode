@@ -574,16 +574,17 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => ({ ready: pageReady(), layoutReady: layoutReady(), dir: params.dir, list: layout.projects.list() }),
+      () => ({ ready: pageReady(), layoutReady: layoutReady(), dir: params.dir, list: layout.projects.list() ?? [] }),
       (value) => {
         if (!value.ready) return
         if (!value.layoutReady) return
         if (!state.autoselect) return
         if (value.dir) return
 
+        const list = value.list ?? []
         const last = server.projects.last()
 
-        if (value.list.length === 0) {
+        if (list.length === 0) {
           if (!last) return
           setState("autoselect", false)
           openProject(last, false)
@@ -591,7 +592,7 @@ export default function Layout(props: ParentProps) {
           return
         }
 
-        const next = value.list.find((project) => project.worktree === last) ?? value.list[0]
+        const next = list.find((project) => project.worktree === last) ?? list[0]
         if (!next) return
         setState("autoselect", false)
         openProject(next.worktree, false)
@@ -1184,8 +1185,8 @@ export default function Layout(props: ParentProps) {
     )
     if (known) return known[0]
 
-    const [child] = globalSync.child(directory, { bootstrap: false })
-    const id = child.project
+    const child = globalSync.child(directory, { bootstrap: false })?.[0]
+    const id = child?.project
     if (!id) return directory
 
     const meta = globalSync.data.project.find((item) => item.id === id)
@@ -1277,10 +1278,11 @@ export default function Layout(props: ParentProps) {
       clearLastProjectSession(root)
     }
 
-    const latest = latestRootSession(
-      dirs.map((item) => globalSync.child(item, { bootstrap: false })[0]),
-      Date.now(),
-    )
+    const stores = dirs.flatMap((item) => {
+      const c = globalSync.child(item, { bootstrap: false })?.[0]
+      return c ? [c] : []
+    })
+    const latest = latestRootSession(stores, Date.now())
     if (latest && (await openSession(latest))) {
       return
     }
@@ -1407,7 +1409,8 @@ export default function Layout(props: ParentProps) {
         for (const directory of result) {
           openProject(directory, false)
         }
-        navigateToProject(result[0])
+        const first = result[0]
+        if (first) navigateToProject(first)
       } else if (result) {
         openProject(result)
       }

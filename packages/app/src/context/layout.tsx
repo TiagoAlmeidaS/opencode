@@ -385,7 +385,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     }
 
     function enrich(project: { worktree: string; expanded: boolean }) {
-      const [childStore] = globalSync.child(project.worktree, { bootstrap: false })
+      const childResult = globalSync.child(project.worktree, { bootstrap: false })
+      const childStore = childResult?.[0]
+      if (!childStore) {
+        const metadata = globalSync.data.project.find((x) => x.worktree === project.worktree)
+        return { ...(metadata ?? {}), ...project, icon: { url: metadata?.icon?.url, override: undefined, color: metadata?.icon?.color } }
+      }
       const projectID = childStore.project
       const metadata = projectID
         ? globalSync.data.project.find((x) => x.id === projectID)
@@ -478,7 +483,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       })
     })
 
-    const enriched = createMemo(() => server.projects.list().map(enrich))
+    const enriched = createMemo(() => (server.projects.list() ?? []).map(enrich))
     const list = createMemo(() => {
       const projects = enriched()
       return projects.map((project) => {

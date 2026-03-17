@@ -3,15 +3,20 @@
 FROM oven/bun:1.2-alpine AS app-build
 WORKDIR /app
 COPY . .
-RUN bun install --frozen-lockfile
+# Sem --frozen-lockfile: no Docker o catalog drizzle-orm@1.0.0-beta.16-ea816b6 às vezes falha ao resolver
+# Retry + cache rm: IntegrityCheckFailed em pacotes opcionais (ex.: @cloudflare/workerd-*) é conhecido no Bun em Docker
+RUN bun pm cache rm 2>/dev/null || true; for i in 1 2 3; do bun install && break; sleep 20; done
 RUN bun run --filter @opencode-ai/app build
 RUN mv packages/app/dist /app/dist-app
 
 # ── Runtime ─────────────────────────────────────────────────────────────────
 FROM oven/bun:1.2-alpine
+RUN apk add --no-cache git
 WORKDIR /app
+
+# Copia código-fonte e node_modules já resolvidos do stage anterior (sem reinstalar)
 COPY . .
-RUN bun install --frozen-lockfile
+COPY --from=app-build /app/node_modules ./node_modules
 
 COPY --from=app-build /app/dist-app /app/app-dist
 

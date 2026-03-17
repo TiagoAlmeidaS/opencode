@@ -271,6 +271,20 @@ CREATE TABLE IF NOT EXISTS opp_submissions (
 );
 CREATE INDEX IF NOT EXISTS idx_submissions_opp    ON opp_submissions(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_status ON opp_submissions(status, created_at DESC);
+CREATE TABLE IF NOT EXISTS project_specs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  ontology_json TEXT,
+  contracts TEXT,
+  constraints_json TEXT,
+  architecture TEXT,
+  context TEXT,
+  linked_project_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_project_specs_created ON project_specs(created_at DESC);
 `
 
 let state: { sqlite: BunDatabase | undefined; dbPath: string | null } = {

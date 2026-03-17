@@ -8,6 +8,7 @@ import {
   Match,
 } from "solid-js"
 import { useServer } from "@/context/server"
+import { DialogSpecEditor } from "@/components/dialog-spec-editor"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,20 @@ interface DiscoveryReport {
   updated_at: number
 }
 
+interface ProjectSpec {
+  id: string
+  name: string
+  description: string | null
+  ontologyJson: string | null
+  contracts: string | null
+  constraintsJson: string | null
+  architecture: string | null
+  context: string | null
+  linkedProjectId: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const COLUMNS: { status: QueueItem["status"]; label: string; color: string }[] = [
@@ -130,7 +145,7 @@ export default function Board() {
     return url.replace(/\/$/, "") + "/server"
   }
 
-  const [tab, setTab] = createSignal<"queue" | "opportunities" | "niches" | "market" | "discovery">("queue")
+  const [tab, setTab] = createSignal<"queue" | "opportunities" | "niches" | "market" | "discovery" | "specs">("queue")
   const [tick, setTick] = createSignal(0)
   const refresh = () => setTick((n) => n + 1)
   const interval = setInterval(refresh, 30_000)
@@ -198,6 +213,7 @@ export default function Board() {
 
   const [discoveryFormOpen, setDiscoveryFormOpen] = createSignal(false)
   const [discoveryIdea, setDiscoveryIdea] = createSignal("")
+  const [discoverySpecId, setDiscoverySpecId] = createSignal("")
   const [discoveryTriggerPipeline, setDiscoveryTriggerPipeline] = createSignal(false)
   const [discoverySubmitting, setDiscoverySubmitting] = createSignal(false)
   const [discoveryError, setDiscoveryError] = createSignal("")
@@ -220,7 +236,11 @@ export default function Board() {
       const res = await fetch(`${apiBase()}/discovery`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea_text: text, trigger_pipeline: discoveryTriggerPipeline() }),
+        body: JSON.stringify({
+          idea_text: text,
+          trigger_pipeline: discoveryTriggerPipeline(),
+          ...(discoverySpecId() ? { spec_id: discoverySpecId() } : {}),
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Request failed" }))
@@ -229,6 +249,7 @@ export default function Board() {
       }
       setDiscoveryFormOpen(false)
       setDiscoveryIdea("")
+      setDiscoverySpecId("")
       setDiscoveryTriggerPipeline(false)
       refresh()
     } catch (err) {
@@ -247,6 +268,28 @@ export default function Board() {
   }
 
   const discoveryPendingCount = () => (discoveryList() ?? []).filter((r) => r.status === "pending").length
+
+  // ── Specs ─────────────────────────────────────────────────────────────────
+  const [specsList] = createResource(tick, async () => {
+    const res = await fetch(`${apiBase()}/specs?limit=100`)
+    if (!res.ok) return [] as ProjectSpec[]
+    return (await res.json()) as ProjectSpec[]
+  })
+
+  const [specsFormOpen, setSpecsFormOpen] = createSignal(false)
+  const [editingSpec, setEditingSpec] = createSignal<ProjectSpec | undefined>(undefined)
+  const [specPreviewId, setSpecPreviewId] = createSignal<string | null>(null)
+  const [specPreview] = createResource(specPreviewId, async (id) => {
+    if (!id) return null
+    const res = await fetch(`${apiBase()}/specs/${id}/prompt`)
+    if (!res.ok) return null
+    return (await res.json()) as { spec_id: string; prompt: string }
+  })
+
+  async function deleteSpec(id: string) {
+    await fetch(`${apiBase()}/specs/${id}`, { method: "DELETE" })
+    refresh()
+  }
 
   // ── Add Activity Form ────────────────────────────────────────────────────
   const [showForm, setShowForm] = createSignal(false)
@@ -310,6 +353,7 @@ export default function Board() {
     { id: "niches" as const, label: "Niches" },
     { id: "market" as const, label: "Market Data" },
     { id: "discovery" as const, label: "Discovery" },
+    { id: "specs" as const, label: "Specs" },
   ]
 
   return (
@@ -365,6 +409,15 @@ export default function Board() {
                 + New idea
               </button>
             </div>
+          </Show>
+          <Show when={tab() === "specs"}>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-md bg-surface-raised-base text-12-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors border border-border-base"
+              onClick={() => { setEditingSpec(undefined); setSpecsFormOpen(true) }}
+            >
+              + New Spec
+            </button>
           </Show>
         </div>
       </div>
@@ -653,6 +706,69 @@ export default function Board() {
             </table>
           </div>
         </Show>
+
+        {/* ── Specs Tab ── */}
+        <Show when={tab() === "specs"}>
+          <div class="flex flex-col h-full overflow-hidden">
+            <div class="flex-1 overflow-y-auto">
+              <Show when={(specsList() ?? []).length === 0}>
+                <p class="px-6 py-8 text-12-regular text-text-weak">
+                  No specs yet. Create one to provide domain context to AI pipelines.
+                </p>
+              </Show>
+              <Show when={(specsList() ?? []).length > 0}>
+                <table class="w-full text-12-regular">
+                  <thead class="sticky top-0 bg-background-base border-b border-border-base">
+                    <tr>
+                      <th class="text-left px-4 py-2 text-text-weak font-medium">Name</th>
+                      <th class="text-left px-3 py-2 text-text-weak font-medium">Description</th>
+                      <th class="text-left px-3 py-2 text-text-weak font-medium w-36">Created</th>
+                      <th class="px-3 py-2 w-36"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={specsList() ?? []}>
+                      {(spec) => (
+                        <tr class="border-b border-border-base hover:bg-surface-base transition-colors group">
+                          <td class="px-4 py-2 text-text-strong font-medium">{spec.name}</td>
+                          <td class="px-3 py-2 text-text-weak max-w-xs truncate">{spec.description ?? "—"}</td>
+                          <td class="px-3 py-2 text-text-weak">
+                            {new Date(spec.createdAt * 1000).toLocaleDateString()}
+                          </td>
+                          <td class="px-3 py-2">
+                            <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                class="text-11-regular text-text-info hover:underline"
+                                onClick={() => setSpecPreviewId(spec.id)}
+                              >
+                                Preview
+                              </button>
+                              <button
+                                type="button"
+                                class="text-11-regular text-text-weak hover:underline"
+                                onClick={() => { setEditingSpec(spec); setSpecsFormOpen(true) }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                class="text-11-regular text-text-weak hover:text-text-critical hover:underline"
+                                onClick={() => deleteSpec(spec.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </Show>
+            </div>
+          </div>
+        </Show>
       </div>
 
       {/* Discovery View Modal */}
@@ -711,6 +827,19 @@ export default function Board() {
                 onInput={(e) => setDiscoveryIdea(e.currentTarget.value)}
               />
             </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-12-medium text-text-base">Spec <span class="text-text-weak font-normal">(optional)</span></span>
+              <select
+                class="bg-surface-raised-base border border-border-base rounded-md px-3 py-2 text-13-regular text-text-strong focus:outline-none focus:border-border-focus-base"
+                value={discoverySpecId()}
+                onChange={(e) => setDiscoverySpecId(e.currentTarget.value)}
+              >
+                <option value="">— no spec —</option>
+                <For each={specsList() ?? []}>
+                  {(spec) => <option value={spec.id}>{spec.name}</option>}
+                </For>
+              </select>
+            </label>
             <label class="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -737,6 +866,40 @@ export default function Board() {
             </div>
           </form>
         </div>
+      </Show>
+
+      {/* Spec Prompt Preview Modal */}
+      <Show when={specPreviewId()}>
+        <div
+          class="fixed inset-0 bg-background-base/80 backdrop-blur-sm flex items-center justify-center z-50 p-6"
+          onClick={(e) => { if (e.target === e.currentTarget) setSpecPreviewId(null) }}
+        >
+          <div class="bg-surface-base border border-border-base rounded-xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-lg">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-border-base shrink-0">
+              <h2 class="text-15-medium text-text-strong">Compiled Prompt</h2>
+              <button type="button" class="text-text-weak hover:text-text-base" onClick={() => setSpecPreviewId(null)}>✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 min-h-0">
+              <Show when={specPreview()} fallback={<p class="text-text-weak text-12-regular">Loading…</p>}>
+                {(preview) => (
+                  <pre class="text-12-regular font-mono text-text-base whitespace-pre-wrap break-words">
+                    {preview().prompt}
+                  </pre>
+                )}
+              </Show>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Spec Editor Dialog */}
+      <Show when={specsFormOpen()}>
+        <DialogSpecEditor
+          apiBase={apiBase()}
+          spec={editingSpec()}
+          onClose={() => { setSpecsFormOpen(false); setEditingSpec(undefined) }}
+          onSaved={() => { setSpecsFormOpen(false); setEditingSpec(undefined); refresh() }}
+        />
       </Show>
 
       {/* Add Activity Modal */}

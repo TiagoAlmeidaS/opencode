@@ -25,6 +25,9 @@
   .btn:hover { background: var(--surface); border-color: var(--accent); }
   .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn-primary:hover { opacity: .85; }
+  .btn-sm { padding: 3px 10px; font-size: 11px; }
+  .btn-danger { border-color: var(--danger); color: var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: #fff; }
   .status-bar { display: flex; align-items: center; gap: 20px; padding: 8px 24px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-weak); flex-shrink: 0; }
   .status-bar strong { color: var(--text); }
   main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
@@ -50,7 +53,7 @@
   .card-cancel:hover { color: var(--danger); }
   .badge { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; }
 
-  /* Opportunities table */
+  /* Tables */
   .table-wrap { flex: 1; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; }
   thead { position: sticky; top: 0; background: var(--bg); z-index: 1; }
@@ -68,7 +71,11 @@
   .link-btn.exec { color: var(--success); }
   .link-btn.shortlist { color: var(--info); }
   .link-btn.ignore { color: var(--text-weak); }
+  .link-btn.view { color: var(--info); }
+  .link-btn.edit { color: var(--text-weak); }
+  .link-btn.del { color: var(--text-weak); }
   .link-btn:hover { text-decoration: underline; }
+  .link-btn.del:hover { color: var(--danger); }
 
   /* Niches grid */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 20px 24px; overflow-y: auto; height: 100%; }
@@ -92,15 +99,26 @@
   .sub-actions { display: none; gap: 8px; }
   tr:hover .sub-actions { display: flex; }
 
+  /* Row hover actions (discovery & specs share this) */
+  .row-actions { display: none; gap: 8px; }
+  tr:hover .row-actions { display: flex; }
+
   /* Modal */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
-  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 16px; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 16px; max-height: 90vh; overflow-y: auto; }
+  .modal-wide { max-width: 680px; }
   .modal h2 { font-size: 15px; font-weight: 600; }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; }
   label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-weak); }
-  select, input, textarea { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 12px; color: var(--text); outline: none; width: 100%; font-family: inherit; }
-  textarea { font-family: monospace; resize: none; }
+  label span { font-size: 12px; color: var(--text-weak); }
+  select, input[type=text], input[type=number], textarea {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 10px; font-size: 12px; color: var(--text); outline: none; width: 100%; font-family: inherit;
+  }
+  textarea { resize: none; }
+  textarea.mono { font-family: monospace; }
   select:focus, input:focus, textarea:focus { border-color: var(--accent); }
-  .modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
   .error-msg { font-size: 12px; color: var(--danger); }
   .empty { padding: 40px; text-align: center; color: var(--text-weak); font-size: 13px; }
   .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
@@ -108,6 +126,24 @@
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Spec editor tabs */
+  .spec-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .spec-tab { padding: 4px 12px; border-radius: var(--radius); font-size: 11px; font-weight: 500; cursor: pointer; border: 1px solid transparent; background: none; color: var(--text-weak); transition: all .15s; }
+  .spec-tab:hover { color: var(--text); }
+  .spec-tab.active { background: var(--surface2); color: var(--text); border-color: var(--border); }
+  .spec-panel { display: none; flex-direction: column; gap: 12px; }
+  .spec-panel.active { display: flex; }
+
+  /* Ontology / constraints dynamic rows */
+  .dyn-row { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .dyn-row-header { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-weak); }
+  .dyn-inputs { display: flex; flex-direction: column; gap: 4px; }
+
+  /* Discovery status colors */
+  .disc-done    { color: var(--success); }
+  .disc-failed  { color: var(--danger); }
+  .disc-pending { color: var(--warn); }
 </style>
 </head>
 <body>
@@ -121,35 +157,34 @@
       <button class="tab" data-tab="niches">Niches</button>
       <button class="tab" data-tab="market">Market Data</button>
       <button class="tab" data-tab="submissions">Submissions</button>
+      <button class="tab" data-tab="discovery">Discovery</button>
+      <button class="tab" data-tab="specs">Specs</button>
     </div>
   </div>
   <div class="header-actions">
     <span id="last-refresh" style="font-size:11px;color:var(--text-weak)"></span>
     <button class="btn" onclick="refresh()">↻ Refresh</button>
-    <button class="btn btn-primary" id="add-btn" onclick="openModal()" style="display:none">+ Add Activity</button>
+    <button class="btn btn-primary" id="add-btn"        onclick="openModal()"          style="display:none">+ Add Activity</button>
+    <button class="btn btn-primary" id="new-idea-btn"   onclick="openDiscoveryModal()" style="display:none">+ New Idea</button>
+    <button class="btn btn-primary" id="new-spec-btn"   onclick="openSpecModal()"      style="display:none">+ New Spec</button>
   </div>
 </header>
 
-<div class="status-bar" id="status-bar">
-  <span>Loading...</span>
-</div>
-
+<div class="status-bar" id="status-bar"><span>Loading...</span></div>
 <main id="main-content"></main>
 
-<!-- Add Activity Modal -->
+<!-- ── Add Activity Modal ─────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <h2>Add Activity</h2>
     <label>Activity Type
-      <select id="f-type">
-        <option value="">— select —</option>
-      </select>
+      <select id="f-type"><option value="">— select —</option></select>
     </label>
     <label>Priority (1=highest, 10=lowest)
       <input type="number" id="f-priority" value="5" min="1" max="10">
     </label>
     <label>Input (JSON)
-      <textarea id="f-input" rows="5">{}</textarea>
+      <textarea id="f-input" rows="5" class="mono">{}</textarea>
     </label>
     <div id="f-error" class="error-msg" style="display:none"></div>
     <div class="modal-footer">
@@ -159,11 +194,140 @@
   </div>
 </div>
 
+<!-- ── Discovery: New Idea Modal ──────────────────────────────────────────── -->
+<div class="modal-overlay" id="disc-modal" style="display:none" onclick="if(event.target===this)closeDiscoveryModal()">
+  <div class="modal">
+    <h2>New discovery idea</h2>
+    <p style="font-size:12px;color:var(--text-weak)">Enqueue a project or venture idea for LLM analysis via the project_discovery pipeline.</p>
+    <label>Idea
+      <textarea id="disc-idea" rows="4" placeholder="Describe your project or venture idea…"></textarea>
+    </label>
+    <label>Spec <span style="font-size:11px">(optional — injects domain context into LLM)</span>
+      <select id="disc-spec-id">
+        <option value="">— no spec —</option>
+      </select>
+    </label>
+    <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="disc-trigger" style="width:auto">
+      <span>Process now (trigger pipeline after adding)</span>
+    </label>
+    <div id="disc-error" class="error-msg" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDiscoveryModal()">Cancel</button>
+      <button class="btn btn-primary" id="disc-submit-btn" onclick="submitDiscovery()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Discovery: View Report Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="disc-view-modal" style="display:none" onclick="if(event.target===this)closeDiscoveryView()">
+  <div class="modal modal-wide" style="max-width:720px">
+    <div class="modal-header">
+      <h2>Discovery report</h2>
+      <button class="btn btn-sm" onclick="closeDiscoveryView()">✕</button>
+    </div>
+    <div id="disc-report-content" style="font-size:12px;color:var(--text-weak);white-space:pre-wrap;line-height:1.7;max-height:65vh;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-family:monospace">
+      Loading…
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDiscoveryView()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Spec: Editor Modal ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="spec-modal" style="display:none" onclick="if(event.target===this)closeSpecModal()">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2 id="spec-modal-title">New Spec</h2>
+      <button class="btn btn-sm" onclick="closeSpecModal()">✕</button>
+    </div>
+
+    <div class="spec-tabs">
+      <button class="spec-tab active" data-panel="sp-basic"        onclick="switchSpecTab(this)">Basic</button>
+      <button class="spec-tab"        data-panel="sp-context"      onclick="switchSpecTab(this)">Context</button>
+      <button class="spec-tab"        data-panel="sp-ontology"     onclick="switchSpecTab(this)">Ontology</button>
+      <button class="spec-tab"        data-panel="sp-contracts"    onclick="switchSpecTab(this)">Contracts</button>
+      <button class="spec-tab"        data-panel="sp-rules"        onclick="switchSpecTab(this)">Rules</button>
+      <button class="spec-tab"        data-panel="sp-architecture" onclick="switchSpecTab(this)">Architecture</button>
+    </div>
+
+    <!-- Basic -->
+    <div class="spec-panel active" id="sp-basic">
+      <label>Name <span style="color:var(--danger)">*</span>
+        <input type="text" id="sp-name" placeholder="e.g. My SaaS Domain">
+      </label>
+      <label>Description
+        <input type="text" id="sp-description" placeholder="Short description of this spec">
+      </label>
+    </div>
+
+    <!-- Context -->
+    <div class="spec-panel" id="sp-context">
+      <label>Business Context
+        <textarea id="sp-context-text" rows="10" placeholder="Background business context, goals, target users…"></textarea>
+      </label>
+    </div>
+
+    <!-- Ontology -->
+    <div class="spec-panel" id="sp-ontology">
+      <p style="font-size:11px;color:var(--text-weak)">Domain terms the AI should use consistently.</p>
+      <div id="sp-ontology-rows" style="display:flex;flex-direction:column;gap:8px"></div>
+      <button class="btn btn-sm" onclick="addOntologyRow()" style="align-self:flex-start">+ Add term</button>
+    </div>
+
+    <!-- Contracts -->
+    <div class="spec-panel" id="sp-contracts">
+      <label>TypeScript Interfaces
+        <textarea id="sp-contracts-text" rows="12" class="mono" placeholder="interface MyEntity {\n  id: string\n}"></textarea>
+      </label>
+    </div>
+
+    <!-- Rules -->
+    <div class="spec-panel" id="sp-rules">
+      <p style="font-size:11px;color:var(--text-weak)">Inviolable constraints the AI must always respect.</p>
+      <div id="sp-rules-rows" style="display:flex;flex-direction:column;gap:8px"></div>
+      <button class="btn btn-sm" onclick="addConstraintRow()" style="align-self:flex-start">+ Add rule</button>
+    </div>
+
+    <!-- Architecture -->
+    <div class="spec-panel" id="sp-architecture">
+      <label>Architecture Diagram (Mermaid)
+        <textarea id="sp-architecture-text" rows="12" class="mono" placeholder="graph TD&#10;  A[Client] --> B[API]&#10;  B --> C[DB]"></textarea>
+      </label>
+    </div>
+
+    <div id="spec-error" class="error-msg" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeSpecModal()">Cancel</button>
+      <button class="btn btn-primary" id="spec-submit-btn" onclick="submitSpec()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Spec: Prompt Preview Modal ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="spec-preview-modal" style="display:none" onclick="if(event.target===this)closeSpecPreview()">
+  <div class="modal modal-wide" style="max-width:720px">
+    <div class="modal-header">
+      <h2>Compiled Prompt</h2>
+      <button class="btn btn-sm" onclick="closeSpecPreview()">✕</button>
+    </div>
+    <div id="spec-preview-content" style="font-size:12px;white-space:pre-wrap;line-height:1.7;max-height:65vh;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-family:monospace;color:var(--text)">
+      Loading…
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeSpecPreview()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const API = '/api'
 let currentTab = 'queue'
 let activityTypes = []
 let autoRefreshInterval
+let _editingSpecId = null   // null = create mode, string = edit mode
+let _specsList = []         // cached specs for selectors
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(t => {
@@ -171,7 +335,9 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'))
     t.classList.add('active')
     currentTab = t.dataset.tab
-    document.getElementById('add-btn').style.display = currentTab === 'queue' ? '' : 'none'
+    document.getElementById('add-btn').style.display      = currentTab === 'queue'     ? '' : 'none'
+    document.getElementById('new-idea-btn').style.display = currentTab === 'discovery' ? '' : 'none'
+    document.getElementById('new-spec-btn').style.display = currentTab === 'specs'     ? '' : 'none'
     refresh()
   })
 })
@@ -300,7 +466,7 @@ async function renderOpportunities() {
         <thead><tr>
           <th>Title</th><th>Type</th><th>Score</th><th>Reward</th><th>Status</th><th>Source</th><th></th>
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="7" class="empty">No opportunities yet. Run opportunity-collector pipeline.</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="7" class="empty">No opportunities yet.</td></tr>'}</tbody>
       </table>
     </div>`
 }
@@ -390,7 +556,7 @@ async function renderSubmissions() {
     </div>`
 
   if (!subs.length) {
-    document.getElementById('main-content').innerHTML = filterBar + '<div class="empty">No submissions yet. Run submit-github-pr, generate-gitcoin-proposal, or send-freelance-email activities.</div>'
+    document.getElementById('main-content').innerHTML = filterBar + '<div class="empty">No submissions yet.</div>'
     return
   }
 
@@ -406,7 +572,7 @@ async function renderSubmissions() {
     const extLink = s.externalUrl ? `<a href="${esc(s.externalUrl)}" target="_blank" style="color:var(--accent);font-size:11px">↗</a>` : ''
     return `<tr>
       <td style="color:var(--text-weak);font-family:monospace;font-size:10px">${s.id.slice(-8)}</td>
-      <td style="max-width:200px"><span class="badge ${cls}">${esc(s.status)}</span></td>
+      <td><span class="badge ${cls}">${esc(s.status)}</span></td>
       <td>${esc(s.platform)}</td>
       <td>${esc(s.submissionType)}</td>
       <td>${reward}</td>
@@ -431,8 +597,6 @@ async function renderSubmissions() {
         <tbody>${rows}</tbody>
       </table>
     </div>`
-
-  // Store proposals for view modal
   window._submissions = subs
 }
 
@@ -440,18 +604,13 @@ function setSubFilter(f) { window._submissionFilter = f; renderSubmissions() }
 
 async function approveSub(id) {
   if (!confirm('Approve and submit this proposal?')) return
-  try {
-    await apiFetch('/submissions/' + id + '/approve', { method: 'POST' })
-    refresh()
-  } catch (e) { alert('Error: ' + e.message) }
+  try { await apiFetch('/submissions/' + id + '/approve', { method: 'POST' }); refresh() }
+  catch (e) { alert('Error: ' + e.message) }
 }
-
 async function rejectSub(id) {
   if (!confirm('Reject this submission?')) return
-  try {
-    await apiFetch('/submissions/' + id + '/reject', { method: 'POST' })
-    refresh()
-  } catch (e) { alert('Error: ' + e.message) }
+  try { await apiFetch('/submissions/' + id + '/reject', { method: 'POST' }); refresh() }
+  catch (e) { alert('Error: ' + e.message) }
 }
 
 function viewProposal(id) {
@@ -476,7 +635,315 @@ function viewProposal(id) {
   document.body.appendChild(overlay)
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+// ── Discovery ─────────────────────────────────────────────────────────────────
+async function renderDiscovery() {
+  const [list, pipelines] = await Promise.all([
+    apiFetch('/discovery?limit=100').catch(() => []),
+    apiFetch('/pipelines').catch(() => []),
+  ])
+  const discPipeline = pipelines.find(p => p.strategy === 'project_discovery')
+  const pendingCount = list.filter(r => r.status === 'pending').length
+
+  const actionBar = discPipeline && pendingCount > 0 ? `
+    <div class="status-bar" style="border-bottom:1px solid var(--border);gap:8px">
+      <span style="color:var(--text-weak)">${pendingCount} pending</span>
+      <button class="btn" onclick="runDiscoveryPipeline('${discPipeline.id}')">▶ Process now</button>
+    </div>` : ''
+
+  if (!list.length) {
+    document.getElementById('main-content').innerHTML = actionBar + '<div class="empty">No discovery reports yet. Click "+ New Idea" to get started.</div>'
+    return
+  }
+
+  const DISC_CLS = { done: 'disc-done', failed: 'disc-failed', pending: 'disc-pending' }
+  const rows = list.map(r => {
+    const cls = DISC_CLS[r.status] || ''
+    const date = new Date(r.created_at * 1000).toLocaleString()
+    const hasReport = r.report_md || r.status === 'pending'
+    return `<tr>
+      <td style="max-width:400px"><span style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(r.idea_text)}</span></td>
+      <td><span class="${cls}">${esc(r.status)}</span></td>
+      <td style="color:var(--text-weak);white-space:nowrap">${date}</td>
+      <td>
+        <div class="row-actions">
+          ${hasReport ? `<button class="link-btn view" onclick="viewDiscoveryReport('${r.id}')">View</button>` : ''}
+        </div>
+      </td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('main-content').innerHTML = actionBar + `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Idea</th><th>Status</th><th>Created</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+}
+
+async function runDiscoveryPipeline(id) {
+  try {
+    await apiFetch('/pipelines/' + id + '/run', { method: 'POST' })
+    refresh()
+  } catch(e) { alert('Error: ' + e.message) }
+}
+
+function openDiscoveryModal() {
+  // Populate spec selector
+  const sel = document.getElementById('disc-spec-id')
+  sel.innerHTML = '<option value="">— no spec —</option>'
+  _specsList.forEach(s => {
+    const opt = document.createElement('option')
+    opt.value = s.id; opt.textContent = s.name
+    sel.appendChild(opt)
+  })
+  document.getElementById('disc-idea').value = ''
+  document.getElementById('disc-trigger').checked = false
+  document.getElementById('disc-error').style.display = 'none'
+  document.getElementById('disc-modal').style.display = 'flex'
+}
+function closeDiscoveryModal() { document.getElementById('disc-modal').style.display = 'none' }
+
+async function submitDiscovery() {
+  const btn = document.getElementById('disc-submit-btn')
+  const errEl = document.getElementById('disc-error')
+  errEl.style.display = 'none'
+  const text = document.getElementById('disc-idea').value.trim()
+  if (!text) { errEl.textContent = 'Enter an idea'; errEl.style.display = ''; return }
+
+  const specId = document.getElementById('disc-spec-id').value || undefined
+  const triggerPipeline = document.getElementById('disc-trigger').checked
+
+  btn.textContent = 'Adding…'; btn.disabled = true
+  try {
+    await apiFetch('/discovery', {
+      method: 'POST',
+      body: JSON.stringify({ idea_text: text, trigger_pipeline: triggerPipeline, ...(specId ? { spec_id: specId } : {}) })
+    })
+    closeDiscoveryModal()
+    refresh()
+  } catch(e) { errEl.textContent = e.message; errEl.style.display = '' }
+  finally { btn.textContent = 'Add'; btn.disabled = false }
+}
+
+async function viewDiscoveryReport(id) {
+  const content = document.getElementById('disc-report-content')
+  content.textContent = 'Loading…'
+  document.getElementById('disc-view-modal').style.display = 'flex'
+  try {
+    const r = await apiFetch('/discovery/' + id)
+    if (r.status === 'pending') {
+      content.textContent = '⏳ Report is pending. Run the project_discovery pipeline to process it.\n\nIdea:\n' + (r.idea_text || '')
+    } else if (r.report_md) {
+      content.textContent = r.report_md
+    } else {
+      content.textContent = '[No report content]'
+    }
+  } catch(e) { content.textContent = 'Error loading report: ' + e.message }
+}
+function closeDiscoveryView() { document.getElementById('disc-view-modal').style.display = 'none' }
+
+// ── Specs ─────────────────────────────────────────────────────────────────────
+async function renderSpecs() {
+  const specs = await apiFetch('/specs?limit=100').catch(() => [])
+  _specsList = specs  // cache for discovery modal selector
+
+  if (!specs.length) {
+    document.getElementById('main-content').innerHTML = '<div class="empty">No specs yet. Click "+ New Spec" to create domain context for AI pipelines.</div>'
+    return
+  }
+
+  const rows = specs.map(s => {
+    const date = new Date(s.createdAt * 1000).toLocaleDateString()
+    return `<tr>
+      <td><strong>${esc(s.name)}</strong></td>
+      <td style="color:var(--text-weak);max-width:300px">${esc(s.description || '—')}</td>
+      <td style="color:var(--text-weak);white-space:nowrap">${date}</td>
+      <td>
+        <div class="row-actions">
+          <button class="link-btn view" onclick="previewSpec('${s.id}')">Preview</button>
+          <button class="link-btn edit" onclick="editSpec('${s.id}')">Edit</button>
+          <button class="link-btn del"  onclick="deleteSpec('${s.id}')">Delete</button>
+        </div>
+      </td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('main-content').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Name</th><th>Description</th><th>Created</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+  window._specsFull = specs
+}
+
+async function deleteSpec(id) {
+  if (!confirm('Delete this spec?')) return
+  try { await apiFetch('/specs/' + id, { method: 'DELETE' }); refresh() }
+  catch(e) { alert('Error: ' + e.message) }
+}
+
+async function previewSpec(id) {
+  const content = document.getElementById('spec-preview-content')
+  content.textContent = 'Loading…'
+  document.getElementById('spec-preview-modal').style.display = 'flex'
+  try {
+    const data = await apiFetch('/specs/' + id + '/prompt')
+    content.textContent = data.prompt || '[empty]'
+  } catch(e) { content.textContent = 'Error: ' + e.message }
+}
+function closeSpecPreview() { document.getElementById('spec-preview-modal').style.display = 'none' }
+
+// ── Spec Editor ───────────────────────────────────────────────────────────────
+function switchSpecTab(btn) {
+  document.querySelectorAll('.spec-tab').forEach(t => t.classList.remove('active'))
+  document.querySelectorAll('.spec-panel').forEach(p => p.classList.remove('active'))
+  btn.classList.add('active')
+  document.getElementById(btn.dataset.panel).classList.add('active')
+}
+
+function openSpecModal(spec) {
+  _editingSpecId = spec ? spec.id : null
+  document.getElementById('spec-modal-title').textContent = spec ? 'Edit Spec' : 'New Spec'
+  document.getElementById('sp-name').value = spec?.name || ''
+  document.getElementById('sp-description').value = spec?.description || ''
+  document.getElementById('sp-context-text').value = spec?.context || ''
+  document.getElementById('sp-contracts-text').value = spec?.contracts || ''
+  document.getElementById('sp-architecture-text').value = spec?.architecture || ''
+  document.getElementById('spec-error').style.display = 'none'
+
+  // Reset to first tab
+  document.querySelectorAll('.spec-tab').forEach((t,i) => t.classList.toggle('active', i===0))
+  document.querySelectorAll('.spec-panel').forEach((p,i) => p.classList.toggle('active', i===0))
+
+  // Populate ontology rows
+  const ontologyRows = document.getElementById('sp-ontology-rows')
+  ontologyRows.innerHTML = ''
+  try {
+    const entries = JSON.parse(spec?.ontologyJson || '[]')
+    entries.forEach(e => appendOntologyRow(e.term, e.canonical_name, e.definition))
+  } catch {}
+
+  // Populate constraint rows
+  const rulesRows = document.getElementById('sp-rules-rows')
+  rulesRows.innerHTML = ''
+  try {
+    const entries = JSON.parse(spec?.constraintsJson || '[]')
+    entries.forEach(e => appendConstraintRow(e.rule, e.reason))
+  } catch {}
+
+  document.getElementById('spec-modal').style.display = 'flex'
+}
+
+function closeSpecModal() { document.getElementById('spec-modal').style.display = 'none' }
+
+function addOntologyRow() { appendOntologyRow('', '', '') }
+function appendOntologyRow(term, canonical, definition) {
+  const container = document.getElementById('sp-ontology-rows')
+  const idx = container.children.length
+  const div = document.createElement('div')
+  div.className = 'dyn-row'
+  div.innerHTML = `
+    <div class="dyn-row-header">
+      <span>Entry ${idx + 1}</span>
+      <button class="btn btn-sm btn-danger" onclick="this.closest('.dyn-row').remove();renumberRows('sp-ontology-rows','Entry')">Remove</button>
+    </div>
+    <div class="dyn-inputs">
+      <input type="text" placeholder="Term (e.g. Bounty)" value="${esc(term)}" data-field="term">
+      <input type="text" placeholder="Canonical name (kebab-case, e.g. oss-bounty)" value="${esc(canonical)}" data-field="canonical_name">
+      <input type="text" placeholder="Definition" value="${esc(definition)}" data-field="definition">
+    </div>`
+  container.appendChild(div)
+}
+
+function addConstraintRow() { appendConstraintRow('', '') }
+function appendConstraintRow(rule, reason) {
+  const container = document.getElementById('sp-rules-rows')
+  const idx = container.children.length
+  const div = document.createElement('div')
+  div.className = 'dyn-row'
+  div.innerHTML = `
+    <div class="dyn-row-header">
+      <span>Rule ${idx + 1}</span>
+      <button class="btn btn-sm btn-danger" onclick="this.closest('.dyn-row').remove();renumberRows('sp-rules-rows','Rule')">Remove</button>
+    </div>
+    <div class="dyn-inputs">
+      <input type="text" placeholder="Rule (e.g. Never mutate state directly)" value="${esc(rule)}" data-field="rule">
+      <input type="text" placeholder="Reason (e.g. CQRS pattern)" value="${esc(reason)}" data-field="reason">
+    </div>`
+  container.appendChild(div)
+}
+
+function renumberRows(containerId, label) {
+  document.querySelectorAll(`#${containerId} .dyn-row-header span`).forEach((el, i) => {
+    el.textContent = `${label} ${i + 1}`
+  })
+}
+
+function collectOntology() {
+  return Array.from(document.querySelectorAll('#sp-ontology-rows .dyn-row')).map(row => ({
+    term:           row.querySelector('[data-field="term"]').value.trim(),
+    canonical_name: row.querySelector('[data-field="canonical_name"]').value.trim(),
+    definition:     row.querySelector('[data-field="definition"]').value.trim(),
+  })).filter(e => e.term)
+}
+
+function collectConstraints() {
+  return Array.from(document.querySelectorAll('#sp-rules-rows .dyn-row')).map(row => ({
+    rule:   row.querySelector('[data-field="rule"]').value.trim(),
+    reason: row.querySelector('[data-field="reason"]').value.trim(),
+  })).filter(e => e.rule)
+}
+
+async function submitSpec() {
+  const btn = document.getElementById('spec-submit-btn')
+  const errEl = document.getElementById('spec-error')
+  errEl.style.display = 'none'
+
+  const name = document.getElementById('sp-name').value.trim()
+  if (!name) { errEl.textContent = 'Name is required'; errEl.style.display = ''; return }
+
+  const ontology = collectOntology()
+  const constraints = collectConstraints()
+
+  const payload = {
+    name,
+    description:     document.getElementById('sp-description').value.trim() || null,
+    context:         document.getElementById('sp-context-text').value.trim() || null,
+    contracts:       document.getElementById('sp-contracts-text').value.trim() || null,
+    architecture:    document.getElementById('sp-architecture-text').value.trim() || null,
+    ontologyJson:    ontology.length    ? JSON.stringify(ontology)     : null,
+    constraintsJson: constraints.length ? JSON.stringify(constraints)  : null,
+  }
+
+  const url = _editingSpecId ? '/specs/' + _editingSpecId : '/specs'
+  const method = _editingSpecId ? 'PATCH' : 'POST'
+
+  btn.textContent = 'Saving…'; btn.disabled = true
+  try {
+    await apiFetch(url, { method, body: JSON.stringify(payload) })
+    closeSpecModal()
+    refresh()
+  } catch(e) { errEl.textContent = e.message; errEl.style.display = '' }
+  finally { btn.textContent = 'Save'; btn.disabled = false }
+}
+
+async function editSpec(id) {
+  const spec = (window._specsFull || []).find(s => s.id === id)
+  if (spec) { openSpecModal(spec); return }
+  try {
+    const s = await apiFetch('/specs/' + id)
+    openSpecModal(s)
+  } catch(e) { alert('Error loading spec: ' + e.message) }
+}
+
+// ── Activity Modal ────────────────────────────────────────────────────────────
 async function openModal() {
   if (!activityTypes.length) {
     activityTypes = await apiFetch('/activities/types').catch(() => [])
@@ -495,31 +962,29 @@ async function submitActivity() {
   const btn = document.getElementById('submit-btn')
   const errEl = document.getElementById('f-error')
   errEl.style.display = 'none'
-
   const type = document.getElementById('f-type').value
   const priority = parseInt(document.getElementById('f-priority').value)
   let input
   try { input = JSON.parse(document.getElementById('f-input').value) } catch { errEl.textContent = 'Invalid JSON input'; errEl.style.display = ''; return }
   if (!type) { errEl.textContent = 'Select an activity type'; errEl.style.display = ''; return }
-
   btn.textContent = 'Adding…'; btn.disabled = true
   try {
     await apiFetch('/queue', { method: 'POST', body: JSON.stringify({ activity_type: type, input, priority, triggered_by: 'manual' }) })
-    closeModal()
-    refresh()
-  } catch (e) {
-    errEl.textContent = e.message; errEl.style.display = ''
-  } finally { btn.textContent = 'Add'; btn.disabled = false }
+    closeModal(); refresh()
+  } catch(e) { errEl.textContent = e.message; errEl.style.display = '' }
+  finally { btn.textContent = 'Add'; btn.disabled = false }
 }
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
 async function refresh() {
   await loadStatus()
-  if (currentTab === 'queue')         await renderQueue()
+  if      (currentTab === 'queue')         await renderQueue()
   else if (currentTab === 'opportunities') await renderOpportunities()
-  else if (currentTab === 'niches')   await renderNiches()
+  else if (currentTab === 'niches')        await renderNiches()
   else if (currentTab === 'market')        await renderMarket()
   else if (currentTab === 'submissions')   await renderSubmissions()
+  else if (currentTab === 'discovery')     await renderDiscovery()
+  else if (currentTab === 'specs')         await renderSpecs()
   document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString()
 }
 
@@ -530,6 +995,8 @@ function esc(str) {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.getElementById('add-btn').style.display = ''
+// Pre-load specs list for the discovery selector
+apiFetch('/specs?limit=100').then(list => { _specsList = list }).catch(() => {})
 refresh()
 autoRefreshInterval = setInterval(refresh, 30_000)
 </script>
