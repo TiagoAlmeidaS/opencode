@@ -37,7 +37,8 @@
       "Bash(cmd.exe /c \"set PATH=C:\\\\Users\\\\tiago\\\\.bun\\\\bin;%PATH% && cd /d E:\\\\projects\\\\ia\\\\opencode && git push origin homolog 2>&1\")",
       "Bash(git:*)",
       "Bash(find /e/projects/ia/opencode/docs -name *.md -type f)",
-      "Bash(find E:projectsiaopencodedocs -type d -name *plan*)"
+      "Bash(find E:projectsiaopencodedocs -type d -name *plan*)",
+      "Bash(bun run:*)"
     ]
   }
 }

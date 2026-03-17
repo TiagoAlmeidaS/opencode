@@ -66,11 +66,9 @@ import type {
   PermissionRespondErrors,
   PermissionRespondResponses,
   PermissionRuleset,
-  ProjectAddByUrlErrors,
   ProjectAddByUrlResponses,
   ProjectCurrentResponses,
   ProjectInitGitResponses,
-  ProjectAddByUrlResponses,
   ProjectListResponses,
   ProjectUpdateErrors,
   ProjectUpdateResponses,
@@ -358,45 +356,6 @@ export class Auth extends HeyApiClient {
 }
 
 export class Project extends HeyApiClient {
-  /**
-   * Add project by repository URL
-   *
-   * Clone a GitHub repository and register it as a project. Requires GITHUB_TOKEN. Idempotent if the project already exists.
-   */
-  public addByUrl<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      url?: string
-      branch?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "url" },
-            { in: "body", key: "branch" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<ProjectAddByUrlResponses, ProjectAddByUrlErrors, ThrowOnError>({
-      url: "/project/add-by-url",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
   /**
    * List all projects
    *
