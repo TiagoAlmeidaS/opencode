@@ -22,12 +22,14 @@ export const ProjectRoutes = lazy(() =>
         requestBody: {
           content: {
             "application/json": {
-              schema: resolver(
-                z.object({
-                  url: z.string().url().describe("GitHub repository URL (e.g. https://github.com/owner/repo)"),
-                  branch: z.string().optional().describe("Branch to clone (default: default branch)"),
-                }),
-              ),
+              schema: {
+                type: "object",
+                required: ["url"],
+                properties: {
+                  url: { type: "string", format: "uri", description: "GitHub repository URL (e.g. https://github.com/owner/repo)" },
+                  branch: { type: "string", description: "Branch to clone (default: default branch)" },
+                },
+              } as any,
             },
           },
         },

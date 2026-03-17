@@ -14,6 +14,7 @@ import type {
   ConfigProvidersResponses,
   ConfigUpdateErrors,
   ConfigUpdateResponses,
+  Event,
   EventTuiCommandExecute,
   EventTuiPromptAppend,
   EventTuiSessionSelect,
@@ -3592,6 +3593,147 @@ export class Tui extends HeyApiClient {
   }
 }
 
+// ── Legacy shim classes — kept for backwards compat with consumer code ────────
+
+export class EventClient extends HeyApiClient {
+  /** Subscribe to global SSE events. Stream is typed as Event for consumer compatibility. */
+  public subscribe<ThrowOnError extends boolean = false>(
+    _parameters?: Record<string, unknown>,
+    options?: Options<never, ThrowOnError>,
+  ) {
+    return (options?.client ?? this.client).sse.get<{ 200: Event }, unknown, ThrowOnError>({
+      url: "/global/event",
+      ...options,
+    })
+  }
+}
+
+export class AppClient extends HeyApiClient {
+  /** List available agents. Returns empty list when endpoint not available. */
+  public agents<ThrowOnError extends boolean = false>(
+    _parameters?: Record<string, unknown>,
+    options?: Options<never, ThrowOnError>,
+  ) {
+    return Promise.resolve({ data: [] as import("./types.gen.js").Agent[] })
+  }
+
+  /** List available skills. Returns empty list when endpoint not available. */
+  public skills<ThrowOnError extends boolean = false>(
+    _parameters?: Record<string, unknown>,
+    options?: Options<never, ThrowOnError>,
+  ) {
+    return Promise.resolve({ data: [] as import("./types.gen.js").Skill[] })
+  }
+}
+
+export class CommandClient extends HeyApiClient {
+  /** List available commands. */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: { directory?: string; workspace?: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ in: "query", key: "directory" }, { in: "query", key: "workspace" }] }],
+    )
+    return (options?.client ?? this.client).get<{ 200: import("./types.gen.js").Command[] }, unknown, ThrowOnError>({
+      url: "/command",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class LspClient extends HeyApiClient {
+  /** Get LSP status list. */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: { directory?: string; workspace?: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ in: "query", key: "directory" }, { in: "query", key: "workspace" }] }],
+    )
+    return (options?.client ?? this.client).get<{ 200: import("./types.gen.js").LspStatus[] }, unknown, ThrowOnError>({
+      url: "/lsp",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class FormatterClient extends HeyApiClient {
+  /** Get formatter status list. */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: { directory?: string; workspace?: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ in: "query", key: "directory" }, { in: "query", key: "workspace" }] }],
+    )
+    return (options?.client ?? this.client).get<{ 200: import("./types.gen.js").FormatterStatus[] }, unknown, ThrowOnError>({
+      url: "/formatter",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class VcsClient extends HeyApiClient {
+  /** Get VCS info. */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: { directory?: string; workspace?: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ in: "query", key: "directory" }, { in: "query", key: "workspace" }] }],
+    )
+    return (options?.client ?? this.client).get<{ 200: import("./types.gen.js").VcsInfo }, unknown, ThrowOnError>({
+      url: "/vcs",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class PathClient extends HeyApiClient {
+  /** Get current path info. */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: { directory?: string; workspace?: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ in: "query", key: "directory" }, { in: "query", key: "workspace" }] }],
+    )
+    return (options?.client ?? this.client).get<{ 200: import("./types.gen.js").Path }, unknown, ThrowOnError>({
+      url: "/path",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class InstanceClient extends HeyApiClient {
+  /** Dispose instance. Delegates to /global/dispose. */
+  public dispose<ThrowOnError extends boolean = false>(
+    parameters?: { directory?: string; workspace?: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [{ args: [{ in: "query", key: "directory" }, { in: "query", key: "workspace" }] }],
+    )
+    return (options?.client ?? this.client).post<GlobalDisposeResponses, unknown, ThrowOnError>({
+      url: "/global/dispose",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class OpencodeClient extends HeyApiClient {
   public static readonly __registry = new HeyApiRegistry<OpencodeClient>()
 
@@ -3683,5 +3825,46 @@ export class OpencodeClient extends HeyApiClient {
   private _tui?: Tui
   get tui(): Tui {
     return (this._tui ??= new Tui({ client: this.client }))
+  }
+
+  // ── Legacy getters — backwards compat with consumer code ────────────────
+  private _event?: EventClient
+  get event(): EventClient {
+    return (this._event ??= new EventClient({ client: this.client }))
+  }
+
+  private _app?: AppClient
+  get app(): AppClient {
+    return (this._app ??= new AppClient({ client: this.client }))
+  }
+
+  private _command?: CommandClient
+  get command(): CommandClient {
+    return (this._command ??= new CommandClient({ client: this.client }))
+  }
+
+  private _lsp?: LspClient
+  get lsp(): LspClient {
+    return (this._lsp ??= new LspClient({ client: this.client }))
+  }
+
+  private _formatter?: FormatterClient
+  get formatter(): FormatterClient {
+    return (this._formatter ??= new FormatterClient({ client: this.client }))
+  }
+
+  private _vcs?: VcsClient
+  get vcs(): VcsClient {
+    return (this._vcs ??= new VcsClient({ client: this.client }))
+  }
+
+  private _path?: PathClient
+  get path(): PathClient {
+    return (this._path ??= new PathClient({ client: this.client }))
+  }
+
+  private _instance?: InstanceClient
+  get instance(): InstanceClient {
+    return (this._instance ??= new InstanceClient({ client: this.client }))
   }
 }

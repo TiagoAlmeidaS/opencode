@@ -38,7 +38,8 @@
       "Bash(git:*)",
       "Bash(find /e/projects/ia/opencode/docs -name *.md -type f)",
       "Bash(find E:projectsiaopencodedocs -type d -name *plan*)",
-      "Bash(bun run:*)"
+      "Bash(bun run:*)",
+      "Bash(find packages/ui/src -name *.tsx -o -name *.ts)"
     ]
   }
 }

@@ -4715,3 +4715,79 @@ export type TuiControlResponseResponses = {
 }
 
 export type TuiControlResponseResponse = TuiControlResponseResponses[keyof TuiControlResponseResponses]
+
+// ── Legacy types re-added for backwards compatibility with consumer code ──────
+
+export type Path = {
+  state: string
+  config: string
+  worktree: string
+  directory: string
+  home: string
+}
+
+export type VcsInfo = {
+  branch: string
+}
+
+export type Command = {
+  name: string
+  description?: string
+  agent?: string
+  model?: string
+  template: string
+  subtask?: boolean
+  source?: "command" | "mcp" | "skill"
+}
+
+export type Skill = {
+  name: string
+  description?: string
+}
+
+export type Agent = {
+  name: string
+  description?: string
+  mode: "subagent" | "primary" | "all"
+  builtIn: boolean
+  hidden?: boolean
+  native?: boolean
+  variant?: string
+  topP?: number
+  temperature?: number
+  color?: string
+  permission: {
+    edit: "ask" | "allow" | "deny"
+    bash: {
+      [key: string]: "ask" | "allow" | "deny"
+    }
+    webfetch?: "ask" | "allow" | "deny"
+    doom_loop?: "ask" | "allow" | "deny"
+    external_directory?: "ask" | "allow" | "deny"
+  }
+  model?: {
+    modelID: string
+    providerID: string
+  }
+  prompt?: string
+  tools: {
+    [key: string]: boolean
+  }
+  options: {
+    [key: string]: unknown
+  }
+  maxSteps?: number
+}
+
+export type LspStatus = {
+  id: string
+  name: string
+  root: string
+  status: "connected" | "error"
+}
+
+export type FormatterStatus = {
+  name: string
+  extensions: Array<string>
+  enabled: boolean
+}
