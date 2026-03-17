@@ -131,6 +131,24 @@ TELEGRAM_CHAT_ID=-1001234567890
 - `[opencode-server] queue tick error` — erro no processador da fila
 - `[opencode-server] initial tick error` — erro no primeiro tick
 
+## Dashboard (http://host:3000/)
+
+O painel em `/` ou `/dashboard` exibe:
+
+- **Activity Queue** — itens da fila (pending, running, completed, failed). Use "+ Add Activity" para enfileirar manualmente.
+- **Pipelines** — pipelines cadastrados e seus crons. Use "▶ Run" para executar manualmente.
+- **Opportunities, Niches, Market, Submissions, Discovery, Specs** — demais abas.
+
+### API Token
+
+Se o servidor usa `API_TOKEN` no `.env.server`, todas as requisições `/api/*` exigem `Authorization: Bearer <token>`.
+
+1. Clique no botão **🔑** no header.
+2. Cole o token e clique em **Salvar**.
+3. O token fica em `localStorage` do navegador.
+
+Sem o token configurado, a barra de status mostra "API requer token. Clique em 🔑 para configurar." e as abas ficam vazias.
+
 ## Referências
 
 - [docs/features/env-vars.md](../features/env-vars.md) — variáveis de ambiente

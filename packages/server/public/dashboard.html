@@ -153,6 +153,7 @@
     <h1>⚡ OpenCode Server</h1>
     <div class="tabs">
       <button class="tab active" data-tab="queue">Activity Queue</button>
+      <button class="tab" data-tab="pipelines">Pipelines</button>
       <button class="tab" data-tab="opportunities">Opportunities</button>
       <button class="tab" data-tab="niches">Niches</button>
       <button class="tab" data-tab="market">Market Data</button>
@@ -163,12 +164,31 @@
   </div>
   <div class="header-actions">
     <span id="last-refresh" style="font-size:11px;color:var(--text-weak)"></span>
+    <button class="btn" onclick="openTokenModal()" title="API Token">🔑</button>
     <button class="btn" onclick="refresh()">↻ Refresh</button>
     <button class="btn btn-primary" id="add-btn"        onclick="openModal()"          style="display:none">+ Add Activity</button>
+    <button class="btn btn-primary" id="run-pipeline-btn" onclick="runFirstPipeline()" style="display:none">▶ Run pipeline</button>
     <button class="btn btn-primary" id="new-idea-btn"   onclick="openDiscoveryModal()" style="display:none">+ New Idea</button>
     <button class="btn btn-primary" id="new-spec-btn"   onclick="openSpecModal()"      style="display:none">+ New Spec</button>
   </div>
 </header>
+
+<!-- ── API Token Modal ───────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="token-modal" style="display:none" onclick="if(event.target===this)closeTokenModal()">
+  <div class="modal">
+    <h2>API Token</h2>
+    <p style="font-size:12px;color:var(--text-weak)">Se o servidor usa API_TOKEN, informe o token para acessar a API.</p>
+    <label>Token
+      <input type="password" id="token-input" placeholder="Bearer token (deixe vazio se não usar auth)">
+    </label>
+    <div id="token-error" class="error-msg" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeTokenModal()">Cancelar</button>
+      <button class="btn" onclick="clearToken()">Limpar</button>
+      <button class="btn btn-primary" onclick="saveToken()">Salvar</button>
+    </div>
+  </div>
+</div>
 
 <div class="status-bar" id="status-bar"><span>Loading...</span></div>
 <main id="main-content"></main>
@@ -338,17 +358,49 @@ document.querySelectorAll('.tab').forEach(t => {
     document.getElementById('add-btn').style.display      = currentTab === 'queue'     ? '' : 'none'
     document.getElementById('new-idea-btn').style.display = currentTab === 'discovery' ? '' : 'none'
     document.getElementById('new-spec-btn').style.display = currentTab === 'specs'     ? '' : 'none'
+    document.getElementById('run-pipeline-btn').style.display = currentTab === 'pipelines' ? '' : 'none'
     refresh()
   })
 })
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
-async function apiFetch(path, opts) {
+async function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('api_token')
-  const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
-  const res = await fetch(API + path, { headers, ...opts })
-  if (!res.ok) throw new Error(`API ${res.status}`)
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(opts.headers || {}),
+  }
+  const res = await fetch(API + path, { ...opts, headers })
+  if (!res.ok) {
+    const err = new Error(res.status === 401 ? 'API requer token. Clique em 🔑 para configurar.' : `API ${res.status}`)
+    err.status = res.status
+    throw err
+  }
   return res.json()
+}
+
+// ── Token modal ───────────────────────────────────────────────────────────────
+function openTokenModal() {
+  document.getElementById('token-input').value = localStorage.getItem('api_token') || ''
+  document.getElementById('token-error').style.display = 'none'
+  document.getElementById('token-modal').style.display = 'flex'
+}
+function closeTokenModal() { document.getElementById('token-modal').style.display = 'none' }
+function clearToken() {
+  localStorage.removeItem('api_token')
+  document.getElementById('token-input').value = ''
+  closeTokenModal()
+  refresh()
+}
+function saveToken() {
+  const token = document.getElementById('token-input').value.trim()
+  const errEl = document.getElementById('token-error')
+  errEl.style.display = 'none'
+  if (token) localStorage.setItem('api_token', token)
+  else localStorage.removeItem('api_token')
+  closeTokenModal()
+  refresh()
 }
 
 // ── Status bar ────────────────────────────────────────────────────────────────
@@ -361,7 +413,13 @@ async function loadStatus() {
       <span>Proposals: <strong>${s.proposals.pending}</strong></span>
       <span>Revenue 30d: <strong>$${s.revenue.total_usd_30d.toFixed(2)}</strong></span>
     `
-  } catch { document.getElementById('status-bar').innerHTML = '<span style="color:var(--danger)">API unavailable</span>' }
+  } catch (e) {
+    const msg = e.status === 401 ? e.message : 'API unavailable'
+    document.getElementById('status-bar').innerHTML = `<span style="color:var(--danger)">${msg}</span>`
+    if (e.status === 401 && !localStorage.getItem('api_token')) {
+      openTokenModal()
+    }
+  }
 }
 
 // ── Queue ─────────────────────────────────────────────────────────────────────
@@ -380,8 +438,65 @@ function elapsed(start, end) {
   return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm'
 }
 
+// ── Pipelines ─────────────────────────────────────────────────────────────────
+async function renderPipelines() {
+  let pipelines
+  try {
+    pipelines = await apiFetch('/pipelines')
+  } catch (e) {
+    document.getElementById('main-content').innerHTML = `<div class="empty" style="color:var(--danger)">${esc(e.message)}</div>`
+    return
+  }
+  if (!pipelines.length) {
+    document.getElementById('main-content').innerHTML = '<div class="empty">Nenhum pipeline. Os pipelines padrão (daily/weekly report) são criados na primeira subida do servidor.</div>'
+    return
+  }
+  const rows = pipelines.map(p => {
+    const enabled = p.enabled === 1
+    const statusCls = enabled ? 'disc-done' : 'disc-pending'
+    return `<tr>
+      <td><span class="${statusCls}">${enabled ? '✓' : '○'}</span></td>
+      <td><strong>${esc(p.name)}</strong></td>
+      <td style="color:var(--text-weak);font-family:monospace">${esc(p.strategy)}</td>
+      <td style="color:var(--text-weak);font-family:monospace">${esc(p.scheduleCron)}</td>
+      <td>
+        <button class="link-btn exec" onclick="runPipeline('${p.id}')">▶ Run</button>
+      </td>
+    </tr>`
+  }).join('')
+  document.getElementById('main-content').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th></th><th>Nome</th><th>Strategy</th><th>Cron</th><th></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+}
+async function runPipeline(id) {
+  try {
+    await apiFetch('/pipelines/' + id + '/run', { method: 'POST' })
+    refresh()
+  } catch (e) { alert('Erro: ' + e.message) }
+}
+function runFirstPipeline() {
+  apiFetch('/pipelines').then(list => {
+    const p = list.find(x => x.enabled === 1)
+    if (p) runPipeline(p.id)
+    else alert('Nenhum pipeline habilitado')
+  }).catch(e => alert('Erro: ' + e.message))
+}
+
+// ── Queue ─────────────────────────────────────────────────────────────────────
 async function renderQueue() {
-  const items = await apiFetch('/queue?limit=200').catch(() => [])
+  let items
+  try {
+    items = await apiFetch('/queue?limit=200')
+  } catch (e) {
+    document.getElementById('main-content').innerHTML = `<div class="empty" style="color:var(--danger)">${esc(e.message)}</div>`
+    return
+  }
   const byStatus = {}
   COLS.forEach(c => byStatus[c.status] = items.filter(i => i.status === c.status))
 
@@ -979,6 +1094,7 @@ async function submitActivity() {
 async function refresh() {
   await loadStatus()
   if      (currentTab === 'queue')         await renderQueue()
+  else if (currentTab === 'pipelines')    await renderPipelines()
   else if (currentTab === 'opportunities') await renderOpportunities()
   else if (currentTab === 'niches')        await renderNiches()
   else if (currentTab === 'market')        await renderMarket()

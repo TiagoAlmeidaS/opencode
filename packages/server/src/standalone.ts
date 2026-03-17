@@ -19,6 +19,7 @@
  *   TELEGRAM_BOT_TOKEN      Token do bot Telegram
  *   TELEGRAM_CHAT_ID        Chat ID para relatórios
  *   SEED_DEFAULT_PIPELINES  false para desativar criação automática de pipelines (default: true)
+ *   DASHBOARD_INJECT_TOKEN  false para não injetar API_TOKEN no dashboard (default: true quando API_TOKEN existe)
  *   QDRANT_URL              URL do Qdrant para RAG (opcional)
  *   API_TOKEN               Token de autenticação da API (opcional)
  *   CORS_ORIGIN             Origem permitida para CORS (default: *)
@@ -230,9 +231,14 @@ if (API_TOKEN) {
 // API routes
 app.route("/api", instance.routes)
 
-// Dashboard HTML
+// Dashboard HTML — injeta API_TOKEN no localStorage quando DASHBOARD_INJECT_TOKEN=true
 const dashboardPath = path.join(import.meta.dir, "../public/dashboard.html")
-const dashboardHtml = await Bun.file(dashboardPath).text().catch(() => "<h1>Dashboard not found</h1>")
+let dashboardHtml = await Bun.file(dashboardPath).text().catch(() => "<h1>Dashboard not found</h1>")
+const injectToken = process.env.DASHBOARD_INJECT_TOKEN !== "false" && API_TOKEN
+if (injectToken && API_TOKEN) {
+  const script = `<script>try{localStorage.setItem("api_token",${JSON.stringify(API_TOKEN)})}catch(e){}</script>`
+  dashboardHtml = dashboardHtml.replace("</head>", script + "\n</head>")
+}
 
 app.get("/", (c) => c.html(dashboardHtml))
 app.get("/dashboard", (c) => c.html(dashboardHtml))
@@ -255,6 +261,7 @@ if (!publicUrl) console.log(`   (Para ver a URL pública no log, defina PUBLIC_U
 console.log(`   DB:         ${DB_PATH}`)
 console.log(`   LLM:        ${memoryLlmLabel}`)
 console.log(`   Auth:       ${API_TOKEN ? "Bearer token enabled" : "disabled"}`)
+if (injectToken) console.log(`   Token:      injetado no dashboard`)
 console.log(`   Qdrant:     ${QDRANT_URL ?? "disabled"}`)
 console.log()
 
