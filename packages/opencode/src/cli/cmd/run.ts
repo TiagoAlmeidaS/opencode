@@ -289,6 +289,10 @@ export const RunCommand = cmd({
         type: "string",
         describe: "directory to run in, path on remote server if attaching",
       })
+      .option("task", {
+        type: "string",
+        describe: "task message (non-interactive; same as positional message)",
+      })
       .option("port", {
         type: "number",
         describe: "port for the local server (defaults to random port if no value provided)",
@@ -304,9 +308,11 @@ export const RunCommand = cmd({
       })
   },
   handler: async (args) => {
-    let message = [...args.message, ...(args["--"] || [])]
-      .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
-      .join(" ")
+    let message =
+      args.task ??
+      [...args.message, ...(args["--"] || [])]
+        .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
+        .join(" ")
 
     const directory = (() => {
       if (!args.dir) return undefined
@@ -345,7 +351,7 @@ export const RunCommand = cmd({
     if (!process.stdin.isTTY) message += "\n" + (await Bun.stdin.text())
 
     if (message.trim().length === 0 && !args.command) {
-      UI.error("You must provide a message or a command")
+      UI.error("You must provide a message, --task, or a command")
       process.exit(1)
     }
 

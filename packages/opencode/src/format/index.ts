@@ -112,7 +112,7 @@ export namespace Format {
         log.info("running", { command: item.command })
         try {
           const proc = Process.spawn(
-            item.command.map((x) => x.replace("$FILE", file)),
+            (item.command || []).map((x) => x.replace("$FILE", file)),
             {
               cwd: Instance.directory,
               env: { ...process.env, ...item.environment },

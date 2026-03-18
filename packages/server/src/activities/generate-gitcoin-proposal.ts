@@ -2,6 +2,7 @@ import { ulid } from "ulid"
 import { eq, and } from "drizzle-orm"
 import { oppOpportunities, oppSubmissions } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
+import { getBountyWalletSnippet } from "../financial-config"
 
 interface GenerateGitcoinProposalInput {
   opportunity_id: string
@@ -10,14 +11,17 @@ interface GenerateGitcoinProposalInput {
 const SYSTEM = `Você é um especialista em propostas técnicas para plataformas de bounty como Gitcoin.
 Escreva propostas convincentes em inglês, com foco em ROI, competência técnica e entrega clara.`
 
-function buildProposalPrompt(opp: {
-  title: string
-  description: string | null
-  rewardMax: number | null
-  rewardMin: number | null
-  difficulty: string | null
-  skillsRequired: string | null
-}): string {
+function buildProposalPrompt(
+  opp: {
+    title: string
+    description: string | null
+    rewardMax: number | null
+    rewardMin: number | null
+    difficulty: string | null
+    skillsRequired: string | null
+  },
+  walletSnippet: string,
+): string {
   const reward = opp.rewardMax ?? opp.rewardMin ?? 0
   const skills = opp.skillsRequired
     ? (() => { try { return (JSON.parse(opp.skillsRequired!) as string[]).join(", ") } catch { return opp.skillsRequired } })()
@@ -39,6 +43,9 @@ Write a professional proposal (300-500 words) with these sections:
 3. **Timeline** — Realistic delivery schedule with milestones
 4. **ROI Analysis** — Value delivered vs. cost, long-term benefits
 5. **Deliverables** — Concrete list of what will be delivered
+6. **Payment Address** — Include the wallet address for receiving the bounty reward (if provided below)
+
+${walletSnippet ? `PAYMENT ADDRESS TO INCLUDE: ${walletSnippet}` : ""}
 
 Be specific, confident, and results-oriented. Use the first person.`
 }
@@ -83,10 +90,11 @@ export const generateGitcoinProposalActivity: Activity = {
 
     // Gera texto da proposta
     let proposalText: string
+    const walletSnippet = getBountyWalletSnippet()
     if (ctx.memoryLlm) {
       proposalText = await ctx.memoryLlm({
         system: SYSTEM,
-        prompt: buildProposalPrompt(opp),
+        prompt: buildProposalPrompt(opp, walletSnippet),
         maxTokens: 800,
       })
     } else {
@@ -110,7 +118,8 @@ Estimated value delivery: $${(reward * 3).toFixed(0)} in equivalent consulting v
 ## Deliverables
 - Complete implementation meeting all requirements
 - Tests and documentation
-- Clean, maintainable code`
+- Clean, maintainable code
+${walletSnippet ? `\n## Payment Address\n\n${walletSnippet}` : ""}`
     }
 
     // Salva como pending-approval

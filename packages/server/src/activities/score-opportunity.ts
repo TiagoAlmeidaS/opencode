@@ -23,6 +23,58 @@ const SCORE_SYSTEM = `Você é um analista especializado em avaliar oportunidade
 Avalie se a oportunidade é adequada para um agente como o OpenCode (AI que escreve código autonomamente).
 Responda APENAS com JSON válido, sem markdown, sem texto extra.`
 
+const SCORE_CONTENT_SYSTEM = `Você é um analista especializado em avaliar oportunidades de criação de conteúdo para agentes de IA.
+Avalie se a oportunidade é adequada para um agente que escreve texto, roteiros, copy ou artigos autonomamente.
+Responda APENAS com JSON válido, sem markdown, sem texto extra.`
+
+function buildContentPrompt(opp: {
+  type: string
+  title: string
+  description: string | null
+  rewardMin: number | null
+  rewardMax: number | null
+  skillsRequired: string | null
+  difficulty: string | null
+  sourcePlatform: string
+}): string {
+  const reward = opp.rewardMax
+    ? `$${opp.rewardMin ?? 0}–$${opp.rewardMax}`
+    : opp.rewardMin
+    ? `$${opp.rewardMin}`
+    : "não especificado"
+
+  const skills = opp.skillsRequired
+    ? (JSON.parse(opp.skillsRequired) as string[]).join(", ")
+    : "não especificado"
+
+  return `Avalie esta oportunidade de trabalho para um agente de IA que escreve texto/conteúdo:
+
+Tipo: ${opp.type}
+Plataforma: ${opp.sourcePlatform}
+Título: ${opp.title}
+Recompensa: ${reward}
+Skills: ${skills}
+Dificuldade declarada: ${opp.difficulty ?? "não informada"}
+Descrição: ${(opp.description ?? "").slice(0, 1500)}
+
+Retorne JSON com exatamente estes campos:
+{
+  "score": <0-100>,
+  "reason": "<explicação em 1-2 frases>",
+  "niche_suggestion": "<nome-do-niche em kebab-case: content-copywriting|content-scriptwriting|content-blog|content-social|ai-content>",
+  "difficulty_estimate": "<easy|medium|hard|expert>",
+  "ai_agent_suitable": <true|false>,
+  "estimated_hours": <número>,
+  "risk_level": "<low|medium|high>"
+}
+
+Critérios de pontuação:
+- 80-100: especificação clara, formato definido (palavras, estrutura), entrega digital, sem entrevista humana
+- 60-79: recompensa razoável OU brief bem especificado, possível para AI agent
+- 40-59: possível mas depende de tom de voz ou contexto humano
+- 0-39: inadequado (requer reuniões, voz humana, domínio ultra-específico, ou sem recompensa clara)`
+}
+
 function buildPrompt(opp: {
   type: string
   title: string
@@ -116,7 +168,9 @@ export const scoreOpportunityActivity: Activity = {
       return { summary: `Oportunidade ${input.opportunity_id} já foi processada (status: ${opp.status})` }
     }
 
-    const prompt = buildPrompt(opp)
+    const isContent = opp.type === "content"
+    const prompt = isContent ? buildContentPrompt(opp) : buildPrompt(opp)
+    const system = isContent ? SCORE_CONTENT_SYSTEM : SCORE_SYSTEM
     const now = Math.floor(Date.now() / 1000)
 
     let specPrefix = ""
@@ -126,7 +180,7 @@ export const scoreOpportunityActivity: Activity = {
     }
 
     const rawOutput = await ctx.memoryLlm({
-      system: specPrefix + SCORE_SYSTEM,
+      system: specPrefix + system,
       prompt,
       maxTokens: 512,
     })
@@ -210,13 +264,17 @@ async function scoreHeuristic(ctx: ActivityContext, opportunityId: string): Prom
   // Tipo
   if (opp.type === "oss-bounty") { score += 10; reasons.push("OSS bounty") }
   else if (opp.type === "freelance") { score += 8; reasons.push("freelance") }
+  else if (opp.type === "content") { score += 8; reasons.push("conteúdo") }
 
   // Skills conhecidos de AI agents
   const skills = opp.skillsRequired ? (JSON.parse(opp.skillsRequired) as string[]) : []
   const agentSkills = ["typescript", "javascript", "python", "rust", "node", "api", "cli", "llm"]
-  if (skills.some((s) => agentSkills.includes(s.toLowerCase()))) {
+  const contentSkills = ["writing", "copy", "content", "blog", "script", "copywriting"]
+  const hasAgentSkill = skills.some((s) => agentSkills.includes(s.toLowerCase()))
+  const hasContentSkill = skills.some((s) => contentSkills.some((c) => s.toLowerCase().includes(c)))
+  if (hasAgentSkill || (opp.type === "content" && hasContentSkill)) {
     score += 10
-    reasons.push("skills compatíveis com AI agent")
+    reasons.push(opp.type === "content" ? "skills de conteúdo" : "skills compatíveis com AI agent")
   }
 
   score = Math.min(100, score)

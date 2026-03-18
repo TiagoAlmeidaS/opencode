@@ -21,11 +21,11 @@ Em **Settings → Secrets and variables → Actions**, crie:
 | `VPS_HOST` | IP ou hostname da VPS (ex.: `100.98.213.86` ou `opencode.seudominio.com`) |
 | `VPS_USER` | Usuário SSH (ex.: `deploy` ou `root`) |
 | `VPS_SSH_KEY` | Chave privada SSH (conteúdo de `~/.ssh/id_rsa` ou chave dedicada) |
-| `VPS_DEPLOY_PATH` | Caminho do repositório na VPS (ex.: `/home/deploy/opencode`) |
+| `VPS_DEPLOY_PATH` | Caminho do repositório na VPS (ex.: `/opt/opencode`) |
 
 ### 2. VPS — pré-requisitos
 
-- Repositório clonado em `VPS_DEPLOY_PATH`
+- Repositório clonado em `VPS_DEPLOY_PATH` (ex.: `/opt/opencode`)
 - Docker e Docker Compose instalados
 - `.env.server` configurado (não versionado)
 - Rede `jarvis-network` existente (ou remova do compose se não usar):

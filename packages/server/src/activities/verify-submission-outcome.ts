@@ -1,12 +1,14 @@
 import { ulid } from "ulid"
 import { eq } from "drizzle-orm"
 import { Octokit } from "@octokit/rest"
-import { oppSubmissions, oppOpportunities, daemonRevenue } from "../schema"
+import { oppSubmissions, oppOpportunities, daemonRevenue, daemonPipelines } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 
 interface VerifySubmissionOutcomeInput {
   submission_id: string
 }
+
+const MAX_AGE_DAYS = 30 // abandona verificação após 30 dias sem resolução
 
 export const verifySubmissionOutcomeActivity: Activity = {
   type: "verify-submission-outcome",
@@ -34,6 +36,23 @@ export const verifySubmissionOutcomeActivity: Activity = {
     }
 
     const now = Math.floor(Date.now() / 1000)
+
+    // TTL: abandona após MAX_AGE_DAYS sem resolução
+    const ageSeconds = now - sub.createdAt
+    if (ageSeconds > MAX_AGE_DAYS * 24 * 3600) {
+      await ctx.db
+        .update(oppSubmissions)
+        .set({ status: "rejected", updatedAt: now })
+        .where(eq(oppSubmissions.id, sub.id))
+      await ctx.db
+        .update(oppOpportunities)
+        .set({ status: "expired", updatedAt: now })
+        .where(eq(oppOpportunities.id, sub.opportunityId))
+      return {
+        summary: `Submission abandonada após ${MAX_AGE_DAYS} dias sem resolução`,
+        extra: { abandoned: true, age_days: Math.round(ageSeconds / 86400) },
+      }
+    }
 
     // Atualiza timestamp de verificação
     await ctx.db
@@ -87,10 +106,10 @@ export const verifySubmissionOutcomeActivity: Activity = {
     }
 
     // ── Gitcoin / Email — não há verificação automática ──────────────────────
-    // Re-enfileira em 24h para verificação manual
+    // Re-enfileira em 24h para verificação manual (limitado pelo TTL acima)
     await ctx.enqueue("verify-submission-outcome", { submission_id: sub.id }, { priority: 9 })
     return {
-      summary: `Submission ${sub.platform} — verificação manual necessária (reagendada em 24h)`,
+      summary: `Submission ${sub.platform} — verificação manual necessária (reagendada; ${Math.round(ageSeconds / 86400)}d/${MAX_AGE_DAYS}d)`,
       extra: { outcome: "pending" },
     }
   },
@@ -126,8 +145,8 @@ async function handleAccepted(
   // Registra receita em daemon_revenue (para aparecer no dashboard de receita)
   if (rewardUsd > 0) {
     const [pipeline] = await ctx.db
-      .select({ id: (await import("../schema")).daemonPipelines.id })
-      .from((await import("../schema")).daemonPipelines)
+      .select({ id: daemonPipelines.id })
+      .from(daemonPipelines)
       .limit(1)
 
     if (pipeline) {

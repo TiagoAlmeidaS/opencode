@@ -6,6 +6,7 @@ import type { Activity, ActivityContext, ActivityOutput } from "../types"
 interface ScanFreelanceJobsInput {
   platforms?: Array<"remoteok" | "weworkremotely">
   tags?: string[]
+  categories?: string[]  // WWR: remote-programming-jobs, remote-copywriting-jobs
   limit?: number
 }
 
@@ -66,8 +67,9 @@ function parseRSSItems(xml: string): WWRJob[] {
   return items
 }
 
-async function fetchWeWorkRemotely(limit: number): Promise<WWRJob[]> {
-  const res = await fetch("https://weworkremotely.com/categories/remote-programming-jobs.rss", {
+async function fetchWeWorkRemotely(category: string, limit: number): Promise<WWRJob[]> {
+  const url = `https://weworkremotely.com/categories/${category}.rss`
+  const res = await fetch(url, {
     headers: { "User-Agent": "opencode-server/1.0" },
   })
   if (!res.ok) throw new Error(`WWR error: ${res.status}`)
@@ -81,9 +83,21 @@ const AI_KEYWORDS = [
   "typescript", "node", "bun", "cli", "automation", "developer tools",
 ]
 
+const CONTENT_KEYWORDS = [
+  "writer", "writing", "copy", "content", "blog", "article", "script",
+  "editorial", "copywriting", "roteiro", "technical writing",
+]
+
+const CONTENT_CATEGORIES = ["remote-copywriting-jobs", "remote-content-creation-jobs"]
+
 function isRelevant(text: string): boolean {
   const lower = text.toLowerCase()
   return AI_KEYWORDS.some((kw) => lower.includes(kw))
+}
+
+function isContentRelevant(text: string): boolean {
+  const lower = text.toLowerCase()
+  return CONTENT_KEYWORDS.some((kw) => lower.includes(kw))
 }
 
 export const scanFreelanceJobsActivity: Activity = {
@@ -95,6 +109,7 @@ export const scanFreelanceJobsActivity: Activity = {
     const input = ctx.input as unknown as ScanFreelanceJobsInput
     const platforms = input.platforms ?? ["remoteok", "weworkremotely"]
     const tags = input.tags ?? ["ai", "developer", "typescript", "node"]
+    const categories = input.categories ?? ["remote-programming-jobs"]
     const limit = input.limit ?? 30
 
     const now = Math.floor(Date.now() / 1000)
@@ -102,13 +117,20 @@ export const scanFreelanceJobsActivity: Activity = {
     let created = 0
     let enqueued = 0
 
+    const isContentMode = tags.some((t) =>
+      ["writing", "copywriting", "content", "blog", "technical writing"].includes(t.toLowerCase()),
+    )
+
     // --- RemoteOK ---
     if (platforms.includes("remoteok")) {
       try {
         const jobs = await fetchRemoteOK(tags, limit)
+        const relevant = isContentMode ? isContentRelevant : isRelevant
+        const oppType = isContentMode ? "content" : "freelance"
+
         for (const job of jobs) {
           const text = `${job.position ?? ""} ${(job.description ?? "").slice(0, 500)}`
-          if (!isRelevant(text)) continue
+          if (!relevant(text)) continue
 
           found++
           const externalId = String(job.id ?? job.slug ?? job.position)
@@ -135,7 +157,7 @@ export const scanFreelanceJobsActivity: Activity = {
           const id = ulid()
           await ctx.db.insert(oppOpportunities).values({
             id,
-            type: "freelance",
+            type: oppType,
             sourcePlatform: "remoteok",
             externalId,
             title: job.position ?? "Remote Job",
@@ -164,54 +186,63 @@ export const scanFreelanceJobsActivity: Activity = {
     // --- We Work Remotely ---
     if (platforms.includes("weworkremotely")) {
       try {
-        const jobs = await fetchWeWorkRemotely(limit)
-        for (const job of jobs) {
-          const text = `${job.title} ${job.description.slice(0, 500)}`
-          if (!isRelevant(text)) continue
+        const seen = new Set<string>()
+        for (const category of categories) {
+          const jobs = await fetchWeWorkRemotely(category, limit)
+          const isContentCat = CONTENT_CATEGORIES.includes(category)
+          const relevant = isContentCat ? isContentRelevant : isRelevant
+          const oppType = isContentCat ? "content" : "freelance"
 
-          found++
-          // Usa URL como external ID (único por vaga)
-          const externalId = job.link.replace(/^https?:\/\/weworkremotely\.com/, "")
+          for (const job of jobs) {
+            const text = `${job.title} ${job.description.slice(0, 500)}`
+            if (!relevant(text)) continue
 
-          const [existing] = await ctx.db
-            .select({ id: oppOpportunities.id })
-            .from(oppOpportunities)
-            .where(
-              and(
-                eq(oppOpportunities.sourcePlatform, "weworkremotely"),
-                eq(oppOpportunities.externalId, externalId),
-              ),
-            )
-            .limit(1)
+            const externalId = job.link.replace(/^https?:\/\/weworkremotely\.com/, "")
+            if (seen.has(externalId)) continue
+            seen.add(externalId)
 
-          if (existing) {
-            await ctx.db
-              .update(oppOpportunities)
-              .set({ lastSeenAt: now, updatedAt: now })
-              .where(eq(oppOpportunities.id, existing.id))
-            continue
+            found++
+
+            const [existing] = await ctx.db
+              .select({ id: oppOpportunities.id })
+              .from(oppOpportunities)
+              .where(
+                and(
+                  eq(oppOpportunities.sourcePlatform, "weworkremotely"),
+                  eq(oppOpportunities.externalId, externalId),
+                ),
+              )
+              .limit(1)
+
+            if (existing) {
+              await ctx.db
+                .update(oppOpportunities)
+                .set({ lastSeenAt: now, updatedAt: now })
+                .where(eq(oppOpportunities.id, existing.id))
+              continue
+            }
+
+            const id = ulid()
+            await ctx.db.insert(oppOpportunities).values({
+              id,
+              type: oppType,
+              sourcePlatform: "weworkremotely",
+              externalId,
+              title: job.title,
+              description: job.description.slice(0, 2000),
+              url: job.link,
+              rewardCurrency: "USD",
+              rewardType: "tip",
+              status: "new",
+              firstSeenAt: now,
+              lastSeenAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            created++
+            await ctx.enqueue("score-opportunity", { opportunity_id: id }, { priority: 7 })
+            enqueued++
           }
-
-          const id = ulid()
-          await ctx.db.insert(oppOpportunities).values({
-            id,
-            type: "freelance",
-            sourcePlatform: "weworkremotely",
-            externalId,
-            title: job.title,
-            description: job.description.slice(0, 2000),
-            url: job.link,
-            rewardCurrency: "USD",
-            rewardType: "tip",
-            status: "new",
-            firstSeenAt: now,
-            lastSeenAt: now,
-            createdAt: now,
-            updatedAt: now,
-          })
-          created++
-          await ctx.enqueue("score-opportunity", { opportunity_id: id }, { priority: 7 })
-          enqueued++
         }
       } catch (err) {
         console.error("[scan-freelance-jobs] WWR error:", err)

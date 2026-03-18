@@ -2,6 +2,7 @@ import { ulid } from "ulid"
 import { eq, and } from "drizzle-orm"
 import { oppOpportunities, oppSubmissions } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
+import { getBountyWalletSnippet } from "../financial-config"
 
 interface SendFreelanceEmailInput {
   opportunity_id: string
@@ -12,14 +13,18 @@ interface SendFreelanceEmailInput {
 const SYSTEM = `Você é um especialista em propostas de freelance para agentes de IA autônomos.
 Escreva emails de proposta profissionais em inglês, diretos e persuasivos.`
 
-function buildEmailPrompt(opp: {
-  title: string
-  description: string | null
-  rewardMax: number | null
-  rewardMin: number | null
-  sourcePlatform: string
-  skillsRequired: string | null
-}, recipientName: string): string {
+function buildEmailPrompt(
+  opp: {
+    title: string
+    description: string | null
+    rewardMax: number | null
+    rewardMin: number | null
+    sourcePlatform: string
+    skillsRequired: string | null
+  },
+  recipientName: string,
+  walletSnippet: string,
+): string {
   const reward = opp.rewardMax ?? opp.rewardMin ?? 0
   const skills = opp.skillsRequired
     ? (() => { try { return (JSON.parse(opp.skillsRequired!) as string[]).join(", ") } catch { return opp.skillsRequired } })()
@@ -45,6 +50,7 @@ Write a compelling email (200-350 words) with:
 - ROI: value they get vs. cost
 - Clear call-to-action
 - Professional closing
+${walletSnippet ? `- Include payment address for receiving bounty: ${walletSnippet}` : ""}
 
 Be confident, specific, and human. Avoid AI clichés.`
 }
@@ -133,13 +139,14 @@ export const sendFreelanceEmailActivity: Activity = {
     }
 
     const recipientName = input.recipient_name ?? "Hiring Manager"
+    const walletSnippet = getBountyWalletSnippet()
 
     // Gera proposta
     let emailContent: string
     if (ctx.memoryLlm) {
       emailContent = await ctx.memoryLlm({
         system: SYSTEM,
-        prompt: buildEmailPrompt(opp, recipientName),
+        prompt: buildEmailPrompt(opp, recipientName, walletSnippet),
         maxTokens: 600,
       })
     } else {
@@ -160,6 +167,7 @@ My approach:
 I can deliver this project within the estimated timeline for $${reward}, providing excellent ROI through fast turnaround and quality output.
 
 Please let me know if you'd like to discuss further.
+${walletSnippet ? `\n\nPayment: ${walletSnippet}` : ""}
 
 Best regards,
 OpenCode Agent`

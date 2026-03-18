@@ -1,17 +1,21 @@
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 
+const CLI = process.env.OPENCODE_CLI_PATH ?? "opencode"
+
 export async function spawnOpenCode(
   task: string,
   cwd: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<string> {
-  const proc = Bun.spawn(["opencode", "run", "--task", task], {
+  const proc = Bun.spawn([CLI, "run", "--task", task], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
   })
 
+  let timedOut = false
   const timeout = setTimeout(() => {
+    timedOut = true
     proc.kill()
   }, timeoutMs)
 
@@ -23,6 +27,14 @@ export async function spawnOpenCode(
   await proc.exited
   clearTimeout(timeout)
 
-  const output = [stdoutBuf, stderrBuf].filter(Boolean).join("\n").trim()
-  return output
+  if (timedOut) {
+    throw new Error(`OpenCode CLI timed out after ${Math.round(timeoutMs / 1000)}s`)
+  }
+
+  if (proc.exitCode !== 0) {
+    const errOutput = [stderrBuf, stdoutBuf].filter(Boolean).join("\n").trim().slice(0, 1000)
+    throw new Error(`OpenCode CLI exited with code ${proc.exitCode}: ${errOutput}`)
+  }
+
+  return [stdoutBuf, stderrBuf].filter(Boolean).join("\n").trim()
 }

@@ -170,8 +170,9 @@ CREATE INDEX IF NOT EXISTS idx_telegram_reports ON opp_telegram_reports(report_t
 | `scan-github-bounties` | `activities/scan-github-bounties.ts` | GitHub REST (GITHUB_TOKEN) | 4h |
 | `scan-gitcoin-bounties` | `activities/scan-gitcoin-bounties.ts` | Gitcoin API pública | 4h |
 | `scan-hackerone-programs` | `activities/scan-hackerone-programs.ts` | HackerOne API pública | 4h |
-| `scan-freelance-jobs` | `activities/scan-freelance-jobs.ts` | RemoteOK JSON + WWR RSS | 4h |
-| `scan-content-opportunities` | `activities/scan-content-opportunities.ts` | HN Algolia (free) | 4h |
+| `scan-freelance-jobs` | `activities/scan-freelance-jobs.ts` | RemoteOK JSON + WWR RSS (suporta tags/categorias de conteúdo) | 4h |
+| `scan-content-jobs` | `activities/scan-content-jobs.ts` | ProBlogger RSS + WWR (copywriting, content-creation) | 4h |
+| `scan-content-opportunities` | `activities/scan-content-opportunities.ts` | HN Algolia (free) — planejado | 4h |
 
 ### Grupo C: Análise LLM
 
@@ -196,7 +197,7 @@ CREATE INDEX IF NOT EXISTS idx_telegram_reports ON opp_telegram_reports(report_t
 
 | Pipeline | Arquivo | Cron | Descrição |
 |---|---|---|---|
-| `opportunity-collector` | `pipelines/opportunity_collector.ts` | `0 */4 * * *` | Enfileira todos os scanners |
+| `opportunity-collector` | `pipelines/opportunity_collector.ts` | `0 */4 * * *` | Enfileira scanners (github-bounties, freelance-jobs, content-jobs) |
 | `market-data-collector` | `pipelines/market_data_collector.ts` | `0 * * * *` | Cripto + trends |
 | `opportunity-analyst` | `pipelines/opportunity_analyst.ts` | `30 */2 * * *` | Score batch das novas opps |
 | `daily-opportunity-report` | `pipelines/daily_opportunity_report.ts` | `0 8 * * *` | Digest → Telegram |
@@ -222,6 +223,10 @@ Tier 2 — Recompensas maiores (fit: 70-85):
 
 Tier 3 — Conteúdo e tendências (fit: 60-70):
   ai-content          (fit: 70) — tutoriais, reviews
+  content-copywriting (fit: 68) — copywriting, ad copy, landing page
+  content-scriptwriting (fit: 65) — roteiro, script, video/podcast
+  content-blog        (fit: 65) — blog post, artigo, long-form
+  content-social      (fit: 62) — social media, captions, posts
   oss-contributions   (fit: 78) — PRs para projetos OSS
 
 Cadeia de valor seed:
@@ -231,6 +236,18 @@ Cadeia de valor seed:
   ai-content → ai-tooling            [value-chain, 0.6]
   devops-automation → llm-integration [value-chain, 0.65]
 ```
+
+---
+
+## Oportunidades de Conteúdo (implementado)
+
+O sistema suporta oportunidades de **conteúdo** (texto, roteiro, copywriting) além de codificação:
+
+- **Fontes:** ProBlogger (RSS), WeWorkRemotely (copywriting, content-creation), RemoteOK (tags: writing, copywriting).
+- **Nichos:** content-copywriting, content-scriptwriting, content-blog, content-social, ai-content.
+- **Fluxo:** coleta (`scan-content-jobs` ou `scan-freelance-jobs` com tags/categorias) → score (prompt específico para `type === "content"`) → classificação → execução (`buildTask` para texto) → submissão.
+
+Ver [opportunity-content-sources.md](../features/opportunity-content-sources.md) para detalhes.
 
 ---
 

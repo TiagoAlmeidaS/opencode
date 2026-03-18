@@ -21,7 +21,7 @@ Na primeira inicialização, o servidor cria automaticamente os pipelines abaixo
 
 | Strategy | Nome | Cron | Função |
 |----------|------|------|--------|
-| `opportunity-collector` | Coletor de Oportunidades | `0 */4 * * *` (a cada 4h) | Busca bounties GitHub, freelance → `opp_opportunities` (Gitcoin API descontinuada) |
+| `opportunity-collector` | Coletor de Oportunidades | `0 */4 * * *` (a cada 4h) | Busca GitHub bounties, freelance (RemoteOK, WWR), conteúdo (ProBlogger, WWR copywriting) → `opp_opportunities` |
 | `market-data-collector` | Coletor de Mercado | `0 * * * *` (a cada hora) | Preços cripto via CoinGecko → `opp_market_data` |
 | `opportunity-analyst` | Analista de Oportunidades | `30 */2 * * *` (a cada 2h) | Pontua oportunidades "new" → status "scored" |
 | `daily-opportunity-report` | Relatório Diário | `0 8 * * *` (8h diariamente) | Lê dados e envia digest ao Telegram |
@@ -32,6 +32,8 @@ Na primeira inicialização, o servidor cria automaticamente os pipelines abaixo
 **GITHUB_TOKEN** — necessário para `scan-github-bounties`. Sem ele, a coleta de bounties GitHub falha.
 
 **Gitcoin** — a API de bounties (`/api/v0.1/bounties/`) foi descontinuada. O scanner retorna "pulando" em 404 e não quebra a fila. Bounties migraram para [Buidlbox](https://buidlbox.io).
+
+**Fontes de conteúdo** — o Coletor inclui `content-jobs`: ProBlogger (RSS), WeWorkRemotely (copywriting, content-creation). Oportunidades com `type: content` são pontuadas e executadas com prompt de escrita (texto, roteiro, copy). Para incluir conteúdo no `scan-freelance-jobs`, use `categories: ["remote-programming-jobs","remote-copywriting-jobs"]` ou `tags: ["writing","copywriting"]` no config do pipeline.
 
 Para desativar o seed: `SEED_DEFAULT_PIPELINES=false`.
 
@@ -58,7 +60,23 @@ Para desativar o seed: `SEED_DEFAULT_PIPELINES=false`.
 
 O relatório **não dispara a CLI** nem faz coleta — ele apenas **lê** `opp_opportunities` e `opp_market_data`. Os dados vêm dos pipelines de coleta.
 
-### 3. Relatórios não chegam no Telegram
+### 3. Execute Opportunity — "Executable not found in $PATH: opencode"
+
+| Causa | Como verificar | Solução |
+|-------|----------------|---------|
+| **CLI opencode ausente no container** | Activity `execute-opportunity` falha com "Executable not found" | No Docker, `OPENCODE_CLI_PATH` já vem definido. Rebuild: `docker compose -f docker-compose.scheduler.yml build opencode-server` |
+| **Dev local sem opencode no PATH** | Rodando standalone fora do Docker | Instalar opencode (`bun install` no monorepo) ou definir `OPENCODE_CLI_PATH` no `.env.server` |
+
+### 4. Loop de validação (execute-opportunity)
+
+A activity `execute-opportunity` suporta validação automática e retry:
+
+- **validation_command** — comando para validar após implementação (ex.: `npm run lint`, `docker compose config`)
+- **max_retries** — tentativas máximas (default: 3). Se a validação falhar, o erro é injetado no prompt e o agente tenta corrigir
+
+Exemplo via API: `POST /opportunities/:id/execute` com body `{ "validation_command": "npm run lint", "max_retries": 3 }`.
+
+### 5. Relatórios não chegam no Telegram
 
 | Causa | Como verificar | Solução |
 |-------|----------------|---------|
