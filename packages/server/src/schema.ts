@@ -128,6 +128,7 @@ export const daemonQueue = sqliteTable("daemon_queue", {
   completedAt: integer("completed_at"),
   durationMs: integer("duration_ms"),
   triggeredBy: text("triggered_by"),
+  relatedOpportunityId: text("related_opportunity_id"),
   createdAt: integer("created_at").notNull(),
 })
 

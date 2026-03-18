@@ -101,14 +101,14 @@ export const classifyWorkspaceStrategyActivity: Activity = {
 
     // Roteia para a próxima etapa conforme a estratégia
     if (strategy === "fork-temp") {
-      await ctx.enqueue("submit-github-pr", { opportunity_id: opp.id }, { priority: 5 })
+      await ctx.enqueue("submit-github-pr", { opportunity_id: opp.id }, { priority: 5, relatedOpportunityId: opp.id })
     } else if (strategy === "dedicated-repo") {
       await ctx.enqueue("create-dedicated-repo", {
         opportunity_id: opp.id,
         repo_name: suggestedRepoName,
-      }, { priority: 4 })
+      }, { priority: 4, relatedOpportunityId: opp.id })
     } else if (strategy === "extend-repo") {
-      await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5 })
+      await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5, relatedOpportunityId: opp.id })
     }
 
     return {

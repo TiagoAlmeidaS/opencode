@@ -1,10 +1,56 @@
 import { ulid } from "ulid"
-import { eq, and, asc, sql } from "drizzle-orm"
+import { eq, and, asc, sql, inArray } from "drizzle-orm"
 import type { ServerDb } from "./db"
 import { daemonQueue } from "./schema"
 import { getActivity } from "./activity"
 import { spawnOpenCode } from "./spawn"
 import type { ActivityContext, MemoryLlmOptions } from "./types"
+
+/**
+ * Enfileira uma activity com dedup por relatedOpportunityId.
+ * Se já existe entrada `pending` ou `running` com o mesmo activityType +
+ * relatedOpportunityId, retorna o ID existente sem inserir duplicata.
+ */
+export async function enqueueDeduped(
+  db: ServerDb,
+  opts: {
+    activityType: string
+    input: unknown
+    priority?: number
+    triggeredBy?: string
+    relatedOpportunityId?: string
+  },
+): Promise<{ id: string; skipped: boolean }> {
+  if (opts.relatedOpportunityId) {
+    const [existing] = await db
+      .select({ id: daemonQueue.id })
+      .from(daemonQueue)
+      .where(
+        and(
+          eq(daemonQueue.activityType, opts.activityType),
+          eq(daemonQueue.relatedOpportunityId, opts.relatedOpportunityId),
+          inArray(daemonQueue.status, ["pending", "running"]),
+        ),
+      )
+      .limit(1)
+
+    if (existing) return { id: existing.id, skipped: true }
+  }
+
+  const newId = ulid()
+  const ts = Math.floor(Date.now() / 1000)
+  await db.insert(daemonQueue).values({
+    id: newId,
+    activityType: opts.activityType,
+    status: "pending",
+    priority: opts.priority ?? 5,
+    inputJson: JSON.stringify(opts.input ?? {}),
+    triggeredBy: opts.triggeredBy ?? null,
+    relatedOpportunityId: opts.relatedOpportunityId ?? null,
+    createdAt: ts,
+  })
+  return { id: newId, skipped: false }
+}
 
 const TICK_MS = 10_000
 const MAX_CONCURRENT = 3
@@ -109,19 +155,20 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
       memoryLlm,
       embed,
       async enqueue(type, input, opts) {
-        const newId = ulid()
-        const ts = Math.floor(Date.now() / 1000)
-        await db.insert(daemonQueue).values({
-          id: newId,
+        const result = await enqueueDeduped(db, {
           activityType: type,
-          status: "pending",
+          input,
           priority: opts?.priority ?? 5,
-          dependsOn: opts?.dependsOn ?? null,
-          inputJson: JSON.stringify(input ?? {}),
           triggeredBy: id,
-          createdAt: ts,
+          relatedOpportunityId: opts?.relatedOpportunityId,
         })
-        return newId
+        if (opts?.dependsOn && !result.skipped) {
+          await db
+            .update(daemonQueue)
+            .set({ dependsOn: opts.dependsOn })
+            .where(eq(daemonQueue.id, result.id))
+        }
+        return result.id
       },
       async updateProgress(step: string) {
         await db

@@ -296,7 +296,7 @@ export const scoreOpportunityActivity: Activity = {
           auto_execute_min_score: input.auto_execute_min_score ?? 75,
           ...(input.classify_system_prompt ? { classify_system_prompt: input.classify_system_prompt } : {}),
         },
-        { priority: 5 },
+        { priority: 5, relatedOpportunityId: opp.id },
       )
     }
 

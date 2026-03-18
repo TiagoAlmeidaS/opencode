@@ -3,10 +3,10 @@
  * Processa em batch as oportunidades novas, enfileirando score-opportunity.
  * Cron sugerido: 30 *\/2 * * * (a cada 2h, offset 30min p/ não colidir com collector)
  */
-import { ulid } from "ulid"
 import { eq, and, asc, lte } from "drizzle-orm"
-import { oppOpportunities, daemonQueue } from "../schema"
+import { oppOpportunities } from "../schema"
 import { registerPipeline } from "../registry"
+import { enqueueDeduped } from "../queue"
 import type { PipelineContext, ContentOutput } from "../types"
 
 interface OpportunityAnalystConfig {
@@ -83,27 +83,12 @@ registerPipeline({
         if (reward < minReward) { skipped++; continue }
       }
 
-      // Verifica se já tem score-opportunity pendente/running para esta opp
-      const [existing] = await ctx.db
-        .select({ id: daemonQueue.id })
-        .from(daemonQueue)
-        .where(
-          and(
-            eq(daemonQueue.activityType, "score-opportunity"),
-            eq(daemonQueue.inputJson, JSON.stringify({ opportunity_id: opp.id })),
-            eq(daemonQueue.status, "pending"),
-          ),
-        )
-        .limit(1)
-
-      if (existing) { skipped++; continue }
-
-      await ctx.db.insert(daemonQueue).values({
-        id: ulid(),
+      const result = await enqueueDeduped(ctx.db, {
         activityType: "score-opportunity",
-        status: "pending",
         priority: 6,
-        inputJson: JSON.stringify({
+        triggeredBy: ctx.jobId,
+        relatedOpportunityId: opp.id,
+        input: {
           opportunity_id: opp.id,
           classify_min_score: classifyMinScore,
           auto_execute_min_score: autoExecuteMinScore,
@@ -111,10 +96,9 @@ registerPipeline({
           ...(scoreSystemPrompt ? { score_system_prompt: scoreSystemPrompt } : {}),
           ...(scoreContentSystemPrompt ? { score_content_system_prompt: scoreContentSystemPrompt } : {}),
           ...(classifySystemPrompt ? { classify_system_prompt: classifySystemPrompt } : {}),
-        }),
-        triggeredBy: ctx.jobId,
-        createdAt: now,
+        },
       })
+      if (result.skipped) { skipped++; continue }
       enqueued++
     }
 

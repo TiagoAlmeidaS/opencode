@@ -46,6 +46,13 @@ export const executeOpportunityActivity: Activity = {
 
     if (!opp) throw new Error(`Oportunidade não encontrada: ${input.opportunity_id}`)
 
+    if (opp.status === "applied" || opp.status === "won") {
+      return {
+        summary: `Oportunidade já executada (status: ${opp.status}) — skipped`,
+        extra: { skipped: true, status: opp.status },
+      }
+    }
+
     const now = Math.floor(Date.now() / 1000)
     const cwd = input.cwd ?? process.cwd()
 

@@ -118,7 +118,7 @@ export const classifyNicheActivity: Activity = {
               updatedAt: now,
             })
 
-            // Enfileira análise de relações para o novo niche
+            // Enfileira análise de relações para o novo niche (sem dedup por opp — é por niche)
             await ctx.enqueue("analyze-niche-relations", { niche_name: nicheName }, { priority: 8 })
           }
         }
@@ -204,7 +204,7 @@ export const classifyNicheActivity: Activity = {
 
     const autoExecute = aiAgentSuitable && scoreOk && skillGaps.length === 0
     if (autoExecute) {
-      await ctx.enqueue("classify-workspace-strategy", { opportunity_id: opp.id }, { priority: 6 })
+      await ctx.enqueue("classify-workspace-strategy", { opportunity_id: opp.id }, { priority: 6, relatedOpportunityId: opp.id })
     }
 
     // Skill gap → cria issues no GitHub para rastrear
@@ -213,7 +213,7 @@ export const classifyNicheActivity: Activity = {
         await ctx.enqueue(
           "create-skill-gap-issue",
           { skill_name: skill, opportunity_id: opp.id, opportunity_title: opp.title },
-          { priority: 8 },
+          { priority: 8, relatedOpportunityId: opp.id },
         )
       }
     }

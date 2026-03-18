@@ -90,7 +90,7 @@ export const createDedicatedRepoActivity: Activity = {
       .where(eq(oppOpportunities.id, opp.id))
 
     // Enfileira implementação no repo criado
-    await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5 })
+    await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5, relatedOpportunityId: opp.id })
 
     return {
       summary: `Repo criado: ${repoUrl} — implementação enfileirada`,
