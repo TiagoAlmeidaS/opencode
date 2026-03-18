@@ -39,6 +39,7 @@ import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/util/error"
 import { fn } from "@/util/fn"
 import { SessionProcessor } from "./processor"
+import { ServerMemory } from "@/server-memory/client"
 import { TaskTool } from "@/tool/task"
 import { Tool } from "@/tool/tool"
 import { PermissionNext } from "@/permission/next"
@@ -653,9 +654,21 @@ export namespace SessionPrompt {
 
       // Build system prompt, adding structured output instruction if needed
       const skills = await SystemPrompt.skills(agent)
+      const umsg =
+        msgs.find((m) => m.info.role === "user" && m.info.id === lastUser.id) ??
+        msgs.findLast((m) => m.info.role === "user")
+      let userQ = ""
+      if (umsg) {
+        for (const p of umsg.parts) {
+          if (p.type !== "text" || p.ignored || p.synthetic) continue
+          userQ += p.text + "\n"
+        }
+      }
+      const serverCtx = await ServerMemory.contextForUserMessage(userQ)
       const system = [
         ...(await SystemPrompt.environment(model)),
         ...(skills ? [skills] : []),
+        ...serverCtx,
         ...(await InstructionPrompt.system()),
       ]
       const format = lastUser.format ?? { type: "text" }

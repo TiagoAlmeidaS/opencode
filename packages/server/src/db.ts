@@ -153,8 +153,8 @@ CREATE TABLE IF NOT EXISTS daemon_queue (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_queue_status_priority ON daemon_queue(status, priority, created_at);
-CREATE INDEX IF NOT EXISTS idx_queue_depends ON daemon_queue(depends_on);
-CREATE INDEX IF NOT EXISTS idx_queue_opp_id ON daemon_queue(related_opportunity_id, activity_type, status);
+  CREATE INDEX IF NOT EXISTS idx_queue_depends ON daemon_queue(depends_on);
+
 CREATE TABLE IF NOT EXISTS opp_market_data (
   id           TEXT PRIMARY KEY,
   asset_type   TEXT NOT NULL,
@@ -396,7 +396,11 @@ export function getDb(dbPath: string) {
     "CREATE INDEX IF NOT EXISTS idx_queue_opp_id ON daemon_queue(related_opportunity_id, activity_type, status)",
   ]
   for (const stmt of alterMigrations) {
-    try { sqlite.run(stmt) } catch { /* column already exists */ }
+    try {
+      sqlite.run(stmt)
+    } catch {
+      /* column already exists */
+    }
   }
   return drizzle({ client: sqlite, schema })
 }
