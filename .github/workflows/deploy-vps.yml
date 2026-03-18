@@ -1,0 +1,33 @@
+# Deploy OpenCode Server na VPS ao fazer push na branch homolog.
+# Requer secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_DEPLOY_PATH
+name: Deploy VPS
+
+on:
+  push:
+    branches:
+      - homolog
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.VPS_DEPLOY_PATH }}
+            git fetch origin homolog
+            git checkout homolog
+            git pull origin homolog
+            docker compose -f docker-compose.scheduler.yml build opencode-server
+            docker compose -f docker-compose.scheduler.yml up -d opencode-server
+            echo "Deploy concluído: $(date -Iseconds)"

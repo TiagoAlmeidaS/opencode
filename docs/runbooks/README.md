@@ -10,3 +10,4 @@ Procedimentos operacionais passo a passo: como executar rotinas, fazer deploy, t
 | [runbook-memory-pipeline.md](runbook-memory-pipeline.md) | Pipeline de memória (memory_extract, memory_consolidation). |
 | [runbook-project-discovery.md](runbook-project-discovery.md) | Prática de Project Discovery (validação de ideias de projeto) e formato do relatório. |
 | [runbook-troubleshoot-schedules-reports.md](runbook-troubleshoot-schedules-reports.md) | Troubleshooting de schedules (pipelines agendados) e relatórios Telegram. |
+| [runbook-ci-deploy-vps.md](runbook-ci-deploy-vps.md) | CI GitHub Actions para deploy automático na VPS (branch homolog). |
