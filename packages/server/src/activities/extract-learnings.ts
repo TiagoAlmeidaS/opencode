@@ -4,9 +4,10 @@
  * para alimentar o cérebro RAG do agente.
  */
 import { ulid } from "ulid"
-import { desc, eq, inArray, gte, or } from "drizzle-orm"
+import { desc, eq, inArray } from "drizzle-orm"
 import { oppSubmissions, oppOpportunities, oppNiches, agentLearnings } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
+import { addChunks } from "../memory/rag"
 
 interface ExtractLearningsInput {
   mode?: "batch" | "single"
@@ -262,13 +263,32 @@ export const extractLearningsActivity: Activity = {
       }
     }
 
+    // ── Index no Qdrant (se embed disponível) ────────────────────────────────
+    let indexed = 0
+    if (ctx.embed) {
+      const chunks = extracted.map((l) => ({
+        id: `learning:${l.key}`,
+        text: `[${l.category}] ${l.title}\n${l.body}`,
+        source: `agent_learnings/${l.key}`,
+        metadata: {
+          category: l.category,
+          confidence: l.confidence,
+          signal: l.signal,
+          tags: l.tags,
+        },
+      }))
+      const ok = await addChunks(chunks)
+      if (ok) indexed = chunks.length
+    }
+
     return {
-      summary: `Aprendizados extraídos de ${enriched.length} submissions: ${created} novos, ${updated} atualizados`,
+      summary: `Aprendizados extraídos de ${enriched.length} submissions: ${created} novos, ${updated} atualizados${indexed > 0 ? `, ${indexed} indexados no Qdrant` : ""}`,
       extra: {
         submissions_analyzed: enriched.length,
         learnings_extracted: extracted.length,
         created,
         updated,
+        qdrant_indexed: indexed,
       },
     }
   },

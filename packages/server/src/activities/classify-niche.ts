@@ -43,12 +43,6 @@ Retorne JSON:
 }`
 }
 
-function resolveExecutionActivity(opp: { type: string; url: string | null }): string {
-  if (opp.type === "oss-bounty" && opp.url?.includes("github.com/")) return "submit-github-pr"
-  if (opp.type === "freelance") return "send-freelance-email"
-  return "execute-opportunity"  // content, bug-bounty, grant, oss-bounty não-GitHub
-}
-
 interface ClassifyResult {
   niche_name: string
   is_new_niche: boolean
@@ -160,13 +154,24 @@ export const classifyNicheActivity: Activity = {
       .set({ nicheId, status: "shortlisted", updatedAt: now })
       .where(eq(oppOpportunities.id, opp.id))
 
-    // Enfileira execução baseada no tipo da oportunidade
-    const executionActivity = resolveExecutionActivity(opp)
-    await ctx.enqueue(executionActivity, { opportunity_id: opp.id }, { priority: 7 })
+    // Verifica se é adequado para execução automática
+    let aiAgentSuitable = true
+    if (opp.llmAnalysis) {
+      try {
+        const analysis = JSON.parse(opp.llmAnalysis) as { ai_agent_suitable?: boolean }
+        aiAgentSuitable = analysis.ai_agent_suitable !== false
+      } catch { /* ignora parse error */ }
+    }
+
+    // Auto-executa apenas se o agente consegue fazer sozinho E score é alto o suficiente
+    const autoExecute = aiAgentSuitable && (opp.score ?? 0) >= 75
+    if (autoExecute) {
+      await ctx.enqueue("classify-workspace-strategy", { opportunity_id: opp.id }, { priority: 6 })
+    }
 
     return {
-      summary: `Oportunidade classificada em "${nicheName || "sem niche"}"${isNew ? " (niche novo criado)" : ""} — execução enfileirada`,
-      extra: { niche_name: nicheName, niche_id: nicheId, is_new: isNew, execution_activity: executionActivity },
+      summary: `Oportunidade classificada em "${nicheName || "sem niche"}"${isNew ? " (niche novo criado)" : ""}${autoExecute ? " — estratégia de workspace enfileirada" : " — execução manual necessária (score < 75 ou ai_agent_suitable=false)"}`,
+      extra: { niche_name: nicheName, niche_id: nicheId, is_new: isNew, auto_execute: autoExecute },
     }
   },
 }

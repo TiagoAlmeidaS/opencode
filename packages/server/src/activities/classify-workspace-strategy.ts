@@ -99,12 +99,16 @@ export const classifyWorkspaceStrategyActivity: Activity = {
       .set({ workspaceStrategy: strategy, updatedAt: now })
       .where(eq(oppOpportunities.id, opp.id))
 
-    // Se dedicated-repo, enfileira criação automática
-    if (strategy === "dedicated-repo") {
+    // Roteia para a próxima etapa conforme a estratégia
+    if (strategy === "fork-temp") {
+      await ctx.enqueue("submit-github-pr", { opportunity_id: opp.id }, { priority: 5 })
+    } else if (strategy === "dedicated-repo") {
       await ctx.enqueue("create-dedicated-repo", {
         opportunity_id: opp.id,
         repo_name: suggestedRepoName,
       }, { priority: 4 })
+    } else if (strategy === "extend-repo") {
+      await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5 })
     }
 
     return {

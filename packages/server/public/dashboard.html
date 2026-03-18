@@ -144,6 +144,19 @@
   .disc-done    { color: var(--success); }
   .disc-failed  { color: var(--danger); }
   .disc-pending { color: var(--warn); }
+
+  /* Brain / Learnings */
+  .signal-positive { background: rgba(74,222,128,.15); color: var(--success); }
+  .signal-negative { background: rgba(248,113,113,.15); color: var(--danger); }
+  .signal-neutral  { background: rgba(96,165,250,.10); color: var(--info); }
+  .cat-skill    { background: rgba(108,115,255,.15); color: var(--accent); }
+  .cat-niche    { background: rgba(251,191,36,.15);  color: var(--warn); }
+  .cat-platform { background: rgba(96,165,250,.15);  color: var(--info); }
+  .cat-pattern  { background: rgba(74,222,128,.15);  color: var(--success); }
+  .conf-bar { display:inline-block; height:6px; border-radius:3px; background:var(--accent); vertical-align:middle; }
+  .brain-body { font-size:11px; color:var(--text-weak); max-width:420px; white-space:pre-wrap; line-height:1.5; }
+  .brain-actions { display:none; gap:8px; }
+  tr:hover .brain-actions { display:flex; }
 </style>
 </head>
 <body>
@@ -161,6 +174,7 @@
       <button class="tab" data-tab="submissions">Submissions</button>
       <button class="tab" data-tab="discovery">Discovery</button>
       <button class="tab" data-tab="specs">Specs</button>
+      <button class="tab" data-tab="brain">Brain</button>
     </div>
   </div>
   <div class="header-actions">
@@ -170,7 +184,8 @@
     <button class="btn btn-primary" id="add-btn"        onclick="openModal()"          style="display:none">+ Add Activity</button>
     <button class="btn btn-primary" id="run-pipeline-btn" onclick="runFirstPipeline()" style="display:none">▶ Run pipeline</button>
     <button class="btn btn-primary" id="new-idea-btn"   onclick="openDiscoveryModal()" style="display:none">+ New Idea</button>
-    <button class="btn btn-primary" id="new-spec-btn"   onclick="openSpecModal()"      style="display:none">+ New Spec</button>
+    <button class="btn btn-primary" id="new-spec-btn"      onclick="openSpecModal()"           style="display:none">+ New Spec</button>
+    <button class="btn btn-primary" id="extract-brain-btn" onclick="triggerExtractLearnings()" style="display:none">⚡ Extract Learnings</button>
   </div>
 </header>
 
@@ -356,10 +371,11 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'))
     t.classList.add('active')
     currentTab = t.dataset.tab
-    document.getElementById('add-btn').style.display      = currentTab === 'queue'     ? '' : 'none'
-    document.getElementById('new-idea-btn').style.display = currentTab === 'discovery' ? '' : 'none'
-    document.getElementById('new-spec-btn').style.display = currentTab === 'specs'     ? '' : 'none'
+    document.getElementById('add-btn').style.display          = currentTab === 'queue'     ? '' : 'none'
+    document.getElementById('new-idea-btn').style.display     = currentTab === 'discovery' ? '' : 'none'
+    document.getElementById('new-spec-btn').style.display     = currentTab === 'specs'     ? '' : 'none'
     document.getElementById('run-pipeline-btn').style.display = currentTab === 'pipelines' ? '' : 'none'
+    document.getElementById('extract-brain-btn').style.display = currentTab === 'brain'   ? '' : 'none'
     refresh()
   })
 })
@@ -1161,6 +1177,71 @@ async function submitActivity() {
   finally { btn.textContent = 'Add'; btn.disabled = false }
 }
 
+// ── Brain / Learnings ─────────────────────────────────────────────────────────
+async function renderBrain() {
+  let rows
+  try {
+    rows = await apiFetch('/learnings?limit=200')
+  } catch (e) {
+    document.getElementById('main-content').innerHTML = `<div class="empty" style="color:var(--danger)">${esc(e.message)}</div>`
+    return
+  }
+  if (!rows.length) {
+    document.getElementById('main-content').innerHTML = '<div class="empty">Nenhum aprendizado ainda. Clique em ⚡ Extract Learnings para analisar submissions passadas.</div>'
+    return
+  }
+  const catClass = { skill: 'cat-skill', niche: 'cat-niche', platform: 'cat-platform', pattern: 'cat-pattern' }
+  const sigClass = { positive: 'signal-positive', negative: 'signal-negative', neutral: 'signal-neutral' }
+  const trs = rows.map(r => {
+    const conf = Math.round((r.confidence ?? 0) * 100)
+    const barW = Math.round(conf * 0.8)
+    const tags = (() => { try { return JSON.parse(r.tags || '[]') } catch { return [] } })()
+    const tagsHtml = tags.slice(0, 4).map(t => `<span style="font-size:10px;color:var(--text-weak);background:var(--surface2);padding:1px 6px;border-radius:4px">${esc(t)}</span>`).join(' ')
+    return `<tr>
+      <td><span class="badge ${catClass[r.category] ?? ''}">${esc(r.category)}</span></td>
+      <td>
+        <div style="font-weight:600;font-size:12px">${esc(r.title)}</div>
+        <div style="font-size:11px;color:var(--text-weak);margin-top:2px;max-width:420px;line-height:1.5">${esc((r.body ?? '').slice(0, 180))}${(r.body ?? '').length > 180 ? '…' : ''}</div>
+        <div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${tagsHtml}</div>
+      </td>
+      <td style="white-space:nowrap">
+        <span class="conf-bar" style="width:${barW}px"></span>
+        <span style="font-size:11px;color:var(--text-weak);margin-left:6px">${conf}%</span>
+      </td>
+      <td><span class="badge ${sigClass[r.signal ?? 'neutral'] ?? 'signal-neutral'}">${esc(r.signal ?? 'neutral')}</span></td>
+      <td style="color:var(--text-weak);font-size:11px;white-space:nowrap">${r.positiveCount ?? 0}↑ ${r.negativeCount ?? 0}↓</td>
+      <td>
+        <div class="brain-actions">
+          <button class="link-btn del" onclick="deleteLearning('${r.id}')">delete</button>
+        </div>
+      </td>
+    </tr>`
+  }).join('')
+  document.getElementById('main-content').innerHTML = `
+    <div style="padding:12px 24px 8px;font-size:11px;color:var(--text-weak)">${rows.length} aprendizados · ordenados por confiança</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Categoria</th><th>Insight</th><th>Confiança</th><th>Sinal</th><th>Contagem</th><th></th>
+        </tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>`
+}
+async function deleteLearning(id) {
+  if (!confirm('Deletar este aprendizado?')) return
+  try {
+    await apiFetch('/learnings/' + id, { method: 'DELETE' })
+    renderBrain()
+  } catch (e) { alert('Erro: ' + e.message) }
+}
+async function triggerExtractLearnings() {
+  try {
+    await apiFetch('/learnings/extract', { method: 'POST', body: JSON.stringify({ mode: 'batch', limit: 50 }) })
+    alert('Extract Learnings enfileirado! Verifique a Activity Queue para acompanhar.')
+  } catch (e) { alert('Erro: ' + e.message) }
+}
+
 // ── Refresh ───────────────────────────────────────────────────────────────────
 async function refresh() {
   await loadStatus()
@@ -1173,6 +1254,7 @@ async function refresh() {
   else if (currentTab === 'submissions')   await renderSubmissions()
   else if (currentTab === 'discovery')     await renderDiscovery()
   else if (currentTab === 'specs')         await renderSpecs()
+  else if (currentTab === 'brain')         await renderBrain()
   document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString()
 }
 

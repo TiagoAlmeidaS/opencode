@@ -13,11 +13,17 @@ interface SubmitGithubPrInput {
   force?: boolean    // ignora dedup e tenta novamente
 }
 
-/** Extrai owner/repo/issueNumber de uma URL do GitHub */
-function parseGithubUrl(url: string): { owner: string; repo: string; issueNumber: number } | null {
-  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/)
-  if (!m) return null
-  return { owner: m[1], repo: m[2], issueNumber: parseInt(m[3]) }
+/** Aceita qualquer URL github.com — extrai owner/repo e, se presente, issueNumber */
+function parseGithubUrl(url: string): { owner: string; repo: string; issueNumber: number | null } | null {
+  const base = url.match(/github\.com\/([^/]+)\/([^/?#]+)/)
+  if (!base) return null
+  const repoName = base[2].replace(/\.git$/, "")
+  const issueMatch = url.match(/\/issues\/(\d+)/)
+  return {
+    owner: base[1],
+    repo: repoName,
+    issueNumber: issueMatch ? parseInt(issueMatch[1]) : null,
+  }
 }
 
 /** Executa comando git no diretório especificado */
@@ -26,10 +32,7 @@ async function runGit(args: string[], cwd: string): Promise<string> {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
-    env: {
-      ...process.env,
-      GIT_TERMINAL_PROMPT: "0",
-    },
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
   })
   const [out, err] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -40,10 +43,63 @@ async function runGit(args: string[], cwd: string): Promise<string> {
   return out.trim()
 }
 
+/** Executa um comando arbitrário — retorna sucesso e output combinado */
+async function runCommand(cmd: string, cwd: string): Promise<{ success: boolean; output: string }> {
+  const parts = cmd.split(/\s+/)
+  const proc = Bun.spawn(parts, { cwd, stdout: "pipe", stderr: "pipe" })
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+  await proc.exited
+  return {
+    success: proc.exitCode === 0,
+    output: (out + "\n" + err).trim().slice(0, 3000),
+  }
+}
+
+/** Detecta o comando de teste do projeto pelo tipo de linguagem/ferramentas */
+async function detectTestCommand(cwd: string): Promise<string | null> {
+  // Node / Bun — package.json scripts
+  try {
+    const pkg = JSON.parse(await Bun.file(path.join(cwd, "package.json")).text()) as {
+      scripts?: Record<string, string>
+    }
+    if (pkg.scripts?.["test:ci"])  return "npm run test:ci"
+    if (pkg.scripts?.["test"] && !pkg.scripts.test.includes("no test")) return "npm test"
+  } catch {}
+
+  // Go
+  if (await Bun.file(path.join(cwd, "go.mod")).exists()) return "go test ./..."
+
+  // Rust
+  if (await Bun.file(path.join(cwd, "Cargo.toml")).exists()) return "cargo test"
+
+  // Python — pytest
+  if (
+    await Bun.file(path.join(cwd, "pytest.ini")).exists() ||
+    await Bun.file(path.join(cwd, "pyproject.toml")).exists() ||
+    await Bun.file(path.join(cwd, "setup.py")).exists()
+  ) return "python -m pytest --tb=short -q"
+
+  // Ruby — RSpec
+  if (await Bun.file(path.join(cwd, "Gemfile")).exists()) return "bundle exec rspec --format progress"
+
+  // Java — Maven
+  if (await Bun.file(path.join(cwd, "pom.xml")).exists()) return "mvn test -q"
+
+  // PHP — composer
+  if (await Bun.file(path.join(cwd, "composer.json")).exists()) return "composer test"
+
+  return null
+}
+
+const MAX_IMPL_RETRIES = 2   // 3 tentativas no total (1 inicial + 2 retries)
+
 export const submitGithubPrActivity: Activity = {
   type: "submit-github-pr",
   displayName: "Submit GitHub PR",
-  description: "Fork + OpenCode implementa + abre PR no GitHub (com dedup)",
+  description: "Fork + implementa + valida testes + abre PR no GitHub (com dedup e retry loop)",
 
   async execute(ctx: ActivityContext): Promise<ActivityOutput> {
     const input = ctx.input as unknown as SubmitGithubPrInput
@@ -62,21 +118,16 @@ export const submitGithubPrActivity: Activity = {
     if (!opp.url) throw new Error("Oportunidade sem URL — impossível identificar repo alvo")
 
     const parsed = parseGithubUrl(opp.url)
-    if (!parsed) throw new Error(`URL não reconhecida como issue GitHub: ${opp.url}`)
+    if (!parsed) throw new Error(`URL não é um repositório GitHub reconhecido: ${opp.url}`)
 
     const now = Math.floor(Date.now() / 1000)
 
-    // ── Dedup: verifica se já existe submissão pending/submitted para esta opp ──
+    // ── Dedup: verifica se já existe submissão ativa para esta opp ────────────
     if (!input.force) {
       const [existing] = await ctx.db
         .select({ id: oppSubmissions.id, status: oppSubmissions.status, externalUrl: oppSubmissions.externalUrl })
         .from(oppSubmissions)
-        .where(
-          and(
-            eq(oppSubmissions.opportunityId, opp.id),
-            eq(oppSubmissions.platform, "github"),
-          ),
-        )
+        .where(and(eq(oppSubmissions.opportunityId, opp.id), eq(oppSubmissions.platform, "github")))
         .limit(1)
 
       if (existing && ["submitted", "accepted", "pending-approval"].includes(existing.status)) {
@@ -89,38 +140,35 @@ export const submitGithubPrActivity: Activity = {
 
     const octokit = new Octokit({ auth: githubToken })
 
-    // ── Resolve usuário autenticado ──────────────────────────────────────────
+    // ── Resolve usuário e branch padrão ──────────────────────────────────────
     const { data: user } = await octokit.users.getAuthenticated()
     const forkOwner = user.login
 
-    // ── Resolve branch padrão do repo alvo ───────────────────────────────────
     let defaultBranch = "main"
     try {
       const { data: repoInfo } = await octokit.repos.get({ owner: parsed.owner, repo: parsed.repo })
       defaultBranch = repoInfo.default_branch
-    } catch {
-      // mantém "main" como fallback
-    }
+    } catch {}
 
     // ── Fork do repo alvo (idempotente) ──────────────────────────────────────
     let forkRepo: string
     try {
-      const { data: fork } = await octokit.repos.createFork({
-        owner: parsed.owner,
-        repo: parsed.repo,
-      })
+      const { data: fork } = await octokit.repos.createFork({ owner: parsed.owner, repo: parsed.repo })
       forkRepo = fork.full_name
-      // Aguarda o fork ficar disponível (GitHub demora alguns segundos)
       await new Promise((r) => setTimeout(r, 3000))
     } catch {
-      // Fork pode já existir
       forkRepo = `${forkOwner}/${parsed.repo}`
     }
 
-    // ── Clone do fork ────────────────────────────────────────────────────────
     const workDir = path.join(tmpdir(), `opencode-pr-${opp.id}-${Date.now()}`)
+    const branchName = parsed.issueNumber
+      ? `opencode-fix/issue-${parsed.issueNumber}-${Date.now()}`
+      : `opencode-impl/${opp.id.slice(-8)}-${Date.now()}`
     const cloneUrl = `https://x-access-token:${githubToken}@github.com/${forkRepo}.git`
-    const branchName = `opencode-fix/issue-${parsed.issueNumber}-${Date.now()}`
+
+    let isDraft = false
+    let testsPassed = false
+    let testOutput = ""
 
     try {
       await runGit(["clone", "--depth=1", cloneUrl, workDir], tmpdir())
@@ -128,37 +176,69 @@ export const submitGithubPrActivity: Activity = {
       await runGit(["config", "user.name", "OpenCode Agent"], workDir)
       await runGit(["checkout", "-b", branchName], workDir)
 
-      // ── Roda OpenCode para implementar ─────────────────────────────────────
-      const task = buildImplementationTask(opp, parsed)
-      await ctx.spawnOpenCode(task, workDir)
+      // Detecta comando de teste uma vez antes do loop
+      const testCommand = await detectTestCommand(workDir)
 
-      // ── Verifica se houve mudanças ──────────────────────────────────────────
-      const status = await runGit(["status", "--porcelain"], workDir)
-      if (!status.trim()) {
-        return {
-          summary: "OpenCode não gerou mudanças — PR não criado",
-          extra: { no_changes: true },
+      // ── Loop de implementação + validação ─────────────────────────────────
+      let validationError: string | null = null
+
+      for (let attempt = 1; attempt <= MAX_IMPL_RETRIES + 1; attempt++) {
+        const task = buildImplementationTask(opp, parsed, validationError)
+        await ctx.spawnOpenCode(task, workDir)
+
+        // Na primeira tentativa: verifica se houve mudanças
+        if (attempt === 1) {
+          const status = await runGit(["status", "--porcelain"], workDir)
+          if (!status.trim()) {
+            return { summary: "OpenCode não gerou mudanças — PR não criado", extra: { no_changes: true } }
+          }
+        }
+
+        // Sem testes detectados: aceita a implementação como está
+        if (!testCommand) {
+          testsPassed = true
+          break
+        }
+
+        const result = await runCommand(testCommand, workDir)
+        if (result.success) {
+          testsPassed = true
+          testOutput = result.output
+          break
+        }
+
+        testOutput = result.output
+
+        if (attempt <= MAX_IMPL_RETRIES) {
+          // Alimenta o erro para a próxima tentativa
+          validationError = result.output
+        } else {
+          // Esgotou retries — abre como DRAFT para revisão humana
+          isDraft = true
         }
       }
 
-      // ── Commit e push ────────────────────────────────────────────────────────
+      // ── Commit e push ────────────────────────────────────────────────────
       await runGit(["add", "-A"], workDir)
-      await runGit(["commit", "-m", `fix: resolve issue #${parsed.issueNumber}\n\nAutomated fix by OpenCode agent.\nRef: ${opp.url}`], workDir)
+      const commitMsg = parsed.issueNumber
+        ? `fix: resolve issue #${parsed.issueNumber}\n\nAutomated fix by OpenCode agent.\nRef: ${opp.url}`
+        : `feat: ${opp.title.slice(0, 60)}\n\nAutomated implementation by OpenCode agent.\nRef: ${opp.url}`
+      await runGit(["commit", "-m", commitMsg], workDir)
       await runGit(["push", "origin", branchName], workDir)
 
-      // ── Cria PR via Octokit ─────────────────────────────────────────────────
+      // ── Cria PR ──────────────────────────────────────────────────────────
       const reward = opp.rewardMax ?? opp.rewardMin ?? 0
       const { data: pr } = await octokit.pulls.create({
         owner: parsed.owner,
         repo: parsed.repo,
         head: `${forkOwner}:${branchName}`,
         base: defaultBranch,
-        title: `fix: ${opp.title}`,
-        body: buildPrBody(opp, parsed, reward, getBountyWalletSnippet()),
-        draft: false,
+        title: isDraft ? `[NEEDS REVIEW] ${opp.title}` : `fix: ${opp.title}`,
+        body: buildPrBody(opp, parsed, reward, getBountyWalletSnippet(), isDraft ? testOutput : null),
+        draft: isDraft,
       })
 
-      // ── Registra submissão ──────────────────────────────────────────────────
+      // ── Registra submissão ───────────────────────────────────────────────
       const submissionId = ulid()
       await ctx.db.insert(oppSubmissions).values({
         id: submissionId,
@@ -166,7 +246,7 @@ export const submitGithubPrActivity: Activity = {
         platform: "github",
         submissionType: "pr",
         externalUrl: pr.html_url,
-        status: "submitted",
+        status: isDraft ? "draft" : "submitted",
         repoUrl: `https://github.com/${forkRepo}`,
         prNumber: pr.number,
         submittedAt: now,
@@ -175,21 +255,27 @@ export const submitGithubPrActivity: Activity = {
         updatedAt: now,
       })
 
-      // Atualiza status da opp
       await ctx.db
         .update(oppOpportunities)
         .set({ status: "applied", updatedAt: now })
         .where(eq(oppOpportunities.id, opp.id))
 
-      // Enfileira verificação de outcome em 24h
-      await ctx.enqueue("verify-submission-outcome", { submission_id: submissionId }, { priority: 8 })
+      await ctx.enqueue("verify-submission-outcome", { submission_id: submissionId }, { priority: 9 })
 
+      const attemptsUsed = isDraft ? MAX_IMPL_RETRIES + 1 : 1
       return {
-        summary: `PR aberto: ${pr.html_url}`,
-        extra: { pr_url: pr.html_url, pr_number: pr.number, submission_id: submissionId },
+        summary: isDraft
+          ? `PR DRAFT aberto após ${attemptsUsed} tentativas (testes ainda falhando): ${pr.html_url}`
+          : `PR aberto (${testsPassed && testOutput ? "testes OK" : "sem suite de testes"}): ${pr.html_url}`,
+        extra: {
+          pr_url: pr.html_url,
+          pr_number: pr.number,
+          is_draft: isDraft,
+          tests_passed: testsPassed,
+          test_command: (await detectTestCommand(workDir).catch(() => null)) ?? "none",
+        },
       }
     } finally {
-      // Limpeza do workspace temporário
       await rm(workDir, { recursive: true, force: true }).catch(() => {})
     }
   },
@@ -197,43 +283,55 @@ export const submitGithubPrActivity: Activity = {
 
 function buildImplementationTask(
   opp: { title: string; description: string | null; url: string | null },
-  parsed: { owner: string; repo: string; issueNumber: number },
+  parsed: { owner: string; repo: string; issueNumber: number | null },
+  validationError: string | null = null,
 ): string {
-  return `You are an autonomous software agent. Implement a fix for this GitHub issue.
+  const context = parsed.issueNumber
+    ? `ISSUE #${parsed.issueNumber}\nURL: ${opp.url ?? "N/A"}\nREPO: ${parsed.owner}/${parsed.repo}`
+    : `TASK: ${opp.title}\nREPO: ${parsed.owner}/${parsed.repo}\nURL: ${opp.url ?? "N/A"}`
 
-ISSUE: ${opp.title}
-URL: ${opp.url ?? "N/A"}
-REPO: ${parsed.owner}/${parsed.repo}
+  const retryContext = validationError
+    ? `\n\nPREVIOUS ATTEMPT FAILED TESTS:\n\`\`\`\n${validationError.slice(0, 1500)}\n\`\`\`\n\nFix the implementation so tests pass. Read the error output carefully and address the root cause.`
+    : ""
+
+  return `You are an autonomous software agent. Implement a solution for the following:
+
+${context}
 
 DESCRIPTION:
 ${(opp.description ?? "No description provided.").slice(0, 2000)}
 
 INSTRUCTIONS:
-1. Read the issue carefully and understand the requirements
+1. Read the task carefully and understand the requirements
 2. Find the relevant code files to modify
-3. Implement a clean, minimal fix that addresses the issue
-4. Ensure your changes don't break existing functionality
-5. Add tests if the project has a test suite
-6. Keep changes focused — only fix what the issue describes
+3. Implement a clean, minimal solution that fully addresses the requirements
+4. Write or update tests to cover your changes if the project has a test suite
+5. Make sure existing tests continue to pass
+6. Keep changes focused — only implement what is required${retryContext}
 
 Do NOT commit or push — just make the code changes.`
 }
 
 function buildPrBody(
   opp: { title: string; url: string | null; score: number | null },
-  parsed: { issueNumber: number },
+  parsed: { issueNumber: number | null },
   reward: number,
   walletSnippet: string,
+  failedTestOutput: string | null,
 ): string {
+  const issueRef = parsed.issueNumber ? `Closes #${parsed.issueNumber}\n\n` : ""
+  const draftWarning = failedTestOutput
+    ? `\n\n> **Note:** This PR was created as a draft because automated tests did not pass after ${MAX_IMPL_RETRIES + 1} implementation attempts. Human review is required before merging.\n\n<details><summary>Test output from last attempt</summary>\n\n\`\`\`\n${failedTestOutput.slice(0, 1500)}\n\`\`\`\n\n</details>\n`
+    : ""
+
   return `## Summary
 
-Automated fix for #${parsed.issueNumber}: **${opp.title}**
-
-${reward > 0 ? `💰 Bounty: $${reward} USD\n\n` : ""}
+${issueRef}**${opp.title}**
+${reward > 0 ? `\n💰 Bounty: $${reward} USD\n` : ""}${draftWarning}
 
 ## Changes
 
-This PR was generated by an OpenCode autonomous agent analyzing and implementing a solution for the referenced issue.
+This PR was generated by an OpenCode autonomous agent analyzing and implementing a solution for the referenced task.
 
 ## Testing
 

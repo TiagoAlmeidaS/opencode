@@ -379,6 +379,20 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     return c.json(rows)
   })
 
+  app.get("/opportunities/stats", async (c) => {
+    const [total] = await db.select({ count: sql<number>`count(*)` }).from(oppOpportunities)
+    const byStatus = await db
+      .select({ status: oppOpportunities.status, count: sql<number>`count(*)` })
+      .from(oppOpportunities)
+      .groupBy(oppOpportunities.status)
+    const [avgScore] = await db.select({ avg: sql<number>`avg(${oppOpportunities.score})` }).from(oppOpportunities)
+    return c.json({
+      total: Number(total?.count ?? 0),
+      by_status: Object.fromEntries(byStatus.map((r) => [r.status, Number(r.count)])),
+      avg_score: Number(avgScore?.avg ?? 0).toFixed(1),
+    })
+  })
+
   app.get("/opportunities/:id", async (c) => {
     const id = c.req.param("id")
     const [row] = await db.select().from(oppOpportunities).where(eq(oppOpportunities.id, id))
@@ -431,20 +445,6 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       createdAt: now,
     })
     return c.json({ queue_id: queueId }, 202)
-  })
-
-  app.get("/opportunities/stats", async (c) => {
-    const [total] = await db.select({ count: sql<number>`count(*)` }).from(oppOpportunities)
-    const byStatus = await db
-      .select({ status: oppOpportunities.status, count: sql<number>`count(*)` })
-      .from(oppOpportunities)
-      .groupBy(oppOpportunities.status)
-    const [avgScore] = await db.select({ avg: sql<number>`avg(${oppOpportunities.score})` }).from(oppOpportunities)
-    return c.json({
-      total: Number(total?.count ?? 0),
-      by_status: Object.fromEntries(byStatus.map((r) => [r.status, Number(r.count)])),
-      avg_score: Number(avgScore?.avg ?? 0).toFixed(1),
-    })
   })
 
   // ── Niches ────────────────────────────────────────────────────────────────

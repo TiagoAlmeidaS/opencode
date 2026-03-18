@@ -48,6 +48,8 @@ export const verifySubmissionOutcomeActivity: Activity = {
         .update(oppOpportunities)
         .set({ status: "expired", updatedAt: now })
         .where(eq(oppOpportunities.id, sub.opportunityId))
+      // Extrai aprendizados da expiração
+      await ctx.enqueue("extract-learnings", { mode: "single", submission_id: sub.id }, { priority: 7 })
       return {
         summary: `Submission abandonada após ${MAX_AGE_DAYS} dias sem resolução`,
         extra: { abandoned: true, age_days: Math.round(ageSeconds / 86400) },
@@ -91,14 +93,16 @@ export const verifySubmissionOutcomeActivity: Activity = {
           .update(oppSubmissions)
           .set({ status: "rejected", updatedAt: now })
           .where(eq(oppSubmissions.id, sub.id))
+        // Extrai aprendizados da rejeição
+        await ctx.enqueue("extract-learnings", { mode: "single", submission_id: sub.id }, { priority: 7 })
         return {
           summary: `❌ PR fechado sem merge: ${sub.externalUrl}`,
           extra: { outcome: "rejected" },
         }
       }
 
-      // PR ainda aberto — re-enfileira verificação em 6h
-      await ctx.enqueue("verify-submission-outcome", { submission_id: sub.id }, { priority: 9 })
+      // PR ainda aberto — re-enfileira verificação com baixa prioridade
+      await ctx.enqueue("verify-submission-outcome", { submission_id: sub.id }, { priority: 10 })
       return {
         summary: `PR ainda aberto (state: ${pr.state}) — verificação reagendada`,
         extra: { outcome: "pending", pr_state: pr.state },
@@ -106,8 +110,8 @@ export const verifySubmissionOutcomeActivity: Activity = {
     }
 
     // ── Gitcoin / Email — não há verificação automática ──────────────────────
-    // Re-enfileira em 24h para verificação manual (limitado pelo TTL acima)
-    await ctx.enqueue("verify-submission-outcome", { submission_id: sub.id }, { priority: 9 })
+    // Re-enfileira para verificação manual com baixa prioridade (limitado pelo TTL acima)
+    await ctx.enqueue("verify-submission-outcome", { submission_id: sub.id }, { priority: 10 })
     return {
       summary: `Submission ${sub.platform} — verificação manual necessária (reagendada; ${Math.round(ageSeconds / 86400)}d/${MAX_AGE_DAYS}d)`,
       extra: { outcome: "pending" },
@@ -168,6 +172,9 @@ async function handleAccepted(
       })
     }
   }
+
+  // Extrai aprendizados do sucesso
+  await ctx.enqueue("extract-learnings", { mode: "single", submission_id: sub.id }, { priority: 6 })
 
   // Notifica Telegram
   const botToken = process.env.TELEGRAM_BOT_TOKEN

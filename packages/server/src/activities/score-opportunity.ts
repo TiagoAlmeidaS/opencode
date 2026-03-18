@@ -1,6 +1,6 @@
 import { ulid } from "ulid"
-import { eq } from "drizzle-orm"
-import { oppOpportunities, oppAnalyses, projectSpecs } from "../schema"
+import { eq, inArray, desc } from "drizzle-orm"
+import { oppOpportunities, oppAnalyses, projectSpecs, agentLearnings } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 import { compileSpecToPrompt } from "../spec-compiler"
 
@@ -123,6 +123,34 @@ Critérios de pontuação:
 - 0-39: inadequado (requer hardware físico, comunicação humana, domínio ultra-específico, ou sem recompensa clara)`
 }
 
+async function buildLearningsContext(
+  ctx: ActivityContext,
+  platform: string,
+): Promise<string> {
+  const rows = await ctx.db
+    .select()
+    .from(agentLearnings)
+    .where(inArray(agentLearnings.category, ["niche", "platform", "pattern"]))
+    .orderBy(desc(agentLearnings.confidence))
+    .limit(6)
+
+  if (rows.length === 0) return ""
+
+  const lines = rows
+    .filter((r) => {
+      // Prioriza learnings da plataforma atual ou gerais
+      if (r.category === "platform") {
+        const tags: string[] = r.tags ? (JSON.parse(r.tags) as string[]) : []
+        return tags.some((t) => platform.toLowerCase().includes(t.toLowerCase())) || tags.length === 0
+      }
+      return true
+    })
+    .map((r) => `- [${r.category}] ${r.title} (confidence: ${r.confidence}): ${r.body}`)
+
+  if (lines.length === 0) return ""
+  return `\n\nPAST LEARNINGS (use to calibrate your score):\n${lines.join("\n")}`
+}
+
 function parseScoreResult(text: string): ScoreResult | null {
   try {
     // Remove possível markdown ```json ... ``` caso o LLM não respeite o system prompt
@@ -170,7 +198,7 @@ export const scoreOpportunityActivity: Activity = {
 
     const isContent = opp.type === "content"
     const prompt = isContent ? buildContentPrompt(opp) : buildPrompt(opp)
-    const system = isContent ? SCORE_CONTENT_SYSTEM : SCORE_SYSTEM
+    const baseSystem = isContent ? SCORE_CONTENT_SYSTEM : SCORE_SYSTEM
     const now = Math.floor(Date.now() / 1000)
 
     let specPrefix = ""
@@ -179,8 +207,11 @@ export const scoreOpportunityActivity: Activity = {
       if (spec) specPrefix = compileSpecToPrompt(spec) + "\n\n---\n\n"
     }
 
+    const learningsContext = await buildLearningsContext(ctx, opp.sourcePlatform)
+    const system = specPrefix + baseSystem + learningsContext
+
     const rawOutput = await ctx.memoryLlm({
-      system: specPrefix + system,
+      system,
       prompt,
       maxTokens: 512,
     })

@@ -89,8 +89,11 @@ export const createDedicatedRepoActivity: Activity = {
       .set({ workspaceRepoUrl: repoUrl, updatedAt: now })
       .where(eq(oppOpportunities.id, opp.id))
 
+    // Enfileira implementação no repo criado
+    await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5 })
+
     return {
-      summary: `Repo criado: ${repoUrl}`,
+      summary: `Repo criado: ${repoUrl} — implementação enfileirada`,
       extra: { repo_url: repoUrl, repo_name: repoName, owner },
     }
   },
