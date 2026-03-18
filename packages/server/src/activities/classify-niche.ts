@@ -7,6 +7,7 @@ interface ClassifyNicheInput {
   opportunity_id: string
   niche_suggestion?: string        // sugestão do score-opportunity (kebab-case)
   auto_execute_min_score?: number  // propagado do pipeline config (default: 75)
+  classify_system_prompt?: string
 }
 
 const CLASSIFY_SYSTEM = `Você é um especialista em classificar oportunidades de trabalho em nichos de mercado.
@@ -87,7 +88,7 @@ export const classifyNicheActivity: Activity = {
 
     if (ctx.memoryLlm) {
       const prompt = buildClassifyPrompt(opp, niches, input.niche_suggestion ?? "")
-      const raw = await ctx.memoryLlm({ system: CLASSIFY_SYSTEM, prompt, maxTokens: 256 })
+      const raw = await ctx.memoryLlm({ system: input.classify_system_prompt || CLASSIFY_SYSTEM, prompt, maxTokens: 256 })
       const result = parseClassifyResult(raw)
 
       if (result) {
@@ -204,6 +205,17 @@ export const classifyNicheActivity: Activity = {
     const autoExecute = aiAgentSuitable && scoreOk && skillGaps.length === 0
     if (autoExecute) {
       await ctx.enqueue("classify-workspace-strategy", { opportunity_id: opp.id }, { priority: 6 })
+    }
+
+    // Skill gap → cria issues no GitHub para rastrear
+    if (skillGaps.length > 0) {
+      for (const skill of skillGaps) {
+        await ctx.enqueue(
+          "create-skill-gap-issue",
+          { skill_name: skill, opportunity_id: opp.id, opportunity_title: opp.title },
+          { priority: 8 },
+        )
+      }
     }
 
     const skipReason = !aiAgentSuitable

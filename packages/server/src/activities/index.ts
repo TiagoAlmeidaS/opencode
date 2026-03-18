@@ -24,6 +24,7 @@ import { scanImmunefiBountiesActivity } from "./scan-immunefi-bounties"
 import { scanHackerOneProgramsActivity } from "./scan-hackerone-programs"
 import { deliverContentActivity } from "./deliver-content"
 import { extractLearningsActivity } from "./extract-learnings"
+import { createSkillGapIssueActivity } from "./create-skill-gap-issue"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -50,3 +51,4 @@ registerActivity(scanImmunefiBountiesActivity)
 registerActivity(scanHackerOneProgramsActivity)
 registerActivity(deliverContentActivity)
 registerActivity(extractLearningsActivity)
+registerActivity(createSkillGapIssueActivity)

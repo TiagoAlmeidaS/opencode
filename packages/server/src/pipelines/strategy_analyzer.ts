@@ -18,6 +18,7 @@ import {
 } from "../schema"
 import { registerPipeline } from "../registry"
 import { executePendingProposals } from "../executor"
+import { SCORE_SYSTEM } from "../activities/score-opportunity"
 import type { PipelineContext, ContentOutput } from "../types"
 
 export interface StrategyAnalyzerConfig {
@@ -25,6 +26,8 @@ export interface StrategyAnalyzerConfig {
   min_confidence_for_auto_approve?: number
   max_auto_approve_risk?: string
   max_proposals_per_run?: number
+  strategy_system_prompt?: string
+  win_rate_prompt_threshold?: number  // niche win rate abaixo disso → gera update_prompt (default: 20)
 }
 
 interface ProposalDraft {
@@ -152,6 +155,18 @@ function parseProposals(text: string): ProposalDraft[] {
   } catch {
     return []
   }
+}
+
+function buildImprovePromptRequest(niche: string, winRate: number, currentPrompt: string): string {
+  return `The scoring prompt for an autonomous AI agent is underperforming for niche "${niche}" (win rate: ${winRate}%).
+
+Current prompt:
+---
+${currentPrompt}
+---
+
+Write an IMPROVED version that better evaluates opportunities in the "${niche}" niche.
+Keep the same JSON response format requirement. Return ONLY the improved prompt text, no JSON, no markdown.`
 }
 
 registerPipeline({
@@ -287,8 +302,10 @@ registerPipeline({
       } as ContentOutput
     }
 
+    const strategySystemPrompt = (config.strategy_system_prompt as string | undefined) || STRATEGY_SYSTEM
+
     const rawOutput = await ctx.memoryLlm({
-      system: STRATEGY_SYSTEM,
+      system: strategySystemPrompt,
       prompt: buildMetricsPrompt({ windowDays, winByNiche, winByPlatform, revenue30d, goals, topLearnings, activityFailures, queueBacklog, activePipelines }),
       maxTokens: 2000,
     })
@@ -301,6 +318,35 @@ registerPipeline({
       } as ContentOutput
     }
 
+    // ── C2: proposals update_prompt para nichos com win rate abaixo do threshold ─
+    const promptThreshold = (config.win_rate_prompt_threshold as number | undefined) ?? 20
+    if (proposals.length < maxProposals) {
+      const poorNiches = winByNiche.filter(
+        (n) => n.total >= 3 && n.niche && Math.round((n.won / n.total) * 100) < promptThreshold,
+      )
+      for (const n of poorNiches.slice(0, 2)) {
+        if (proposals.length >= maxProposals) break
+        const winRate = Math.round((n.won / n.total) * 100)
+        const improvedRaw = await ctx.memoryLlm({
+          system: strategySystemPrompt,
+          prompt: buildImprovePromptRequest(n.niche!, winRate, SCORE_SYSTEM),
+          maxTokens: 600,
+        })
+        const cleaned = improvedRaw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+        if (cleaned.length > 50) {
+          proposals.push({
+            actionType: "update_prompt",
+            title: `Melhorar prompt de score para "${n.niche}" (win rate ${winRate}%)`,
+            description: `Niche "${n.niche}" tem win rate de ${winRate}% (${n.won}/${n.total}). Prompt atual pode estar super-estimando essas oportunidades.`,
+            reasoning: `Win rate ${winRate}% < limiar ${promptThreshold}%. Prompt melhorado pode calibrar melhor o score neste niche.`,
+            proposedConfig: { pipeline: "opportunity-analyst", field: "score_system_prompt", new_prompt: cleaned },
+            riskLevel: "medium",
+            confidence: 0.65,
+          })
+        }
+      }
+    }
+
     // ── 10. Store proposals ───────────────────────────────────────────────────
     const riskRanks: Record<string, number> = { low: 0, medium: 1, high: 2 }
     const maxRiskRank = riskRanks[maxAutoApproveRisk] ?? 0
@@ -309,6 +355,7 @@ registerPipeline({
 
     for (const p of proposals) {
       const isAutoApprovable =
+        p.actionType !== "update_prompt" &&
         p.confidence >= minConfidenceAutoApprove &&
         (riskRanks[p.riskLevel] ?? 2) <= maxRiskRank
 

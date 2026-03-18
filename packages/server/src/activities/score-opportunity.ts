@@ -10,6 +10,9 @@ interface ScoreOpportunityInput {
   classify_min_score?: number      // propagado do pipeline config (default: 60)
   auto_execute_min_score?: number  // propagado para classify-niche (default: 75)
   alert_min_score?: number         // threshold para alerta Telegram (default: 90)
+  score_system_prompt?: string
+  score_content_system_prompt?: string
+  classify_system_prompt?: string
 }
 
 interface ScoreResult {
@@ -22,7 +25,7 @@ interface ScoreResult {
   risk_level: string          // 'low'|'medium'|'high'
 }
 
-const SCORE_SYSTEM = `Você é um analista especializado em avaliar oportunidades de trabalho para agentes de IA.
+export const SCORE_SYSTEM = `Você é um analista especializado em avaliar oportunidades de trabalho para agentes de IA.
 Avalie se a oportunidade é adequada para um agente como o OpenCode (AI que escreve código autonomamente).
 Responda APENAS com JSON válido, sem markdown, sem texto extra.`
 
@@ -228,7 +231,9 @@ export const scoreOpportunityActivity: Activity = {
 
     const isContent = opp.type === "content"
     const prompt = isContent ? buildContentPrompt(opp) : buildPrompt(opp)
-    const baseSystem = isContent ? SCORE_CONTENT_SYSTEM : SCORE_SYSTEM
+    const baseSystem = isContent
+      ? (input.score_content_system_prompt || SCORE_CONTENT_SYSTEM)
+      : (input.score_system_prompt || SCORE_SYSTEM)
     const now = Math.floor(Date.now() / 1000)
 
     let specPrefix = ""
@@ -289,6 +294,7 @@ export const scoreOpportunityActivity: Activity = {
           opportunity_id: opp.id,
           niche_suggestion: result.niche_suggestion,
           auto_execute_min_score: input.auto_execute_min_score ?? 75,
+          ...(input.classify_system_prompt ? { classify_system_prompt: input.classify_system_prompt } : {}),
         },
         { priority: 5 },
       )

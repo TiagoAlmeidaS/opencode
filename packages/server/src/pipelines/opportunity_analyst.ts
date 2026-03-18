@@ -17,6 +17,9 @@ interface OpportunityAnalystConfig {
   auto_execute_min_score?: number   // score mínimo para auto-executar (default: 75)
   alert_min_score?: number          // score para alert Telegram (default: 90)
   max_impl_retries?: number         // tentativas de implementação no submit-github-pr (default: 2)
+  score_system_prompt?: string
+  score_content_system_prompt?: string
+  classify_system_prompt?: string
 }
 
 registerPipeline({
@@ -33,6 +36,9 @@ registerPipeline({
     const classifyMinScore = config.classify_min_score ?? 60
     const autoExecuteMinScore = config.auto_execute_min_score ?? 75
     const alertMinScore = config.alert_min_score ?? 90
+    const scoreSystemPrompt = config.score_system_prompt as string | undefined
+    const scoreContentSystemPrompt = config.score_content_system_prompt as string | undefined
+    const classifySystemPrompt = config.classify_system_prompt as string | undefined
 
     const now = Math.floor(Date.now() / 1000)
     const rescoreCutoff = now - rescoreDays * 86400
@@ -102,6 +108,9 @@ registerPipeline({
           classify_min_score: classifyMinScore,
           auto_execute_min_score: autoExecuteMinScore,
           alert_min_score: alertMinScore,
+          ...(scoreSystemPrompt ? { score_system_prompt: scoreSystemPrompt } : {}),
+          ...(scoreContentSystemPrompt ? { score_content_system_prompt: scoreContentSystemPrompt } : {}),
+          ...(classifySystemPrompt ? { classify_system_prompt: classifySystemPrompt } : {}),
         }),
         triggeredBy: ctx.jobId,
         createdAt: now,
