@@ -56,6 +56,8 @@ export interface ActivityContext {
   db: import("./db").ServerDb
   spawnOpenCode: (task: string, cwd: string) => Promise<string>
   enqueue: (type: string, input: unknown, opts?: { priority?: number; dependsOn?: string }) => Promise<string>
+  /** Atualiza o passo atual visível no card "Running" do Activity Queue. */
+  updateProgress?: (step: string) => Promise<void>
   /** LLM injetado pelo host (ex: OpenCode provider). Disponível quando daemon é iniciado com memoryLlm. */
   memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
   /** Embedding function para RAG. */

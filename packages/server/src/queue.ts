@@ -123,6 +123,12 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
         })
         return newId
       },
+      async updateProgress(step: string) {
+        await db
+          .update(daemonQueue)
+          .set({ outputJson: JSON.stringify({ summary: step }) })
+          .where(eq(daemonQueue.id, id))
+      },
     }
 
     try {

@@ -4,7 +4,7 @@
  * Cron sugerido: 30 *\/2 * * * (a cada 2h, offset 30min p/ não colidir com collector)
  */
 import { ulid } from "ulid"
-import { eq, and, asc, isNull, gte } from "drizzle-orm"
+import { eq, and, asc, lte } from "drizzle-orm"
 import { oppOpportunities, daemonQueue } from "../schema"
 import { registerPipeline } from "../registry"
 import type { PipelineContext, ContentOutput } from "../types"
@@ -40,14 +40,14 @@ registerPipeline({
 
     const newOpps = await query
 
-    // 2. Oportunidades antigas para rescore (pontuadas há muito tempo)
+    // 2. Oportunidades com status "scored" há mais de N dias (updatedAt < cutoff)
     const rescoreOpps = await ctx.db
       .select({ id: oppOpportunities.id })
       .from(oppOpportunities)
       .where(
         and(
           eq(oppOpportunities.status, "scored"),
-          gte(oppOpportunities.updatedAt, rescoreCutoff),
+          lte(oppOpportunities.updatedAt, rescoreCutoff),
         ),
       )
       .orderBy(asc(oppOpportunities.updatedAt))

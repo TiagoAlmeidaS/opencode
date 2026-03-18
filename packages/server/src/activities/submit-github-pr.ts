@@ -141,6 +141,7 @@ export const submitGithubPrActivity: Activity = {
     const octokit = new Octokit({ auth: githubToken })
 
     // ── Resolve usuário e branch padrão ──────────────────────────────────────
+    await ctx.updateProgress?.("Autenticando no GitHub...")
     const { data: user } = await octokit.users.getAuthenticated()
     const forkOwner = user.login
 
@@ -151,6 +152,7 @@ export const submitGithubPrActivity: Activity = {
     } catch {}
 
     // ── Fork do repo alvo (idempotente) ──────────────────────────────────────
+    await ctx.updateProgress?.(`Fork: criando ${parsed.owner}/${parsed.repo}...`)
     let forkRepo: string
     try {
       const { data: fork } = await octokit.repos.createFork({ owner: parsed.owner, repo: parsed.repo })
@@ -171,6 +173,7 @@ export const submitGithubPrActivity: Activity = {
     let testOutput = ""
 
     try {
+      await ctx.updateProgress?.(`Clone: baixando ${forkRepo}...`)
       await runGit(["clone", "--depth=1", cloneUrl, workDir], tmpdir())
       await runGit(["config", "user.email", "opencode-agent@users.noreply.github.com"], workDir)
       await runGit(["config", "user.name", "OpenCode Agent"], workDir)
@@ -181,8 +184,10 @@ export const submitGithubPrActivity: Activity = {
 
       // ── Loop de implementação + validação ─────────────────────────────────
       let validationError: string | null = null
+      const totalAttempts = MAX_IMPL_RETRIES + 1
 
-      for (let attempt = 1; attempt <= MAX_IMPL_RETRIES + 1; attempt++) {
+      for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+        await ctx.updateProgress?.(`Implementando (tentativa ${attempt}/${totalAttempts}): OpenCode trabalhando...`)
         const task = buildImplementationTask(opp, parsed, validationError)
         await ctx.spawnOpenCode(task, workDir)
 
@@ -200,33 +205,38 @@ export const submitGithubPrActivity: Activity = {
           break
         }
 
+        await ctx.updateProgress?.(`Testes (${attempt}/${totalAttempts}): rodando ${testCommand}...`)
         const result = await runCommand(testCommand, workDir)
         if (result.success) {
           testsPassed = true
           testOutput = result.output
+          await ctx.updateProgress?.(`Testes (${attempt}/${totalAttempts}): PASSOU`)
           break
         }
 
         testOutput = result.output
 
         if (attempt <= MAX_IMPL_RETRIES) {
-          // Alimenta o erro para a próxima tentativa
+          await ctx.updateProgress?.(`Testes (${attempt}/${totalAttempts}): FALHOU — retry...`)
           validationError = result.output
         } else {
-          // Esgotou retries — abre como DRAFT para revisão humana
+          await ctx.updateProgress?.(`Testes (${attempt}/${totalAttempts}): FALHOU — abrindo como DRAFT`)
           isDraft = true
         }
       }
 
       // ── Commit e push ────────────────────────────────────────────────────
+      await ctx.updateProgress?.("Commit: preparando mudanças...")
       await runGit(["add", "-A"], workDir)
       const commitMsg = parsed.issueNumber
         ? `fix: resolve issue #${parsed.issueNumber}\n\nAutomated fix by OpenCode agent.\nRef: ${opp.url}`
         : `feat: ${opp.title.slice(0, 60)}\n\nAutomated implementation by OpenCode agent.\nRef: ${opp.url}`
       await runGit(["commit", "-m", commitMsg], workDir)
+      await ctx.updateProgress?.(`Push: enviando branch ${branchName}...`)
       await runGit(["push", "origin", branchName], workDir)
 
       // ── Cria PR ──────────────────────────────────────────────────────────
+      await ctx.updateProgress?.(`PR: abrindo pull request${isDraft ? " (DRAFT)" : ""}...`)
       const reward = opp.rewardMax ?? opp.rewardMin ?? 0
       const { data: pr } = await octokit.pulls.create({
         owner: parsed.owner,
