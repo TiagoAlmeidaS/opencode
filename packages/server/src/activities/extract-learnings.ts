@@ -11,9 +11,10 @@ import { addChunks } from "../memory/rag"
 
 interface ExtractLearningsInput {
   mode?: "batch" | "single"
-  submission_id?: string  // only for mode=single
-  limit?: number          // max submissions to analyze in batch mode (default: 20)
-  since_hours?: number    // look back window in hours (default: 168 = 7 days)
+  submission_id?: string    // only for mode=single
+  limit?: number            // max submissions to analyze in batch mode (default: 20)
+  since_hours?: number      // look back window in hours (default: 168 = 7 days)
+  rejection_context?: string // comentários de revisão do PR rejeitado (Sprint B1)
 }
 
 interface LearningResult {
@@ -37,9 +38,11 @@ function buildExtractionPrompt(
     status: string
     rewardUsd: number | null
     proposalText: string | null
+    errorMessage: string | null
     niche: string | null
     skills: string | null
   }>,
+  rejectionContext?: string,
 ): string {
   const data = submissions.map((s) => ({
     title: s.title.slice(0, 100),
@@ -50,9 +53,14 @@ function buildExtractionPrompt(
     niche: s.niche,
     skills: s.skills ? (() => { try { return JSON.parse(s.skills) } catch { return s.skills } })() : null,
     proposal_preview: s.proposalText?.slice(0, 300),
+    rejection_feedback: s.errorMessage?.slice(0, 400) || undefined,
   }))
 
-  return `Analyze these ${submissions.length} submission outcomes and extract 3-8 actionable learnings for an AI agent that autonomously applies to opportunities.
+  const extraContext = rejectionContext
+    ? `\n\nADDITIONAL REJECTION FEEDBACK FROM PR REVIEWERS:\n${rejectionContext.slice(0, 800)}\n`
+    : ""
+
+  return `Analyze these ${submissions.length} submission outcomes and extract 3-8 actionable learnings for an AI agent that autonomously applies to opportunities.${extraContext}
 
 SUBMISSIONS:
 ${JSON.stringify(data, null, 2)}
@@ -166,6 +174,7 @@ export const extractLearningsActivity: Activity = {
         status: s.status,
         rewardUsd: s.rewardUsd,
         proposalText: s.proposalText,
+        errorMessage: s.errorMessage,
         niche: niche?.name ?? null,
         skills: opp?.skillsRequired ?? null,
       }
@@ -177,7 +186,7 @@ export const extractLearningsActivity: Activity = {
     if (ctx.memoryLlm) {
       const raw = await ctx.memoryLlm({
         system: SYSTEM,
-        prompt: buildExtractionPrompt(enriched),
+        prompt: buildExtractionPrompt(enriched, input.rejection_context),
         maxTokens: 1200,
       })
       extracted = parseLearnings(raw)

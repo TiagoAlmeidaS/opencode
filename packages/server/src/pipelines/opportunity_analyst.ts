@@ -13,6 +13,10 @@ interface OpportunityAnalystConfig {
   batch_size?: number
   min_reward_usd?: number
   rescore_older_than_days?: number  // rescore opps scored há mais de N dias
+  classify_min_score?: number       // score mínimo para enfileirar classify-niche (default: 60)
+  auto_execute_min_score?: number   // score mínimo para auto-executar (default: 75)
+  alert_min_score?: number          // score para alert Telegram (default: 90)
+  max_impl_retries?: number         // tentativas de implementação no submit-github-pr (default: 2)
 }
 
 registerPipeline({
@@ -26,6 +30,9 @@ registerPipeline({
     const batchSize = config.batch_size ?? 20
     const minReward = config.min_reward_usd ?? 0
     const rescoreDays = config.rescore_older_than_days ?? 7
+    const classifyMinScore = config.classify_min_score ?? 60
+    const autoExecuteMinScore = config.auto_execute_min_score ?? 75
+    const alertMinScore = config.alert_min_score ?? 90
 
     const now = Math.floor(Date.now() / 1000)
     const rescoreCutoff = now - rescoreDays * 86400
@@ -90,7 +97,12 @@ registerPipeline({
         activityType: "score-opportunity",
         status: "pending",
         priority: 6,
-        inputJson: JSON.stringify({ opportunity_id: opp.id }),
+        inputJson: JSON.stringify({
+          opportunity_id: opp.id,
+          classify_min_score: classifyMinScore,
+          auto_execute_min_score: autoExecuteMinScore,
+          alert_min_score: alertMinScore,
+        }),
         triggeredBy: ctx.jobId,
         createdAt: now,
       })

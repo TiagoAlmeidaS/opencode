@@ -89,15 +89,43 @@ export const verifySubmissionOutcomeActivity: Activity = {
       }
 
       if (pr.state === "closed" && !pr.merged) {
+        // Sprint B1: captura comentários de revisão para enriquecer o aprendizado
+        let rejectionContext = ""
+        try {
+          const [reviews, issueComments, reviewComments] = await Promise.all([
+            octokit.pulls.listReviews({ owner, repo, pull_number: sub.prNumber! }),
+            octokit.issues.listComments({ owner, repo, issue_number: sub.prNumber! }),
+            octokit.pulls.listReviewComments({ owner, repo, pull_number: sub.prNumber! }),
+          ])
+
+          const reviewSummaries = reviews.data
+            .filter((r) => r.state !== "APPROVED" && r.body)
+            .map((r) => `[${r.state}] ${r.body?.slice(0, 200)}`)
+
+          const commentTexts = [
+            ...issueComments.data.map((c) => c.body?.slice(0, 150) ?? ""),
+            ...reviewComments.data.map((c) => c.body?.slice(0, 150) ?? ""),
+          ].filter(Boolean)
+
+          const allFeedback = [...reviewSummaries, ...commentTexts].slice(0, 10)
+          if (allFeedback.length > 0) {
+            rejectionContext = allFeedback.join("\n")
+          }
+        } catch { /* ignora erros na captura de comentários */ }
+
         await ctx.db
           .update(oppSubmissions)
-          .set({ status: "rejected", updatedAt: now })
+          .set({ status: "rejected", errorMessage: rejectionContext || null, updatedAt: now })
           .where(eq(oppSubmissions.id, sub.id))
-        // Extrai aprendizados da rejeição
-        await ctx.enqueue("extract-learnings", { mode: "single", submission_id: sub.id }, { priority: 7 })
+
+        await ctx.enqueue(
+          "extract-learnings",
+          { mode: "single", submission_id: sub.id, rejection_context: rejectionContext || undefined },
+          { priority: 7 },
+        )
         return {
-          summary: `❌ PR fechado sem merge: ${sub.externalUrl}`,
-          extra: { outcome: "rejected" },
+          summary: `❌ PR fechado sem merge: ${sub.externalUrl}${rejectionContext ? " (comentários de revisão capturados)" : ""}`,
+          extra: { outcome: "rejected", has_rejection_context: !!rejectionContext },
         }
       }
 

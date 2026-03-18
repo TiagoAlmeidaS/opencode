@@ -1,11 +1,12 @@
 import { ulid } from "ulid"
-import { eq, sql } from "drizzle-orm"
-import { oppOpportunities, oppNiches } from "../schema"
+import { eq, sql, and, lt } from "drizzle-orm"
+import { oppOpportunities, oppNiches, agentLearnings } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 
 interface ClassifyNicheInput {
   opportunity_id: string
-  niche_suggestion?: string  // sugestão do score-opportunity (kebab-case)
+  niche_suggestion?: string        // sugestão do score-opportunity (kebab-case)
+  auto_execute_min_score?: number  // propagado do pipeline config (default: 75)
 }
 
 const CLASSIFY_SYSTEM = `Você é um especialista em classificar oportunidades de trabalho em nichos de mercado.
@@ -155,6 +156,7 @@ export const classifyNicheActivity: Activity = {
       .where(eq(oppOpportunities.id, opp.id))
 
     // Verifica se é adequado para execução automática
+    const autoExecuteMinScore = input.auto_execute_min_score ?? 75
     let aiAgentSuitable = true
     if (opp.llmAnalysis) {
       try {
@@ -163,15 +165,58 @@ export const classifyNicheActivity: Activity = {
       } catch { /* ignora parse error */ }
     }
 
-    // Auto-executa apenas se o agente consegue fazer sozinho E score é alto o suficiente
-    const autoExecute = aiAgentSuitable && (opp.score ?? 0) >= 75
+    const scoreOk = (opp.score ?? 0) >= autoExecuteMinScore
+
+    // Sprint B2: Skill gap detection — verifica se o agente tem histórico negativo nas skills requeridas
+    let skillGaps: string[] = []
+    if (aiAgentSuitable && scoreOk && opp.skillsRequired) {
+      const requiredSkills: string[] = (() => {
+        try { return JSON.parse(opp.skillsRequired) as string[] } catch { return [] }
+      })()
+
+      if (requiredSkills.length > 0) {
+        // Busca learnings de skills com histórico predominantemente negativo
+        const negativeSkillLearnings = await ctx.db
+          .select({ key: agentLearnings.key, title: agentLearnings.title, tags: agentLearnings.tags, confidence: agentLearnings.confidence, negativeCount: agentLearnings.negativeCount, positiveCount: agentLearnings.positiveCount })
+          .from(agentLearnings)
+          .where(
+            and(
+              eq(agentLearnings.category, "skill"),
+              lt(agentLearnings.confidence, 0.4),
+            ),
+          )
+
+        for (const skill of requiredSkills) {
+          const skillLower = skill.toLowerCase()
+          const hasGap = negativeSkillLearnings.some((l) => {
+            if (l.negativeCount <= l.positiveCount) return false
+            const tags: string[] = l.tags ? (JSON.parse(l.tags) as string[]) : []
+            return (
+              l.title.toLowerCase().includes(skillLower) ||
+              tags.some((t) => t.toLowerCase() === skillLower)
+            )
+          })
+          if (hasGap) skillGaps.push(skill)
+        }
+      }
+    }
+
+    const autoExecute = aiAgentSuitable && scoreOk && skillGaps.length === 0
     if (autoExecute) {
       await ctx.enqueue("classify-workspace-strategy", { opportunity_id: opp.id }, { priority: 6 })
     }
 
+    const skipReason = !aiAgentSuitable
+      ? "ai_agent_suitable=false"
+      : !scoreOk
+      ? `score ${opp.score ?? 0} < ${autoExecuteMinScore}`
+      : skillGaps.length > 0
+      ? `skill gaps detectados: ${skillGaps.join(", ")}`
+      : null
+
     return {
-      summary: `Oportunidade classificada em "${nicheName || "sem niche"}"${isNew ? " (niche novo criado)" : ""}${autoExecute ? " — estratégia de workspace enfileirada" : " — execução manual necessária (score < 75 ou ai_agent_suitable=false)"}`,
-      extra: { niche_name: nicheName, niche_id: nicheId, is_new: isNew, auto_execute: autoExecute },
+      summary: `Oportunidade classificada em "${nicheName || "sem niche"}"${isNew ? " (niche novo criado)" : ""}${autoExecute ? " — estratégia de workspace enfileirada" : ` — execução manual necessária (${skipReason})`}`,
+      extra: { niche_name: nicheName, niche_id: nicheId, is_new: isNew, auto_execute: autoExecute, skill_gaps: skillGaps },
     }
   },
 }

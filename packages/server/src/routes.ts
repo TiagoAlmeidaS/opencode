@@ -9,6 +9,7 @@ import { listPipelineStrategies } from "./registry"
 import { listActivities } from "./activity"
 import { setRagConfig, search } from "./memory/rag"
 import { compileSpecToPrompt } from "./spec-compiler"
+import { executePendingProposals } from "./executor"
 
 export interface ServerRoutesRagOpts {
   memoryEmbed?: (text: string) => Promise<number[]>
@@ -210,6 +211,8 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     const now = Math.floor(Date.now() / 1000)
     await db.update(daemonProposals).set({ status: "approved", reviewedAt: now }).where(eq(daemonProposals.id, id))
     const [row] = await db.select().from(daemonProposals).where(eq(daemonProposals.id, id))
+    // Execute immediately in background (non-blocking)
+    executePendingProposals(db).catch((err) => console.error("[executor] error after approve:", err))
     return c.json(row ?? { id })
   })
 

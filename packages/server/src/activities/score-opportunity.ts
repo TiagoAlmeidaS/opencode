@@ -1,12 +1,15 @@
 import { ulid } from "ulid"
-import { eq, inArray, desc } from "drizzle-orm"
-import { oppOpportunities, oppAnalyses, projectSpecs, agentLearnings } from "../schema"
+import { eq, inArray, desc, gte, sql } from "drizzle-orm"
+import { oppOpportunities, oppAnalyses, projectSpecs, agentLearnings, oppSubmissions, oppNiches } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 import { compileSpecToPrompt } from "../spec-compiler"
 
 interface ScoreOpportunityInput {
   opportunity_id: string
   spec_id?: string
+  classify_min_score?: number      // propagado do pipeline config (default: 60)
+  auto_execute_min_score?: number  // propagado para classify-niche (default: 75)
+  alert_min_score?: number         // threshold para alerta Telegram (default: 90)
 }
 
 interface ScoreResult {
@@ -134,11 +137,8 @@ async function buildLearningsContext(
     .orderBy(desc(agentLearnings.confidence))
     .limit(6)
 
-  if (rows.length === 0) return ""
-
   const lines = rows
     .filter((r) => {
-      // Prioriza learnings da plataforma atual ou gerais
       if (r.category === "platform") {
         const tags: string[] = r.tags ? (JSON.parse(r.tags) as string[]) : []
         return tags.some((t) => platform.toLowerCase().includes(t.toLowerCase())) || tags.length === 0
@@ -147,8 +147,38 @@ async function buildLearningsContext(
     })
     .map((r) => `- [${r.category}] ${r.title} (confidence: ${r.confidence}): ${r.body}`)
 
-  if (lines.length === 0) return ""
-  return `\n\nPAST LEARNINGS (use to calibrate your score):\n${lines.join("\n")}`
+  // Win rates by niche (last 30 days) — helps calibrate score for nichos históricos
+  const cutoff = Math.floor(Date.now() / 1000) - 30 * 86400
+  const winRatesRaw = await ctx.db
+    .select({
+      niche: oppNiches.name,
+      total: sql<number>`count(${oppSubmissions.id})`,
+      won: sql<number>`sum(case when ${oppSubmissions.status} in ('accepted', 'paid') then 1 else 0 end)`,
+    })
+    .from(oppSubmissions)
+    .leftJoin(oppOpportunities, eq(oppSubmissions.opportunityId, oppOpportunities.id))
+    .leftJoin(oppNiches, eq(oppOpportunities.nicheId, oppNiches.id))
+    .where(gte(oppSubmissions.createdAt, cutoff))
+    .groupBy(oppNiches.name)
+    .limit(10)
+
+  const winRateLines = winRatesRaw
+    .filter((r) => Number(r.total) >= 2) // só nichos com histórico relevante
+    .map((r) => {
+      const rate = Math.round((Number(r.won) / Number(r.total)) * 100)
+      const signal = rate >= 50 ? "✓" : rate >= 25 ? "~" : "✗"
+      return `  ${signal} ${r.niche ?? "unknown"}: ${Number(r.won)}/${Number(r.total)} won (${rate}% win rate)`
+    })
+
+  const parts: string[] = []
+  if (lines.length > 0) {
+    parts.push(`PAST LEARNINGS (use to calibrate your score):\n${lines.join("\n")}`)
+  }
+  if (winRateLines.length > 0) {
+    parts.push(`HISTORICAL WIN RATES BY NICHE (last 30d — ✓=good ✗=avoid):\n${winRateLines.join("\n")}`)
+  }
+
+  return parts.length > 0 ? "\n\n" + parts.join("\n\n") : ""
 }
 
 function parseScoreResult(text: string): ScoreResult | null {
@@ -248,17 +278,24 @@ export const scoreOpportunityActivity: Activity = {
       })
       .where(eq(oppOpportunities.id, opp.id))
 
+    const classifyMinScore = input.classify_min_score ?? 60
+    const alertMinScore = input.alert_min_score ?? 90
+
     // Se score alto, enfileira classificação de niche
-    if (result.score >= 60) {
+    if (result.score >= classifyMinScore) {
       await ctx.enqueue(
         "classify-niche",
-        { opportunity_id: opp.id, niche_suggestion: result.niche_suggestion },
+        {
+          opportunity_id: opp.id,
+          niche_suggestion: result.niche_suggestion,
+          auto_execute_min_score: input.auto_execute_min_score ?? 75,
+        },
         { priority: 5 },
       )
     }
 
     // Alerta imediato para oportunidades excepcionais
-    if (result.score >= 90) {
+    if (result.score >= alertMinScore) {
       await ctx.enqueue(
         "send-telegram-alert",
         { opportunity_id: opp.id, score: result.score },
