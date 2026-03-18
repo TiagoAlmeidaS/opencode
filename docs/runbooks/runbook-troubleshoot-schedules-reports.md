@@ -21,7 +21,7 @@ Na primeira inicialização, o servidor cria automaticamente os pipelines abaixo
 
 | Strategy | Nome | Cron | Função |
 |----------|------|------|--------|
-| `opportunity-collector` | Coletor de Oportunidades | `0 */4 * * *` (a cada 4h) | Busca bounties GitHub, Gitcoin, freelance → `opp_opportunities` |
+| `opportunity-collector` | Coletor de Oportunidades | `0 */4 * * *` (a cada 4h) | Busca bounties GitHub, freelance → `opp_opportunities` (Gitcoin API descontinuada) |
 | `market-data-collector` | Coletor de Mercado | `0 * * * *` (a cada hora) | Preços cripto via CoinGecko → `opp_market_data` |
 | `opportunity-analyst` | Analista de Oportunidades | `30 */2 * * *` (a cada 2h) | Pontua oportunidades "new" → status "scored" |
 | `daily-opportunity-report` | Relatório Diário | `0 8 * * *` (8h diariamente) | Lê dados e envia digest ao Telegram |
@@ -29,7 +29,9 @@ Na primeira inicialização, o servidor cria automaticamente os pipelines abaixo
 
 **Ordem do fluxo:** Coletor → Analista → Relatório. O relatório **só tem conteúdo** se os coletores tiverem rodado antes. Sem `opportunity-collector` e `market-data-collector`, o relatório fica vazio.
 
-**GITHUB_TOKEN** — necessário para `scan-github-bounties`. Sem ele, a coleta de bounties GitHub falha (Gitcoin e freelance podem funcionar).
+**GITHUB_TOKEN** — necessário para `scan-github-bounties`. Sem ele, a coleta de bounties GitHub falha.
+
+**Gitcoin** — a API de bounties (`/api/v0.1/bounties/`) foi descontinuada. O scanner retorna "pulando" em 404 e não quebra a fila. Bounties migraram para [Buidlbox](https://buidlbox.io).
 
 Para desativar o seed: `SEED_DEFAULT_PIPELINES=false`.
 

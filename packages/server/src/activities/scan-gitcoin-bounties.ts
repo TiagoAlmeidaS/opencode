@@ -68,6 +68,13 @@ export const scanGitcoinBountiesActivity: Activity = {
     })
 
     if (!res.ok) {
+      // Gitcoin bounties API foi descontinuada (404). Não quebra a fila.
+      if (res.status === 404) {
+        return {
+          summary: "Gitcoin API descontinuada (bounties migraram para Buidlbox). Pulando.",
+          extra: { skipped: true, reason: "api_deprecated" },
+        }
+      }
       throw new Error(`Gitcoin API error: ${res.status} ${res.statusText}`)
     }
 

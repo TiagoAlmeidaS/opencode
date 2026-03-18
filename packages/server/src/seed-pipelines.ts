@@ -19,7 +19,7 @@ const DEFAULTS: Array<{
     strategy: "opportunity-collector",
     name: "Coletor de Oportunidades",
     scheduleCron: "0 */4 * * *", // a cada 4h
-    configJson: { sources: ["github-bounties", "gitcoin-bounties", "freelance-jobs"], limit_per_source: 30 },
+    configJson: { sources: ["github-bounties", "freelance-jobs"], limit_per_source: 30 },
   },
   {
     strategy: "market-data-collector",
