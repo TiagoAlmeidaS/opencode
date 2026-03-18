@@ -140,6 +140,18 @@
   .dyn-row-header { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--text-weak); }
   .dyn-inputs { display: flex; flex-direction: column; gap: 4px; }
 
+  /* Proposals */
+  .prop-pending  { color: var(--warn); }
+  .prop-approved { color: var(--success); }
+  .prop-rejected { color: var(--danger); }
+  .prop-executed { color: var(--info); }
+  .prop-expired  { color: var(--text-weak); }
+  .risk-low    { color: var(--success); }
+  .risk-medium { color: var(--warn); }
+  .risk-high   { color: var(--danger); }
+  .prop-actions { display:none; gap:8px; }
+  tr:hover .prop-actions { display:flex; }
+
   /* Discovery status colors */
   .disc-done    { color: var(--success); }
   .disc-failed  { color: var(--danger); }
@@ -171,6 +183,7 @@
       <button class="tab" data-tab="opportunities">Opportunities</button>
       <button class="tab" data-tab="niches">Niches</button>
       <button class="tab" data-tab="market">Market Data</button>
+      <button class="tab" data-tab="proposals">Proposals</button>
       <button class="tab" data-tab="submissions">Submissions</button>
       <button class="tab" data-tab="discovery">Discovery</button>
       <button class="tab" data-tab="specs">Specs</button>
@@ -1177,6 +1190,71 @@ async function submitActivity() {
   finally { btn.textContent = 'Add'; btn.disabled = false }
 }
 
+// ── Proposals ─────────────────────────────────────────────────────────────────
+async function renderProposals() {
+  let rows
+  try {
+    rows = await apiFetch('/proposals')
+  } catch (e) {
+    document.getElementById('main-content').innerHTML = `<div class="empty" style="color:var(--danger)">${esc(e.message)}</div>`
+    return
+  }
+  if (!rows.length) {
+    document.getElementById('main-content').innerHTML = '<div class="empty">Nenhuma proposta pendente. Os pipelines de strategy geram proposals quando detectam oportunidades de melhoria.</div>'
+    return
+  }
+  const statusCls = { pending: 'prop-pending', approved: 'prop-approved', rejected: 'prop-rejected', executed: 'prop-executed', expired: 'prop-expired' }
+  const riskCls   = { low: 'risk-low', medium: 'risk-medium', high: 'risk-high' }
+  const trs = rows.map(p => {
+    const date = p.createdAt ? new Date(p.createdAt * 1000).toLocaleString() : '—'
+    const conf = Math.round((p.confidence ?? 0) * 100)
+    const isPending = p.status === 'pending'
+    const autoTag = p.autoApprovable ? `<span class="badge" style="background:rgba(74,222,128,.1);color:var(--success);margin-left:6px">auto</span>` : ''
+    return `<tr>
+      <td style="white-space:nowrap;color:var(--text-weak)">${date}</td>
+      <td>
+        <div style="font-weight:600;font-size:12px">${esc(p.title)}${autoTag}</div>
+        <div style="font-size:11px;color:var(--text-weak);margin-top:2px;max-width:400px;line-height:1.5">${esc((p.description ?? '').slice(0, 160))}${(p.description ?? '').length > 160 ? '…' : ''}</div>
+        <div style="font-size:11px;color:var(--text-weak);margin-top:2px;font-style:italic">${esc((p.reasoning ?? '').slice(0, 120))}${(p.reasoning ?? '').length > 120 ? '…' : ''}</div>
+      </td>
+      <td style="white-space:nowrap"><span class="badge" style="font-family:monospace">${esc(p.actionType)}</span></td>
+      <td><span class="${riskCls[p.riskLevel] ?? ''}">${esc(p.riskLevel)}</span></td>
+      <td style="white-space:nowrap">${conf}%</td>
+      <td><span class="${statusCls[p.status] ?? ''}">${esc(p.status)}</span></td>
+      <td>
+        ${isPending ? `<div class="prop-actions">
+          <button class="link-btn exec" onclick="approveProposal('${p.id}')">approve</button>
+          <button class="link-btn ignore" onclick="rejectProposal('${p.id}')">reject</button>
+        </div>` : ''}
+      </td>
+    </tr>`
+  }).join('')
+  const pending = rows.filter(p => p.status === 'pending').length
+  document.getElementById('main-content').innerHTML = `
+    <div style="padding:12px 24px 8px;font-size:11px;color:var(--text-weak)">${rows.length} proposals · <span style="color:var(--warn)">${pending} pendentes</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Data</th><th>Proposta</th><th>Tipo</th><th>Risco</th><th>Confiança</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>`
+}
+async function approveProposal(id) {
+  try {
+    await apiFetch('/proposals/' + id + '/approve', { method: 'POST' })
+    renderProposals()
+  } catch (e) { alert('Erro: ' + e.message) }
+}
+async function rejectProposal(id) {
+  if (!confirm('Rejeitar esta proposal?')) return
+  try {
+    await apiFetch('/proposals/' + id + '/reject', { method: 'POST' })
+    renderProposals()
+  } catch (e) { alert('Erro: ' + e.message) }
+}
+
 // ── Brain / Learnings ─────────────────────────────────────────────────────────
 async function renderBrain() {
   let rows
@@ -1251,6 +1329,7 @@ async function refresh() {
   else if (currentTab === 'opportunities') await renderOpportunities()
   else if (currentTab === 'niches')        await renderNiches()
   else if (currentTab === 'market')        await renderMarket()
+  else if (currentTab === 'proposals')     await renderProposals()
   else if (currentTab === 'submissions')   await renderSubmissions()
   else if (currentTab === 'discovery')     await renderDiscovery()
   else if (currentTab === 'specs')         await renderSpecs()
