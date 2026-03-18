@@ -785,15 +785,68 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
 
   // ── Agent Learnings (RAG Brain) ──────────────────────────────────────────
   app.get("/learnings", async (c) => {
-    const category = c.req.query("category")
+    const category = c.req.query("category")?.trim()
     const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "100", 10)))
-    let rows = await db
-      .select()
-      .from(agentLearnings)
-      .orderBy(desc(agentLearnings.confidence), desc(agentLearnings.updatedAt))
-      .limit(limit)
-    if (category) rows = rows.filter((r) => r.category === category)
+    const rows = category
+      ? await db
+          .select()
+          .from(agentLearnings)
+          .where(eq(agentLearnings.category, category))
+          .orderBy(desc(agentLearnings.confidence), desc(agentLearnings.updatedAt))
+          .limit(limit)
+      : await db
+          .select()
+          .from(agentLearnings)
+          .orderBy(desc(agentLearnings.confidence), desc(agentLearnings.updatedAt))
+          .limit(limit)
     return c.json(rows)
+  })
+
+  app.post("/learnings", zValidator("json", z.object({
+    key: z.string().min(1),
+    category: z.string().min(1),
+    title: z.string().min(1),
+    body: z.string().min(1),
+    confidence: z.number().min(0).max(1).optional(),
+    tags: z.array(z.string()).optional(),
+    source: z.string().optional(),
+  })), async (c) => {
+    const b = c.req.valid("json")
+    const now = Math.floor(Date.now() / 1000)
+    const [existing] = await db.select().from(agentLearnings).where(eq(agentLearnings.key, b.key))
+    if (existing) {
+      await db
+        .update(agentLearnings)
+        .set({
+          category: b.category,
+          title: b.title,
+          body: b.body,
+          confidence: b.confidence ?? existing.confidence,
+          tags: b.tags !== undefined ? JSON.stringify(b.tags) : existing.tags,
+          source: b.source ?? existing.source ?? "api",
+          updatedAt: now,
+        })
+        .where(eq(agentLearnings.id, existing.id))
+      const [row] = await db.select().from(agentLearnings).where(eq(agentLearnings.id, existing.id))
+      return c.json(row)
+    }
+    const id = ulid()
+    await db.insert(agentLearnings).values({
+      id,
+      key: b.key,
+      category: b.category,
+      title: b.title,
+      body: b.body,
+      confidence: b.confidence ?? 0.5,
+      source: b.source ?? "api",
+      tags: b.tags ? JSON.stringify(b.tags) : null,
+      createdAt: now,
+      updatedAt: now,
+      positiveCount: 0,
+      negativeCount: 0,
+    })
+    const [row] = await db.select().from(agentLearnings).where(eq(agentLearnings.id, id))
+    return c.json(row, 201)
   })
 
   app.post("/learnings/extract", async (c) => {

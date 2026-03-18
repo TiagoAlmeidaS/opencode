@@ -968,6 +968,31 @@ export namespace Config {
         .boolean()
         .optional()
         .describe("Enable OpenCode Server (scheduler + pipelines) when running opencode serve"),
+      memory: z
+        .object({
+          url: z
+            .string()
+            .optional()
+            .describe(
+              "OpenCode Server API base including /server (e.g. http://127.0.0.1:4096/server). Same auth as serve: OPENCODE_SERVER_PASSWORD. Override with OPENCODE_SERVER_MEMORY_URL.",
+            ),
+          rag: z
+            .boolean()
+            .optional()
+            .describe("Inject RAG chunks from the server per user message (default true when url is set)"),
+          learnings: z
+            .boolean()
+            .optional()
+            .describe("Inject agent learnings from the server per user message (default true when url is set)"),
+          timeoutMs: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("HTTP timeout for server memory requests in ms (default 8000)"),
+        })
+        .optional()
+        .describe("Pull RAG + learnings from OpenCode Server into CLI session context"),
     })
     .strict()
     .meta({

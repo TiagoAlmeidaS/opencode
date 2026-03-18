@@ -31,6 +31,7 @@ Quando `qdrantUrl` e `memoryEmbed` estão configurados, o server registra `GET /
 
 ## Referências
 
+- [CLI + Server memory](cli-server-memory.md) — injeção no CLI quando `server.memory.url` está definido.
 - [Memory pipeline](memory-pipeline.md)
 - [Arquitetura: memory pipeline](../architecture/memory-pipeline.md)
 - [API OpenCode Server](../api/opencode-server.md)

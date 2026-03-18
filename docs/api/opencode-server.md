@@ -35,7 +35,9 @@ The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /pro
 | GET | `/server/logs` | List daemon logs (optional `?pipeline_id=`, `?limit=100`) |
 | GET | `/server/reports` | List relatórios Telegram enviados (ciclo de atividade). Query: `?limit=50`, `?report_type=daily|weekly`. Retorna digest, opp_count, market_count, durationMs. |
 | GET | `/server/reports/:id` | Detalhe de um relatório (digest completo, metadados, duração). |
-| GET | `/server/memory/retrieve` | RAG retrieval: `?q=...&limit=5` — returns `{ chunks: { text, source, score }[] }`. Requires Qdrant and memoryEmbed. |
+| GET | `/server/memory/retrieve` | RAG retrieval: `?q=...&limit=5` — returns `{ chunks: { text, source, score }[] }`. Requires Qdrant and memoryEmbed. Usado também pelo CLI quando `server.memory.url` (ou env) está definido. |
+| GET | `/server/learnings` | Lista learnings: `?category=&limit=`. Ordenado por confiança. |
+| POST | `/server/learnings` | Cria ou atualiza por `key` (upsert). Body: `key`, `category`, `title`, `body`, opcional `confidence`, `tags[]`, `source`. |
 | GET | `/server/discovery` | List discovery reports (optional `?status=`, `?limit=`, `?offset=`) |
 | POST | `/server/discovery` | Enqueue a discovery idea (body: `idea_text`, `session_id?`, `trigger_pipeline?`). Creates a row with status `pending`. If `trigger_pipeline: true`, runs the first enabled pipeline with strategy `project_discovery` (when the daemon provides run callbacks). |
 | GET | `/server/discovery/:id` | Get a discovery report by id (idea, status, report_md, report_json, etc.). |
