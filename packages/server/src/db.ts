@@ -285,6 +285,23 @@ CREATE TABLE IF NOT EXISTS project_specs (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_project_specs_created ON project_specs(created_at DESC);
+CREATE TABLE IF NOT EXISTS agent_learnings (
+  id              TEXT PRIMARY KEY,
+  category        TEXT NOT NULL,
+  key             TEXT NOT NULL UNIQUE,
+  title           TEXT NOT NULL,
+  body            TEXT NOT NULL,
+  confidence      REAL NOT NULL DEFAULT 0.5,
+  source          TEXT,
+  related_niche_id TEXT REFERENCES opp_niches(id),
+  positive_count  INTEGER NOT NULL DEFAULT 0,
+  negative_count  INTEGER NOT NULL DEFAULT 0,
+  tags            TEXT,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learnings_category ON agent_learnings(category, confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_learnings_key ON agent_learnings(key);
 `
 
 let state: { sqlite: BunDatabase | undefined; dbPath: string | null } = {

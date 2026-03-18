@@ -275,6 +275,23 @@ export const discoveryReports = sqliteTable("discovery_reports", {
   updated_at: integer("updated_at").notNull(),
 })
 
+/** Agent learnings: RAG knowledge base built from submission outcomes and execution patterns. */
+export const agentLearnings = sqliteTable("agent_learnings", {
+  id: text("id").primaryKey(),
+  category: text("category").notNull(), // 'skill' | 'niche' | 'platform' | 'pattern'
+  key: text("key").notNull(),           // unique slug identifier
+  title: text("title").notNull(),
+  body: text("body").notNull(),         // the learning content
+  confidence: real("confidence").notNull().default(0.5), // 0.0 - 1.0
+  source: text("source"),              // activity or event that generated it
+  relatedNicheId: text("related_niche_id").references(() => oppNiches.id),
+  positiveCount: integer("positive_count").notNull().default(0),
+  negativeCount: integer("negative_count").notNull().default(0),
+  tags: text("tags"),                   // JSON string[]
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})
+
 /** Project specs: structured domain context for AI agents (ontology, contracts, constraints, architecture). */
 export const projectSpecs = sqliteTable("project_specs", {
   id: text("id").primaryKey(),

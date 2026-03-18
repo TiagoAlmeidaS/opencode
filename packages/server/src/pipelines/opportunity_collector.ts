@@ -9,7 +9,7 @@ import { registerPipeline } from "../registry"
 import type { PipelineContext, ContentOutput } from "../types"
 
 interface OpportunityCollectorConfig {
-  sources?: Array<"github-bounties" | "gitcoin-bounties" | "freelance-jobs">
+  sources?: Array<"github-bounties" | "gitcoin-bounties" | "freelance-jobs" | "content-jobs" | "immunefi-bounties" | "hackerone-programs">
   github_token?: string
   min_reward_usd?: number
   limit_per_source?: number
@@ -43,8 +43,11 @@ registerPipeline({
 
     for (const source of sources) {
       const activityType =
-        source === "github-bounties" ? "scan-github-bounties" :
-        source === "gitcoin-bounties" ? "scan-gitcoin-bounties" :
+        source === "github-bounties"   ? "scan-github-bounties"   :
+        source === "gitcoin-bounties"  ? "scan-gitcoin-bounties"  :
+        source === "content-jobs"      ? "scan-content-jobs"      :
+        source === "immunefi-bounties" ? "scan-immunefi-bounties" :
+        source === "hackerone-programs"? "scan-hackerone-programs":
         "scan-freelance-jobs"
 
       const input: Record<string, unknown> = {

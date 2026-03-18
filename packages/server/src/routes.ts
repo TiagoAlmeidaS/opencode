@@ -2,8 +2,8 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs } from "./schema"
-import { eq, desc, sql, gte, and, asc } from "drizzle-orm"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs, agentLearnings } from "./schema"
+import { eq, desc, sql, gte, and, asc, inArray } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
 import { listActivities } from "./activity"
@@ -404,15 +404,29 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
 
   app.post("/opportunities/:id/execute", async (c) => {
     const id = c.req.param("id")
-    const body = await c.req.json().catch(() => ({})) as { cwd?: string; dry_run?: boolean; spec_id?: string }
+    const body = (await c.req.json().catch(() => ({}))) as {
+      cwd?: string
+      dry_run?: boolean
+      spec_id?: string
+      validation_command?: string
+      max_retries?: number
+    }
     const now = Math.floor(Date.now() / 1000)
     const queueId = ulid()
+    const input = {
+      opportunity_id: id,
+      cwd: body.cwd,
+      dry_run: body.dry_run,
+      spec_id: body.spec_id,
+      validation_command: body.validation_command,
+      max_retries: body.max_retries,
+    }
     await db.insert(daemonQueue).values({
       id: queueId,
       activityType: "execute-opportunity",
       status: "pending",
       priority: 3,
-      inputJson: JSON.stringify({ opportunity_id: id, cwd: body.cwd, dry_run: body.dry_run, spec_id: body.spec_id }),
+      inputJson: JSON.stringify(input),
       triggeredBy: "manual",
       createdAt: now,
     })
@@ -742,6 +756,67 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     if (!spec) return c.json({ error: "Not found" }, 404)
     const prompt = compileSpecToPrompt(spec)
     return c.json({ spec_id: id, prompt })
+  })
+
+  // ── Agent Learnings (RAG Brain) ──────────────────────────────────────────
+  app.get("/learnings", async (c) => {
+    const category = c.req.query("category")
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "100", 10)))
+    let rows = await db
+      .select()
+      .from(agentLearnings)
+      .orderBy(desc(agentLearnings.confidence), desc(agentLearnings.updatedAt))
+      .limit(limit)
+    if (category) rows = rows.filter((r) => r.category === category)
+    return c.json(rows)
+  })
+
+  app.post("/learnings/extract", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { mode?: string; limit?: number; since_hours?: number }
+    const now = Math.floor(Date.now() / 1000)
+    const queueId = ulid()
+    await db.insert(daemonQueue).values({
+      id: queueId,
+      activityType: "extract-learnings",
+      status: "pending",
+      priority: 5,
+      inputJson: JSON.stringify({
+        mode: body.mode ?? "batch",
+        limit: body.limit ?? 20,
+        since_hours: body.since_hours ?? 168,
+      }),
+      triggeredBy: "manual",
+      createdAt: now,
+    })
+    return c.json({ queue_id: queueId, ok: true }, 202)
+  })
+
+  app.patch("/learnings/:id", zValidator("json", z.object({
+    title: z.string().min(1).optional(),
+    body: z.string().min(1).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    tags: z.array(z.string()).optional(),
+  })), async (c) => {
+    const id = c.req.param("id")
+    const input = c.req.valid("json")
+    const now = Math.floor(Date.now() / 1000)
+    const [existing] = await db.select().from(agentLearnings).where(eq(agentLearnings.id, id))
+    if (!existing) return c.json({ error: "Not found" }, 404)
+    await db.update(agentLearnings).set({
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.body !== undefined ? { body: input.body } : {}),
+      ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+      ...(input.tags !== undefined ? { tags: JSON.stringify(input.tags) } : {}),
+      updatedAt: now,
+    }).where(eq(agentLearnings.id, id))
+    const [updated] = await db.select().from(agentLearnings).where(eq(agentLearnings.id, id))
+    return c.json(updated)
+  })
+
+  app.delete("/learnings/:id", async (c) => {
+    const id = c.req.param("id")
+    await db.delete(agentLearnings).where(eq(agentLearnings.id, id))
+    return c.json({ ok: true })
   })
 
   return app

@@ -145,7 +145,7 @@ export default function Board() {
     return url.replace(/\/$/, "") + "/server"
   }
 
-  const [tab, setTab] = createSignal<"queue" | "opportunities" | "niches" | "market" | "discovery" | "specs">("queue")
+  const [tab, setTab] = createSignal<"queue" | "opportunities" | "niches" | "market" | "discovery" | "specs" | "cerebro">("queue")
   const [tick, setTick] = createSignal(0)
   const refresh = () => setTick((n) => n + 1)
   const interval = setInterval(refresh, 30_000)
@@ -291,6 +291,53 @@ export default function Board() {
     refresh()
   }
 
+  // ── Cérebro (Agent Learnings) ─────────────────────────────────────────────
+  interface AgentLearning {
+    id: string
+    category: "skill" | "niche" | "platform" | "pattern"
+    key: string
+    title: string
+    body: string
+    confidence: number
+    source: string | null
+    relatedNicheId: string | null
+    positiveCount: number
+    negativeCount: number
+    tags: string | null
+    createdAt: number
+    updatedAt: number
+  }
+
+  const [learnings] = createResource(tick, async () => {
+    const res = await fetch(`${apiBase()}/learnings?limit=200`)
+    if (!res.ok) return [] as AgentLearning[]
+    return (await res.json()) as AgentLearning[]
+  })
+
+  const [extracting, setExtracting] = createSignal(false)
+
+  async function triggerExtract() {
+    setExtracting(true)
+    try {
+      await fetch(`${apiBase()}/learnings/extract`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "batch", limit: 30, since_hours: 720 }),
+      })
+      refresh()
+    } finally { setExtracting(false) }
+  }
+
+  const learningsByCategory = (cat: AgentLearning["category"]) =>
+    (learnings() ?? []).filter((l) => l.category === cat)
+
+  const LEARNING_CATEGORIES: { id: AgentLearning["category"]; label: string; icon: string; color: string }[] = [
+    { id: "skill", label: "Skills", icon: "⚡", color: "text-text-info border-border-info-base" },
+    { id: "niche", label: "Nichos", icon: "🎯", color: "text-text-success border-border-success-base" },
+    { id: "platform", label: "Plataformas", icon: "🏗", color: "text-text-warning border-border-warning-base" },
+    { id: "pattern", label: "Padrões", icon: "🔄", color: "text-text-base border-border-base" },
+  ]
+
   // ── Add Activity Form ────────────────────────────────────────────────────
   const [showForm, setShowForm] = createSignal(false)
   const [formType, setFormType] = createSignal("")
@@ -354,6 +401,7 @@ export default function Board() {
     { id: "market" as const, label: "Market Data" },
     { id: "discovery" as const, label: "Discovery" },
     { id: "specs" as const, label: "Specs" },
+    { id: "cerebro" as const, label: "Cérebro" },
   ]
 
   return (
@@ -417,6 +465,16 @@ export default function Board() {
               onClick={() => { setEditingSpec(undefined); setSpecsFormOpen(true) }}
             >
               + New Spec
+            </button>
+          </Show>
+          <Show when={tab() === "cerebro"}>
+            <button
+              type="button"
+              disabled={extracting()}
+              class="px-3 py-1.5 rounded-md bg-surface-raised-base text-12-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors border border-border-base disabled:opacity-50"
+              onClick={triggerExtract}
+            >
+              {extracting() ? "Extraindo…" : "Extrair aprendizados"}
             </button>
           </Show>
         </div>
@@ -766,6 +824,105 @@ export default function Board() {
                   </tbody>
                 </table>
               </Show>
+            </div>
+          </div>
+        </Show>
+
+        {/* ── Cérebro Tab ── */}
+        <Show when={tab() === "cerebro"}>
+          <div class="h-full overflow-y-auto p-6">
+            {/* Stats bar */}
+            <div class="flex items-center gap-6 mb-6">
+              <div class="text-12-regular text-text-weak">
+                <span class="text-text-strong text-13-medium">{(learnings() ?? []).length}</span> aprendizados registrados
+              </div>
+              <For each={LEARNING_CATEGORIES}>
+                {(cat) => (
+                  <div class="text-12-regular text-text-weak">
+                    <span class="mr-1">{cat.icon}</span>
+                    <span class="text-text-base">{learningsByCategory(cat.id).length}</span>
+                    <span class="ml-1">{cat.label.toLowerCase()}</span>
+                  </div>
+                )}
+              </For>
+              <Show when={(learnings() ?? []).length === 0}>
+                <span class="text-12-regular text-text-weak italic">
+                  Nenhum aprendizado ainda — clique em "Extrair aprendizados" para gerar os primeiros insights a partir das submissions.
+                </span>
+              </Show>
+            </div>
+
+            {/* Knowledge map — 4 columns */}
+            <div class="grid grid-cols-4 gap-4 items-start">
+              <For each={LEARNING_CATEGORIES}>
+                {(cat) => (
+                  <div class="flex flex-col gap-3">
+                    {/* Column header */}
+                    <div class={`flex items-center gap-2 pb-2 border-b ${cat.color}`}>
+                      <span class="text-base leading-none">{cat.icon}</span>
+                      <span class={`text-13-medium ${cat.color.split(" ")[0]}`}>{cat.label}</span>
+                      <span class="text-11-regular text-text-weak ml-auto">{learningsByCategory(cat.id).length}</span>
+                    </div>
+
+                    {/* Cards */}
+                    <Show when={learningsByCategory(cat.id).length === 0}>
+                      <p class="text-11-regular text-text-weak italic px-1">Sem aprendizados nessa categoria ainda.</p>
+                    </Show>
+                    <For each={learningsByCategory(cat.id)}>
+                      {(l) => {
+                        const tags = () => {
+                          try { return JSON.parse(l.tags ?? "[]") as string[] } catch { return [] }
+                        }
+                        const confidencePct = () => Math.round(l.confidence * 100)
+                        const confColor = () =>
+                          l.confidence >= 0.75 ? "bg-[color:var(--color-border-success-base)]" :
+                          l.confidence >= 0.5  ? "bg-[color:var(--color-border-warning-base)]" :
+                          "bg-[color:var(--color-border-base)]"
+
+                        return (
+                          <div class="rounded-lg border border-border-base bg-surface-base p-3 flex flex-col gap-2">
+                            {/* Title */}
+                            <p class="text-12-medium text-text-strong leading-snug">{l.title}</p>
+
+                            {/* Body */}
+                            <p class="text-11-regular text-text-base leading-relaxed">{l.body}</p>
+
+                            {/* Confidence bar */}
+                            <div class="flex items-center gap-2">
+                              <div class="flex-1 h-1 rounded-full bg-surface-raised-base overflow-hidden">
+                                <div
+                                  class={`h-full rounded-full transition-all ${confColor()}`}
+                                  style={{ width: `${confidencePct()}%` }}
+                                />
+                              </div>
+                              <span class="text-10-regular text-text-weak shrink-0">{confidencePct()}%</span>
+                            </div>
+
+                            {/* Signals + source */}
+                            <div class="flex items-center gap-3 text-11-regular text-text-weak">
+                              <Show when={l.positiveCount > 0}>
+                                <span class="text-text-success">+{l.positiveCount}</span>
+                              </Show>
+                              <Show when={l.negativeCount > 0}>
+                                <span class="text-text-critical">−{l.negativeCount}</span>
+                              </Show>
+                              <Show when={tags().length > 0}>
+                                <div class="flex gap-1 flex-wrap">
+                                  <For each={tags().slice(0, 3)}>
+                                    {(tag) => (
+                                      <span class="px-1.5 py-0.5 rounded bg-surface-raised-base text-10-regular text-text-weak">{tag}</span>
+                                    )}
+                                  </For>
+                                </div>
+                              </Show>
+                            </div>
+                          </div>
+                        )
+                      }}
+                    </For>
+                  </div>
+                )}
+              </For>
             </div>
           </div>
         </Show>

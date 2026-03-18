@@ -43,6 +43,12 @@ Retorne JSON:
 }`
 }
 
+function resolveExecutionActivity(opp: { type: string; url: string | null }): string {
+  if (opp.type === "oss-bounty" && opp.url?.includes("github.com/")) return "submit-github-pr"
+  if (opp.type === "freelance") return "send-freelance-email"
+  return "execute-opportunity"  // content, bug-bounty, grant, oss-bounty não-GitHub
+}
+
 interface ClassifyResult {
   niche_name: string
   is_new_niche: boolean
@@ -148,15 +154,19 @@ export const classifyNicheActivity: Activity = {
       }
     }
 
-    // Atualiza oportunidade com o niche
+    // Atualiza oportunidade com o niche e avança para shortlisted
     await ctx.db
       .update(oppOpportunities)
-      .set({ nicheId, status: "scored", updatedAt: now })
+      .set({ nicheId, status: "shortlisted", updatedAt: now })
       .where(eq(oppOpportunities.id, opp.id))
 
+    // Enfileira execução baseada no tipo da oportunidade
+    const executionActivity = resolveExecutionActivity(opp)
+    await ctx.enqueue(executionActivity, { opportunity_id: opp.id }, { priority: 7 })
+
     return {
-      summary: `Oportunidade classificada em "${nicheName || "sem niche"}"${isNew ? " (niche novo criado)" : ""}`,
-      extra: { niche_name: nicheName, niche_id: nicheId, is_new: isNew },
+      summary: `Oportunidade classificada em "${nicheName || "sem niche"}"${isNew ? " (niche novo criado)" : ""} — execução enfileirada`,
+      extra: { niche_name: nicheName, niche_id: nicheId, is_new: isNew, execution_activity: executionActivity },
     }
   },
 }

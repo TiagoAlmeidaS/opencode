@@ -5,6 +5,7 @@ import { marketDataCryptoActivity } from "./market-data-crypto"
 import { scanGithubBountiesActivity } from "./scan-github-bounties"
 import { scanGitcoinBountiesActivity } from "./scan-gitcoin-bounties"
 import { scanFreelanceJobsActivity } from "./scan-freelance-jobs"
+import { scanContentJobsActivity } from "./scan-content-jobs"
 import { scoreOpportunityActivity } from "./score-opportunity"
 import { classifyNicheActivity } from "./classify-niche"
 import { analyzeNicheRelationsActivity } from "./analyze-niche-relations"
@@ -19,6 +20,10 @@ import { submitGithubPrActivity } from "./submit-github-pr"
 import { generateGitcoinProposalActivity } from "./generate-gitcoin-proposal"
 import { sendFreelanceEmailActivity } from "./send-freelance-email"
 import { verifySubmissionOutcomeActivity } from "./verify-submission-outcome"
+import { scanImmunefiBountiesActivity } from "./scan-immunefi-bounties"
+import { scanHackerOneProgramsActivity } from "./scan-hackerone-programs"
+import { deliverContentActivity } from "./deliver-content"
+import { extractLearningsActivity } from "./extract-learnings"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -26,6 +31,7 @@ registerActivity(marketDataCryptoActivity)
 registerActivity(scanGithubBountiesActivity)
 registerActivity(scanGitcoinBountiesActivity)
 registerActivity(scanFreelanceJobsActivity)
+registerActivity(scanContentJobsActivity)
 registerActivity(scoreOpportunityActivity)
 registerActivity(classifyNicheActivity)
 registerActivity(analyzeNicheRelationsActivity)
@@ -40,3 +46,7 @@ registerActivity(submitGithubPrActivity)
 registerActivity(generateGitcoinProposalActivity)
 registerActivity(sendFreelanceEmailActivity)
 registerActivity(verifySubmissionOutcomeActivity)
+registerActivity(scanImmunefiBountiesActivity)
+registerActivity(scanHackerOneProgramsActivity)
+registerActivity(deliverContentActivity)
+registerActivity(extractLearningsActivity)
