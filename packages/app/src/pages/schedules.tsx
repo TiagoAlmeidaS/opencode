@@ -149,6 +149,72 @@ export default function Schedules() {
   const [formError, setFormError] = createSignal("")
   const [formSubmitting, setFormSubmitting] = createSignal(false)
 
+  const [showRepoForm, setShowRepoForm] = createSignal(false)
+  const [repoUrlIn, setRepoUrlIn] = createSignal("")
+  const [repoLabel, setRepoLabel] = createSignal("agent")
+  const [repoCronPreset, setRepoCronPreset] = createSignal<"hourly" | "3x" | "daily" | "custom">("hourly")
+  const [repoCronCustom, setRepoCronCustom] = createSignal("0 9 * * *")
+  const [repoBase, setRepoBase] = createSignal("main")
+  const [repoMax, setRepoMax] = createSignal(3)
+  const [repoFormError, setRepoFormError] = createSignal("")
+  const [repoSubmitting, setRepoSubmitting] = createSignal(false)
+
+  function parseRepoFullName(raw: string): string {
+    const t = raw.trim()
+    const m = t.match(/github\.com\/([^/]+)\/([^/\s#?]+)/i)
+    if (m) return `${m[1]}/${m[2].replace(/\.git$/i, "")}`
+    const p = t.split("/").filter(Boolean)
+    if (p.length >= 2) return `${p[0]}/${p[1].replace(/\.git$/i, "")}`
+    return ""
+  }
+
+  function repoCron(): string {
+    if (repoCronPreset() === "hourly") return "0 * * * *"
+    if (repoCronPreset() === "3x") return "0 8,14,20 * * *"
+    if (repoCronPreset() === "daily") return "0 9 * * *"
+    return repoCronCustom().trim() || "0 9 * * *"
+  }
+
+  async function submitRepoPipeline(e: Event) {
+    e.preventDefault()
+    setRepoFormError("")
+    const full = parseRepoFullName(repoUrlIn())
+    if (!full) {
+      setRepoFormError("Enter owner/repo or a github.com URL")
+      return
+    }
+    setRepoSubmitting(true)
+    try {
+      const res = await fetch(`${apiBase()}/pipelines`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: `Issues: ${full}`,
+          strategy: "repo-issue-worker",
+          schedule_cron: repoCron(),
+          config_json: {
+            repo_full_name: full,
+            label: repoLabel().trim() || "agent",
+            base_branch: repoBase().trim() || "main",
+            max_issues_per_run: Math.min(20, Math.max(1, repoMax())),
+          },
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Request failed" }))
+        setRepoFormError((err as { error?: string }).error ?? "Request failed")
+        return
+      }
+      setShowRepoForm(false)
+      setRepoUrlIn("")
+      refresh()
+    } catch (err) {
+      setRepoFormError(err instanceof Error ? err.message : "Network error")
+    } finally {
+      setRepoSubmitting(false)
+    }
+  }
+
   async function submitForm(e: Event) {
     e.preventDefault()
     setFormError("")
@@ -199,6 +265,13 @@ export default function Schedules() {
             onClick={() => setShowForm(true)}
           >
             {language.t("schedules.action.new")}
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-md bg-surface-raised-base text-12-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors border border-border-base"
+            onClick={() => setShowRepoForm(true)}
+          >
+            Repo automations
           </button>
         </div>
       </div>
@@ -251,6 +324,99 @@ export default function Schedules() {
                 onClick={() => { setShowForm(false); setFormError("") }}
               >
                 {language.t("schedules.form.action.cancel")}
+              </button>
+            </div>
+          </form>
+        </div>
+      </Show>
+
+      <Show when={showRepoForm()}>
+        <div class="px-6 py-4 border-b border-border-base bg-surface-base shrink-0">
+          <form onSubmit={submitRepoPipeline} class="flex flex-col gap-3 max-w-2xl">
+            <div class="text-13-medium text-text-strong">Repo automations (labeled issues)</div>
+            <p class="text-11-regular text-text-weak">
+              Pipeline <code class="font-mono">repo-issue-worker</code> — open issues with label (default <code class="font-mono">agent</code>), max N per run.
+            </p>
+            <input
+              type="text"
+              placeholder="https://github.com/owner/repo or owner/repo"
+              value={repoUrlIn()}
+              onInput={(e) => setRepoUrlIn(e.currentTarget.value)}
+              class="w-full px-3 py-2 rounded-md bg-surface-raised-base border border-border-base text-12-regular text-text-base placeholder:text-text-weak focus:outline-none focus:border-border-focus"
+            />
+            <div class="flex flex-wrap gap-3">
+              <label class="text-11-regular text-text-weak flex items-center gap-2">
+                Label
+                <input
+                  type="text"
+                  value={repoLabel()}
+                  onInput={(e) => setRepoLabel(e.currentTarget.value)}
+                  class="w-24 px-2 py-1 rounded-md bg-surface-raised-base border border-border-base font-mono text-12-regular"
+                />
+              </label>
+              <label class="text-11-regular text-text-weak flex items-center gap-2">
+                Base branch
+                <input
+                  type="text"
+                  value={repoBase()}
+                  onInput={(e) => setRepoBase(e.currentTarget.value)}
+                  class="w-24 px-2 py-1 rounded-md bg-surface-raised-base border border-border-base font-mono text-12-regular"
+                />
+              </label>
+              <label class="text-11-regular text-text-weak flex items-center gap-2">
+                Max issues/run
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={repoMax()}
+                  onInput={(e) => setRepoMax(parseInt(e.currentTarget.value, 10) || 3)}
+                  class="w-14 px-2 py-1 rounded-md bg-surface-raised-base border border-border-base text-12-regular"
+                />
+              </label>
+            </div>
+            <div class="flex flex-wrap gap-2 items-center">
+              <span class="text-11-regular text-text-weak">Schedule:</span>
+              <select
+                value={repoCronPreset()}
+                onChange={(e) => {
+                  const v = e.currentTarget.value
+                  if (v === "hourly" || v === "3x" || v === "daily" || v === "custom") setRepoCronPreset(v)
+                }}
+                class="px-2 py-1 rounded-md bg-surface-raised-base border border-border-base text-12-regular"
+              >
+                <option value="hourly">Every hour</option>
+                <option value="3x">3× daily (8,14,20)</option>
+                <option value="daily">1× daily (09:00)</option>
+                <option value="custom">Custom cron</option>
+              </select>
+              <Show when={repoCronPreset() === "custom"}>
+                <input
+                  type="text"
+                  placeholder="0 9 * * *"
+                  value={repoCronCustom()}
+                  onInput={(e) => setRepoCronCustom(e.currentTarget.value)}
+                  class="w-40 px-2 py-1 rounded-md bg-surface-raised-base border border-border-base font-mono text-11-regular"
+                />
+              </Show>
+            </div>
+            <Show when={repoFormError()}>
+              <p class="text-12-regular text-text-critical">{repoFormError()}</p>
+            </Show>
+            <div class="flex gap-2">
+              <button
+                type="submit"
+                disabled={repoSubmitting()}
+                class="px-3 py-1.5 rounded-md bg-surface-raised-base text-12-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors border border-border-base disabled:opacity-50"
+              >
+                {repoSubmitting() ? "Saving…" : "Create pipeline"}
+              </button>
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-md text-12-medium text-text-weak hover:text-text-base transition-colors"
+                onClick={() => { setShowRepoForm(false); setRepoFormError("") }}
+              >
+                Cancel
               </button>
             </div>
           </form>

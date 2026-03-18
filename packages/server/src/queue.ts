@@ -1,7 +1,7 @@
 import { ulid } from "ulid"
 import { eq, and, asc, sql, inArray } from "drizzle-orm"
 import type { ServerDb } from "./db"
-import { daemonQueue } from "./schema"
+import { daemonQueue, repoIssueJobs } from "./schema"
 import { getActivity } from "./activity"
 import { spawnOpenCode } from "./spawn"
 import type { ActivityContext, MemoryLlmOptions } from "./types"
@@ -205,6 +205,13 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
           lockedAt: null,
         })
         .where(eq(daemonQueue.id, id))
+      const inp = JSON.parse(item.inputJson ?? "{}") as { repo_issue_job_id?: string }
+      if (inp.repo_issue_job_id) {
+        await db
+          .update(repoIssueJobs)
+          .set({ status: "failed", updatedAt: completedAt })
+          .where(eq(repoIssueJobs.id, inp.repo_issue_job_id))
+      }
     }
   }
 

@@ -1,7 +1,10 @@
+import { ulid } from "ulid"
 import { eq } from "drizzle-orm"
 import { Octokit } from "@octokit/rest"
-import { oppOpportunities } from "../schema"
+import { oppOpportunities, repoIssueJobs } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
+import { parseGithubUrl } from "./dev-cycle-shared"
+import { enqueueDevCycleChain } from "../repo-job-chain"
 
 interface CreateDedicatedRepoInput {
   opportunity_id: string
@@ -89,11 +92,31 @@ export const createDedicatedRepoActivity: Activity = {
       .set({ workspaceRepoUrl: repoUrl, updatedAt: now })
       .where(eq(oppOpportunities.id, opp.id))
 
-    // Enfileira implementação no repo criado
-    await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5, relatedOpportunityId: opp.id })
+    const gh = parseGithubUrl(repoUrl)
+    if (!gh) throw new Error("URL do repo não é GitHub")
+    const now2 = Math.floor(Date.now() / 1000)
+    const jobId = ulid()
+    await ctx.db.insert(repoIssueJobs).values({
+      id: jobId,
+      opportunityId: opp.id,
+      repoFullName: `${gh.owner}/${gh.repo}`,
+      issueNumber: null,
+      issueTitle: opp.title,
+      issueBody: opp.description,
+      status: "pending",
+      baseBranch: "main",
+      useFork: 0,
+      createdAt: now2,
+      updatedAt: now2,
+    })
+    await enqueueDevCycleChain(ctx.db, {
+      jobId,
+      dedupKey: opp.id,
+      triggeredBy: ctx.queueItemId,
+    })
 
     return {
-      summary: `Repo criado: ${repoUrl} — implementação enfileirada`,
+      summary: `Repo criado: ${repoUrl} — ciclo spec→PR enfileirado`,
       extra: { repo_url: repoUrl, repo_name: repoName, owner },
     }
   },

@@ -304,6 +304,34 @@ CREATE TABLE IF NOT EXISTS agent_learnings (
 );
 CREATE INDEX IF NOT EXISTS idx_learnings_category ON agent_learnings(category, confidence DESC);
 CREATE INDEX IF NOT EXISTS idx_learnings_key ON agent_learnings(key);
+CREATE TABLE IF NOT EXISTS repo_issue_jobs (
+  id TEXT PRIMARY KEY,
+  pipeline_id TEXT REFERENCES daemon_pipelines(id),
+  opportunity_id TEXT REFERENCES opp_opportunities(id),
+  repo_full_name TEXT NOT NULL,
+  issue_number INTEGER,
+  issue_title TEXT NOT NULL,
+  issue_body TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  spec_json TEXT,
+  test_files TEXT,
+  docs_markdown TEXT,
+  branch_name TEXT,
+  fork_repo_full_name TEXT,
+  upstream_owner TEXT,
+  upstream_repo TEXT,
+  local_work_path TEXT,
+  pr_url TEXT,
+  pr_number INTEGER,
+  pr_draft INTEGER NOT NULL DEFAULT 1,
+  base_branch TEXT NOT NULL DEFAULT 'main',
+  use_fork INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_repo_issue_jobs_status ON repo_issue_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_repo_issue_jobs_pipeline ON repo_issue_jobs(pipeline_id);
+CREATE INDEX IF NOT EXISTS idx_repo_issue_jobs_repo ON repo_issue_jobs(repo_full_name);
 `
 
 let state: { sqlite: BunDatabase | undefined; dbPath: string | null } = {
@@ -329,6 +357,35 @@ export function getDb(dbPath: string) {
   }
   // ALTER TABLE migrations — idempotent (ignoram erro se coluna já existe)
   const alterMigrations = [
+    `CREATE TABLE IF NOT EXISTS repo_issue_jobs (
+  id TEXT PRIMARY KEY,
+  pipeline_id TEXT REFERENCES daemon_pipelines(id),
+  opportunity_id TEXT REFERENCES opp_opportunities(id),
+  repo_full_name TEXT NOT NULL,
+  issue_number INTEGER,
+  issue_title TEXT NOT NULL,
+  issue_body TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  spec_json TEXT,
+  test_files TEXT,
+  docs_markdown TEXT,
+  branch_name TEXT,
+  fork_repo_full_name TEXT,
+  upstream_owner TEXT,
+  upstream_repo TEXT,
+  local_work_path TEXT,
+  pr_url TEXT,
+  pr_number INTEGER,
+  pr_draft INTEGER NOT NULL DEFAULT 1,
+  base_branch TEXT NOT NULL DEFAULT 'main',
+  use_fork INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`,
+    "CREATE INDEX IF NOT EXISTS idx_repo_issue_jobs_status ON repo_issue_jobs(status)",
+    "CREATE INDEX IF NOT EXISTS idx_repo_issue_jobs_pipeline ON repo_issue_jobs(pipeline_id)",
+    "CREATE INDEX IF NOT EXISTS idx_repo_issue_jobs_repo ON repo_issue_jobs(repo_full_name)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_repo_issue_jobs_opp ON repo_issue_jobs(opportunity_id) WHERE opportunity_id IS NOT NULL",
     "ALTER TABLE opp_opportunities ADD COLUMN workspace_strategy TEXT",
     "ALTER TABLE opp_opportunities ADD COLUMN workspace_repo_url TEXT",
     "ALTER TABLE opp_telegram_reports ADD COLUMN digest TEXT",

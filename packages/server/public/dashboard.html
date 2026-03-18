@@ -6,44 +6,135 @@
 <title>OpenCode Server — Dashboard</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Tokens aligned with OpenCode UI smoke-dark scale */
   :root {
-    --bg: #0e0e10; --surface: #18181c; --surface2: #222226;
-    --border: #2a2a30; --text: #e8e8ee; --text-weak: #888898;
-    --accent: #6c73ff; --success: #4ade80; --warn: #fbbf24;
-    --danger: #f87171; --info: #60a5fa;
-    --radius: 8px; --font: 'Inter', system-ui, sans-serif;
+    --background-base: #131010;
+    --surface-base: #1b1818;
+    --surface-raised-base: #252121;
+    --surface-raised-hover: #2d2828;
+    --border-base: #343030;
+    --border-strong: #4b4646;
+    --text-strong: #f1ecec;
+    --text-base: #b7b1b1;
+    --text-weak: #7f7979;
+    --text-success: #86efac;
+    --text-warning: #fcd34d;
+    --text-critical: #fca5a5;
+    --text-info: #7dd3fc;
+    --icon-accent-base: #a78bfa;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --shadow-card: 0 1px 0 rgba(255,255,255,.04), 0 4px 24px rgba(0,0,0,.35);
+    --font: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --sidebar-w: 232px;
+    --bg: var(--background-base);
+    --surface: var(--surface-raised-base);
+    --surface2: var(--surface-raised-hover);
+    --border: var(--border-base);
+    --text: var(--text-strong);
+    --accent: var(--icon-accent-base);
+    --success: var(--text-success);
+    --warn: var(--text-warning);
+    --danger: var(--text-critical);
+    --info: var(--text-info);
+    --radius: var(--radius-md);
   }
-  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  header h1 { font-size: 15px; font-weight: 600; }
-  .tabs { display: flex; gap: 4px; }
-  .tab { padding: 6px 14px; border-radius: var(--radius); font-size: 12px; font-weight: 500; cursor: pointer; border: none; background: none; color: var(--text-weak); transition: all .15s; }
-  .tab:hover { color: var(--text); }
-  .tab.active { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
-  .header-actions { display: flex; align-items: center; gap: 10px; }
-  .btn { padding: 6px 14px; border-radius: var(--radius); font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text); transition: all .15s; }
-  .btn:hover { background: var(--surface); border-color: var(--accent); }
-  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn-primary:hover { opacity: .85; }
-  .btn-sm { padding: 3px 10px; font-size: 11px; }
-  .btn-danger { border-color: var(--danger); color: var(--danger); }
-  .btn-danger:hover { background: var(--danger); color: #fff; }
-  .status-bar { display: flex; align-items: center; gap: 20px; padding: 8px 24px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-weak); flex-shrink: 0; }
-  .status-bar strong { color: var(--text); }
-  main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  body { background: var(--background-base); color: var(--text-strong); font-family: var(--font); font-size: 13px; line-height: 1.45; height: 100dvh; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  .shell { display: flex; height: 100dvh; }
+  .sidebar {
+    width: var(--sidebar-w); flex-shrink: 0; background: var(--surface-base);
+    border-right: 1px solid var(--border-base); display: flex; flex-direction: column;
+    z-index: 40; transition: transform .2s ease;
+  }
+  .sidebar-brand {
+    display: flex; align-items: center; gap: 12px; padding: 18px 16px;
+    border-bottom: 1px solid var(--border-base);
+  }
+  .sidebar-logo {
+    width: 36px; height: 36px; border-radius: var(--radius-md);
+    background: linear-gradient(145deg, var(--surface-raised-hover), var(--surface-base));
+    border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: var(--icon-accent-base);
+  }
+  .sidebar-title { font-size: 14px; font-weight: 600; letter-spacing: -0.02em; color: var(--text-strong); }
+  .sidebar-sub { font-size: 11px; color: var(--text-weak); margin-top: 2px; }
+  .sidebar-nav { flex: 1; overflow-y: auto; padding: 10px 8px; }
+  .nav-group { border: none; margin-bottom: 4px; }
+  .nav-group summary {
+    list-style: none; font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--text-weak); padding: 10px 10px 6px; cursor: pointer;
+    user-select: none;
+  }
+  .nav-group summary::-webkit-details-marker { display: none; }
+  .nav-group summary::before { content: "▸"; display: inline-block; margin-right: 6px; transition: transform .15s; font-size: 9px; opacity: .7; }
+  .nav-group[open] summary::before { transform: rotate(90deg); }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 8px 12px 8px 14px; margin: 2px 0; border: none; border-radius: var(--radius-sm);
+    background: transparent; color: var(--text-base); font-size: 13px; font-weight: 500;
+    font-family: inherit; cursor: pointer; transition: background .12s, color .12s;
+  }
+  .nav-item:hover { background: var(--surface-raised-base); color: var(--text-strong); }
+  .nav-item.active {
+    background: var(--surface-raised-hover); color: var(--text-strong);
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+  }
+  .nav-item .ni { width: 18px; text-align: center; opacity: .85; font-size: 14px; }
+  .sidebar-footer { padding: 12px; border-top: 1px solid var(--border-base); }
+  .nav-item.ghost { font-size: 12px; color: var(--text-weak); }
+  .content-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--background-base); }
+  .topbar {
+    display: flex; align-items: center; gap: 16px; padding: 12px 20px 12px 16px;
+    border-bottom: 1px solid var(--border-base); flex-shrink: 0; background: var(--surface-base);
+  }
+  .page-title { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; flex: 1; min-width: 0; }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+  .refresh-hint { font-size: 11px; color: var(--text-weak); }
+  .sidebar-mob-toggle {
+    display: none; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-base);
+    background: var(--surface-raised-base); color: var(--text-strong); cursor: pointer; font-size: 16px;
+  }
+  @media (max-width: 900px) {
+    .sidebar-mob-toggle { display: block; }
+    .sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0; transform: translateX(-100%);
+      box-shadow: 8px 0 32px rgba(0,0,0,.5);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-backdrop {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 35;
+    }
+    .sidebar-backdrop.show { display: block; }
+  }
+  .btn { padding: 7px 14px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-base); background: var(--surface-raised-base); color: var(--text-strong); transition: all .15s; font-family: inherit; }
+  .btn:hover { background: var(--surface-raised-hover); border-color: var(--border-strong); }
+  .btn-primary { background: var(--icon-accent-base); border-color: transparent; color: #1a1028; }
+  .btn-primary:hover { filter: brightness(1.08); border-color: transparent; }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
+  .btn-danger { border-color: rgba(252,165,165,.4); color: var(--text-critical); }
+  .btn-danger:hover { background: rgba(252,165,165,.12); }
+  .status-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 24px; padding: 10px 20px; border-bottom: 1px solid var(--border-base); font-size: 11px; color: var(--text-weak); flex-shrink: 0; background: rgba(27,24,24,.6); }
+  .status-bar strong { color: var(--text-strong); font-weight: 600; }
+  .main-scroll { flex: 1; overflow: auto; min-height: 0; }
+  #main-content { min-height: 100%; display: flex; flex-direction: column; }
 
   /* Queue board */
-  .board { display: flex; gap: 16px; padding: 20px 24px; height: 100%; overflow-x: auto; overflow-y: hidden; }
+  .board { display: flex; gap: 16px; padding: 20px; height: 100%; overflow-x: auto; overflow-y: hidden; }
   .column { display: flex; flex-direction: column; width: 280px; flex-shrink: 0; min-height: 0; }
-  .col-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
-  .col-title { font-size: 12px; font-weight: 600; }
+  .col-header { display: flex; align-items: center; justify-content: space-between; padding: 0 0 10px; border-bottom: 1px solid var(--border-base); margin-bottom: 10px; }
+  .col-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
   .col-count { font-size: 11px; color: var(--text-weak); }
   .col-pending .col-title { color: var(--warn); }
   .col-running .col-title { color: var(--info); }
   .col-completed .col-title { color: var(--success); }
   .col-failed .col-title { color: var(--danger); }
   .cards { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  .card {
+    background: var(--surface-raised-base); border: 1px solid var(--border-base); border-radius: var(--radius-md);
+    padding: 14px; box-shadow: var(--shadow-card); transition: border-color .15s;
+  }
+  .card:hover { border-color: var(--border-strong); }
   .card-type { font-size: 12px; font-weight: 600; word-break: break-all; }
   .card-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-weak); margin-top: 4px; }
   .card-error { font-size: 11px; color: var(--danger); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -57,9 +148,11 @@
   .table-wrap { flex: 1; overflow-y: auto; }
   table { width: 100%; border-collapse: collapse; }
   thead { position: sticky; top: 0; background: var(--bg); z-index: 1; }
-  th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; color: var(--text-weak); border-bottom: 1px solid var(--border); white-space: nowrap; }
-  td { padding: 9px 14px; border-bottom: 1px solid var(--border); font-size: 12px; vertical-align: middle; }
-  tr:hover td { background: var(--surface); }
+  th { text-align: left; padding: 10px 14px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-weak); border-bottom: 1px solid var(--border-base); white-space: nowrap; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text-strong); }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border-base); font-size: 12px; vertical-align: middle; }
+  tr:hover td { background: rgba(37,33,33,.5); }
   .score-high { color: var(--success); font-weight: 600; }
   .score-mid  { color: var(--warn);    font-weight: 600; }
   .score-low  { color: var(--text-weak); }
@@ -79,7 +172,7 @@
 
   /* Niches grid */
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; padding: 20px 24px; overflow-y: auto; height: 100%; }
-  .niche-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .niche-card { background: var(--surface-raised-base); border: 1px solid var(--border-base); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-card); }
   .niche-name { font-size: 13px; font-weight: 600; }
   .niche-slug { font-size: 10px; color: var(--text-weak); font-family: monospace; margin-top: 2px; }
   .niche-desc { font-size: 11px; color: var(--text-weak); margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -104,8 +197,8 @@
   tr:hover .row-actions { display: flex; }
 
   /* Modal */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
-  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 16px; max-height: 90vh; overflow-y: auto; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(10,8,8,.75); display: flex; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(6px); }
+  .modal { background: var(--surface-base); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 24px; width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 16px; max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,.5); }
   .modal-wide { max-width: 680px; }
   .modal h2 { font-size: 15px; font-weight: 600; }
   .modal-header { display: flex; align-items: center; justify-content: space-between; }
@@ -169,40 +262,92 @@
   .brain-body { font-size:11px; color:var(--text-weak); max-width:420px; white-space:pre-wrap; line-height:1.5; }
   .brain-actions { display:none; gap:8px; }
   tr:hover .brain-actions { display:flex; }
+
+  .toast-root { position: fixed; bottom: 20px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; max-width: 360px; pointer-events: none; }
+  .toast {
+    pointer-events: auto; padding: 12px 16px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500;
+    border: 1px solid var(--border-base); box-shadow: var(--shadow-card); animation: toastIn .25s ease;
+  }
+  .toast.ok { background: rgba(22,40,28,.95); border-color: rgba(134,239,172,.25); color: var(--text-success); }
+  .toast.err { background: rgba(50,22,22,.95); border-color: rgba(252,165,165,.25); color: var(--text-critical); }
+  .toast.info { background: var(--surface-base); color: var(--text-strong); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .badge-status {
+    display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .03em;
+  }
+  .badge-pending { background: rgba(252,211,77,.12); color: var(--warn); }
+  .badge-running { background: rgba(125,211,252,.12); color: var(--info); }
+  .badge-done { background: rgba(134,239,172,.12); color: var(--text-success); }
+  .badge-fail { background: rgba(252,165,165,.12); color: var(--text-critical); }
 </style>
 </head>
 <body>
 
-<header>
-  <div style="display:flex;align-items:center;gap:16px">
-    <h1>⚡ OpenCode Server</h1>
-    <div class="tabs">
-      <button class="tab active" data-tab="queue">Activity Queue</button>
-      <button class="tab" data-tab="pipelines">Pipelines</button>
-      <button class="tab" data-tab="reports">Reports</button>
-      <button class="tab" data-tab="opportunities">Opportunities</button>
-      <button class="tab" data-tab="niches">Niches</button>
-      <button class="tab" data-tab="market">Market Data</button>
-      <button class="tab" data-tab="proposals">Proposals</button>
-      <button class="tab" data-tab="submissions">Submissions</button>
-      <button class="tab" data-tab="discovery">Discovery</button>
-      <button class="tab" data-tab="specs">Specs</button>
-      <button class="tab" data-tab="brain">Brain</button>
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebarMob()"></div>
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">◆</div>
+      <div>
+        <div class="sidebar-title">OpenCode</div>
+        <div class="sidebar-sub">Server dashboard</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <details open class="nav-group">
+        <summary>Operate</summary>
+        <button type="button" class="nav-item active" data-tab="queue"><span class="ni">◇</span>Queue</button>
+        <button type="button" class="nav-item" data-tab="pipelines"><span class="ni">⏵</span>Pipelines</button>
+        <button type="button" class="nav-item" data-tab="reports"><span class="ni">📋</span>Reports</button>
+        <button type="button" class="nav-item" data-tab="proposals"><span class="ni">✦</span>Proposals</button>
+      </details>
+      <details open class="nav-group">
+        <summary>Market</summary>
+        <button type="button" class="nav-item" data-tab="opportunities"><span class="ni">◎</span>Opportunities</button>
+        <button type="button" class="nav-item" data-tab="niches"><span class="ni">◈</span>Niches</button>
+        <button type="button" class="nav-item" data-tab="market"><span class="ni">📈</span>Market data</button>
+      </details>
+      <details open class="nav-group">
+        <summary>Content</summary>
+        <button type="button" class="nav-item" data-tab="submissions"><span class="ni">↗</span>Submissions</button>
+        <button type="button" class="nav-item" data-tab="discovery"><span class="ni">💡</span>Discovery</button>
+        <button type="button" class="nav-item" data-tab="specs"><span class="ni">§</span>Specs</button>
+      </details>
+      <details open class="nav-group">
+        <summary>Brain</summary>
+        <button type="button" class="nav-item" data-tab="brain"><span class="ni">🧠</span>Learnings</button>
+      </details>
+    </nav>
+    <div class="sidebar-footer">
+      <button type="button" class="nav-item ghost" onclick="openTokenModal(); closeSidebarMob()">🔑 API token</button>
+    </div>
+  </aside>
+
+  <div class="content-wrap">
+    <header class="topbar">
+      <button type="button" class="sidebar-mob-toggle" id="sidebar-mob-toggle" onclick="toggleSidebarMob()" aria-label="Open menu">☰</button>
+      <h1 class="page-title" id="page-title">Activity queue</h1>
+      <div class="topbar-actions">
+        <span class="refresh-hint" id="last-refresh"></span>
+        <button type="button" class="btn" onclick="refresh()">Refresh</button>
+        <button type="button" class="btn btn-primary" id="add-btn" onclick="openModal()" style="display:none">+ Activity</button>
+        <button type="button" class="btn btn-primary" id="run-pipeline-btn" onclick="runFirstPipeline()" style="display:none">Run pipeline</button>
+        <button type="button" class="btn btn-primary" id="new-idea-btn" onclick="openDiscoveryModal()" style="display:none">+ Idea</button>
+        <button type="button" class="btn btn-primary" id="new-spec-btn" onclick="openSpecModal()" style="display:none">+ Spec</button>
+        <button type="button" class="btn btn-primary" id="extract-brain-btn" onclick="triggerExtractLearnings()" style="display:none">Extract</button>
+      </div>
+    </header>
+
+    <div class="status-bar" id="status-bar"><span>Loading…</span></div>
+    <div class="main-scroll" id="main-scroll">
+      <main id="main-content"></main>
     </div>
   </div>
-  <div class="header-actions">
-    <span id="last-refresh" style="font-size:11px;color:var(--text-weak)"></span>
-    <button class="btn" onclick="openTokenModal()" title="API Token">🔑</button>
-    <button class="btn" onclick="refresh()">↻ Refresh</button>
-    <button class="btn btn-primary" id="add-btn"        onclick="openModal()"          style="display:none">+ Add Activity</button>
-    <button class="btn btn-primary" id="run-pipeline-btn" onclick="runFirstPipeline()" style="display:none">▶ Run pipeline</button>
-    <button class="btn btn-primary" id="new-idea-btn"   onclick="openDiscoveryModal()" style="display:none">+ New Idea</button>
-    <button class="btn btn-primary" id="new-spec-btn"      onclick="openSpecModal()"           style="display:none">+ New Spec</button>
-    <button class="btn btn-primary" id="extract-brain-btn" onclick="triggerExtractLearnings()" style="display:none">⚡ Extract Learnings</button>
-  </div>
-</header>
+</div>
+<div class="toast-root" id="toast-root" aria-live="polite"></div>
 
-<!-- ── API Token Modal ───────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="token-modal" style="display:none" onclick="if(event.target===this)closeTokenModal()">
   <div class="modal">
     <h2>API Token</h2>
@@ -218,9 +363,6 @@
     </div>
   </div>
 </div>
-
-<div class="status-bar" id="status-bar"><span>Loading...</span></div>
-<main id="main-content"></main>
 
 <!-- ── Add Activity Modal ─────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
@@ -378,19 +520,67 @@ let autoRefreshInterval
 let _editingSpecId = null   // null = create mode, string = edit mode
 let _specsList = []         // cached specs for selectors
 
-// ── Tabs ──────────────────────────────────────────────────────────────────────
-document.querySelectorAll('.tab').forEach(t => {
+// ── Sidebar nav + shell ───────────────────────────────────────────────────────
+const TAB_TITLES = {
+  queue: 'Activity queue', pipelines: 'Pipelines', reports: 'Reports', proposals: 'Proposals',
+  opportunities: 'Opportunities', niches: 'Niches', market: 'Market data', submissions: 'Submissions',
+  discovery: 'Discovery', specs: 'Project specs', brain: 'Brain / learnings',
+}
+function setNavActive(tab) {
+  document.querySelectorAll('.nav-item[data-tab]').forEach((x) => x.classList.toggle('active', x.dataset.tab === tab))
+  const pt = document.getElementById('page-title')
+  if (pt) pt.textContent = TAB_TITLES[tab] || tab
+}
+function toggleSidebarMob() {
+  document.getElementById('sidebar').classList.toggle('open')
+  document.getElementById('sidebar-backdrop').classList.toggle('show')
+}
+function closeSidebarMob() {
+  document.getElementById('sidebar').classList.remove('open')
+  document.getElementById('sidebar-backdrop').classList.remove('show')
+}
+function showToast(msg, type) {
+  const root = document.getElementById('toast-root')
+  const el = document.createElement('div')
+  el.className = 'toast ' + (type === 'success' ? 'ok' : type === 'error' ? 'err' : 'info')
+  el.textContent = msg
+  root.appendChild(el)
+  setTimeout(() => { el.remove() }, 4800)
+}
+
+document.querySelectorAll('.nav-item[data-tab]').forEach((t) => {
   t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'))
-    t.classList.add('active')
     currentTab = t.dataset.tab
-    document.getElementById('add-btn').style.display          = currentTab === 'queue'     ? '' : 'none'
-    document.getElementById('new-idea-btn').style.display     = currentTab === 'discovery' ? '' : 'none'
-    document.getElementById('new-spec-btn').style.display     = currentTab === 'specs'     ? '' : 'none'
+    setNavActive(currentTab)
+    document.getElementById('add-btn').style.display = currentTab === 'queue' ? '' : 'none'
+    document.getElementById('new-idea-btn').style.display = currentTab === 'discovery' ? '' : 'none'
+    document.getElementById('new-spec-btn').style.display = currentTab === 'specs' ? '' : 'none'
     document.getElementById('run-pipeline-btn').style.display = currentTab === 'pipelines' ? '' : 'none'
-    document.getElementById('extract-brain-btn').style.display = currentTab === 'brain'   ? '' : 'none'
+    document.getElementById('extract-brain-btn').style.display = currentTab === 'brain' ? '' : 'none'
+    closeSidebarMob()
     refresh()
   })
+})
+
+window._oppSortKey = 'score'
+window._oppSortDir = 'desc'
+window._pipeSortDir = 'asc'
+document.getElementById('main-scroll').addEventListener('click', (e) => {
+  const th = e.target.closest('th.sortable[data-opp-sort]')
+  if (th && currentTab === 'opportunities') {
+    const key = th.dataset.oppSort
+    if (window._oppSortKey === key) window._oppSortDir = window._oppSortDir === 'asc' ? 'desc' : 'asc'
+    else {
+      window._oppSortKey = key
+      window._oppSortDir = key === 'score' ? 'desc' : 'asc'
+    }
+    renderOpportunities()
+    return
+  }
+  if (e.target.closest('th.sortable[data-pipe-sort]') && currentTab === 'pipelines') {
+    window._pipeSortDir = window._pipeSortDir === 'asc' ? 'desc' : 'asc'
+    renderPipelines()
+  }
 })
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
@@ -481,6 +671,8 @@ async function renderPipelines() {
     document.getElementById('main-content').innerHTML = '<div class="empty">Nenhum pipeline. Os pipelines padrão (daily/weekly report) são criados na primeira subida do servidor.</div>'
     return
   }
+  const dir = window._pipeSortDir === 'asc' ? 1 : -1
+  pipelines = [...pipelines].sort((a, b) => dir * (a.name || '').localeCompare(b.name || ''))
   const rows = pipelines.map(p => {
     const enabled = p.enabled === 1
     const statusCls = enabled ? 'disc-done' : 'disc-pending'
@@ -498,7 +690,7 @@ async function renderPipelines() {
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th></th><th>Nome</th><th>Strategy</th><th>Cron</th><th></th>
+          <th></th><th class="sortable" data-pipe-sort="name">Nome</th><th>Strategy</th><th>Cron</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -507,8 +699,9 @@ async function renderPipelines() {
 async function runPipeline(id) {
   try {
     await apiFetch('/pipelines/' + id + '/run', { method: 'POST' })
+    showToast('Pipeline run enqueued', 'success')
     refresh()
-  } catch (e) { alert('Erro: ' + e.message) }
+  } catch (e) { showToast(e.message, 'error') }
 }
 function runFirstPipeline() {
   apiFetch('/pipelines').then(list => {
@@ -638,10 +831,20 @@ async function cancelItem(id) {
 
 // ── Opportunities ─────────────────────────────────────────────────────────────
 async function renderOpportunities() {
-  const [opps, stats] = await Promise.all([
+  let [opps, stats] = await Promise.all([
     apiFetch('/opportunities?limit=100').catch(() => []),
     apiFetch('/opportunities/stats').catch(() => null),
   ])
+  const sk = window._oppSortKey || 'score'
+  const sd = window._oppSortDir || 'desc'
+  opps = [...opps].sort((a, b) => {
+    let va; let vb
+    if (sk === 'score') { va = a.score ?? -1; vb = b.score ?? -1 }
+    else { va = (a.title || '').toLowerCase(); vb = (b.title || '').toLowerCase() }
+    if (va < vb) return sd === 'asc' ? -1 : 1
+    if (va > vb) return sd === 'asc' ? 1 : -1
+    return 0
+  })
 
   const statsBar = stats ? `
     <div class="status-bar" style="border-bottom:1px solid var(--border)">
@@ -679,7 +882,7 @@ async function renderOpportunities() {
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Title</th><th>Type</th><th>Score</th><th>Reward</th><th>Status</th><th>Source</th><th></th>
+          <th class="sortable" data-opp-sort="title">Title</th><th>Type</th><th class="sortable" data-opp-sort="score">Score</th><th>Reward</th><th>Status</th><th>Source</th><th></th>
         </tr></thead>
         <tbody>${rows || '<tr><td colspan="7" class="empty">No opportunities yet.</td></tr>'}</tbody>
       </table>
@@ -819,13 +1022,19 @@ function setSubFilter(f) { window._submissionFilter = f; renderSubmissions() }
 
 async function approveSub(id) {
   if (!confirm('Approve and submit this proposal?')) return
-  try { await apiFetch('/submissions/' + id + '/approve', { method: 'POST' }); refresh() }
-  catch (e) { alert('Error: ' + e.message) }
+  try {
+    await apiFetch('/submissions/' + id + '/approve', { method: 'POST' })
+    showToast('Submission approved', 'success')
+    refresh()
+  } catch (e) { showToast(e.message, 'error') }
 }
 async function rejectSub(id) {
   if (!confirm('Reject this submission?')) return
-  try { await apiFetch('/submissions/' + id + '/reject', { method: 'POST' }); refresh() }
-  catch (e) { alert('Error: ' + e.message) }
+  try {
+    await apiFetch('/submissions/' + id + '/reject', { method: 'POST' })
+    showToast('Submission rejected', 'success')
+    refresh()
+  } catch (e) { showToast(e.message, 'error') }
 }
 
 function viewProposal(id) {
@@ -901,8 +1110,9 @@ async function renderDiscovery() {
 async function runDiscoveryPipeline(id) {
   try {
     await apiFetch('/pipelines/' + id + '/run', { method: 'POST' })
+    showToast('Discovery pipeline run enqueued', 'success')
     refresh()
-  } catch(e) { alert('Error: ' + e.message) }
+  } catch(e) { showToast(e.message, 'error') }
 }
 
 function openDiscoveryModal() {
@@ -938,6 +1148,7 @@ async function submitDiscovery() {
       body: JSON.stringify({ idea_text: text, trigger_pipeline: triggerPipeline, ...(specId ? { spec_id: specId } : {}) })
     })
     closeDiscoveryModal()
+    showToast('Discovery idea added', 'success')
     refresh()
   } catch(e) { errEl.textContent = e.message; errEl.style.display = '' }
   finally { btn.textContent = 'Add'; btn.disabled = false }
@@ -1144,6 +1355,7 @@ async function submitSpec() {
   try {
     await apiFetch(url, { method, body: JSON.stringify(payload) })
     closeSpecModal()
+    showToast('Spec saved', 'success')
     refresh()
   } catch(e) { errEl.textContent = e.message; errEl.style.display = '' }
   finally { btn.textContent = 'Save'; btn.disabled = false }
@@ -1185,7 +1397,9 @@ async function submitActivity() {
   btn.textContent = 'Adding…'; btn.disabled = true
   try {
     await apiFetch('/queue', { method: 'POST', body: JSON.stringify({ activity_type: type, input, priority, triggered_by: 'manual' }) })
-    closeModal(); refresh()
+    closeModal()
+    showToast('Activity queued', 'success')
+    refresh()
   } catch(e) { errEl.textContent = e.message; errEl.style.display = '' }
   finally { btn.textContent = 'Add'; btn.disabled = false }
 }
@@ -1244,15 +1458,17 @@ async function renderProposals() {
 async function approveProposal(id) {
   try {
     await apiFetch('/proposals/' + id + '/approve', { method: 'POST' })
+    showToast('Proposal approved', 'success')
     renderProposals()
-  } catch (e) { alert('Erro: ' + e.message) }
+  } catch (e) { showToast(e.message, 'error') }
 }
 async function rejectProposal(id) {
   if (!confirm('Rejeitar esta proposal?')) return
   try {
     await apiFetch('/proposals/' + id + '/reject', { method: 'POST' })
+    showToast('Proposal rejected', 'success')
     renderProposals()
-  } catch (e) { alert('Erro: ' + e.message) }
+  } catch (e) { showToast(e.message, 'error') }
 }
 
 // ── Brain / Learnings ─────────────────────────────────────────────────────────
@@ -1316,8 +1532,8 @@ async function deleteLearning(id) {
 async function triggerExtractLearnings() {
   try {
     await apiFetch('/learnings/extract', { method: 'POST', body: JSON.stringify({ mode: 'batch', limit: 50 }) })
-    alert('Extract Learnings enfileirado! Verifique a Activity Queue para acompanhar.')
-  } catch (e) { alert('Erro: ' + e.message) }
+    showToast('Extract learnings queued — check Activity queue', 'success')
+  } catch (e) { showToast(e.message, 'error') }
 }
 
 // ── Refresh ───────────────────────────────────────────────────────────────────

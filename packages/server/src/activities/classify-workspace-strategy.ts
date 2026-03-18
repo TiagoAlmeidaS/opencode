@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm"
 import { oppOpportunities } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
+import { ensureOppDevCycle } from "../opp-dev-cycle"
 
 interface ClassifyWorkspaceInput {
   opportunity_id: string
@@ -99,16 +100,23 @@ export const classifyWorkspaceStrategyActivity: Activity = {
       .set({ workspaceStrategy: strategy, updatedAt: now })
       .where(eq(oppOpportunities.id, opp.id))
 
-    // Roteia para a próxima etapa conforme a estratégia
     if (strategy === "fork-temp") {
-      await ctx.enqueue("submit-github-pr", { opportunity_id: opp.id }, { priority: 5, relatedOpportunityId: opp.id })
+      await ensureOppDevCycle(ctx.db, {
+        opp,
+        triggeredBy: ctx.queueItemId,
+        mode: "fork-temp",
+      })
     } else if (strategy === "dedicated-repo") {
       await ctx.enqueue("create-dedicated-repo", {
         opportunity_id: opp.id,
         repo_name: suggestedRepoName,
       }, { priority: 4, relatedOpportunityId: opp.id })
     } else if (strategy === "extend-repo") {
-      await ctx.enqueue("execute-opportunity", { opportunity_id: opp.id }, { priority: 5, relatedOpportunityId: opp.id })
+      await ensureOppDevCycle(ctx.db, {
+        opp,
+        triggeredBy: ctx.queueItemId,
+        mode: "direct",
+      })
     }
 
     return {

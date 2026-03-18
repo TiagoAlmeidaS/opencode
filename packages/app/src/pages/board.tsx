@@ -95,6 +95,17 @@ interface ProjectSpec {
   updatedAt: number
 }
 
+interface RepoIssueJob {
+  id: string
+  repoFullName: string
+  issueNumber: number | null
+  issueTitle: string
+  status: string
+  prUrl: string | null
+  opportunityId: string | null
+  updatedAt: number
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const COLUMNS: { status: QueueItem["status"]; label: string; color: string }[] = [
@@ -145,7 +156,7 @@ export default function Board() {
     return url.replace(/\/$/, "") + "/server"
   }
 
-  const [tab, setTab] = createSignal<"queue" | "opportunities" | "niches" | "market" | "discovery" | "specs" | "cerebro">("queue")
+  const [tab, setTab] = createSignal<"queue" | "opportunities" | "repos" | "niches" | "market" | "discovery" | "specs" | "cerebro">("queue")
   const [tick, setTick] = createSignal(0)
   const refresh = () => setTick((n) => n + 1)
   const interval = setInterval(refresh, 30_000)
@@ -209,6 +220,32 @@ export default function Board() {
     if (!res.ok) return [] as PipelineRow[]
     return (await res.json()) as PipelineRow[]
   })
+
+  const [repoJobs] = createResource(tick, async () => {
+    const res = await fetch(`${apiBase()}/repo-issue-jobs?limit=80`)
+    if (!res.ok) return [] as RepoIssueJob[]
+    return (await res.json()) as RepoIssueJob[]
+  })
+
+  function repoJobsGrouped(): Record<string, RepoIssueJob[]> {
+    const m: Record<string, RepoIssueJob[]> = {}
+    for (const j of repoJobs() ?? []) {
+      const k = j.repoFullName
+      if (!m[k]) m[k] = []
+      m[k].push(j)
+    }
+    return m
+  }
+
+  const REPO_STATUS_ORDER = [
+    "pending", "spec", "tests", "implementing", "docs", "pr-open", "completed", "failed",
+  ]
+  function repoStatusClass(s: string): string {
+    if (s === "completed") return "text-text-success bg-surface-raised-base"
+    if (s === "failed") return "text-text-critical bg-surface-raised-base"
+    if (s === "pr-open") return "text-text-info bg-surface-raised-base"
+    return "text-text-warning bg-surface-raised-base"
+  }
   const discoveryPipelineId = () => pipelines()?.find((p) => p.strategy === "project_discovery")?.id
 
   const [discoveryFormOpen, setDiscoveryFormOpen] = createSignal(false)
@@ -397,6 +434,7 @@ export default function Board() {
   const TABS = [
     { id: "queue" as const, label: "Activity Queue" },
     { id: "opportunities" as const, label: "Opportunities" },
+    { id: "repos" as const, label: "Repos" },
     { id: "niches" as const, label: "Niches" },
     { id: "market" as const, label: "Market Data" },
     { id: "discovery" as const, label: "Discovery" },
@@ -628,6 +666,61 @@ export default function Board() {
                   </For>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </Show>
+
+        {/* ── Repos (issue jobs) Tab ── */}
+        <Show when={tab() === "repos"}>
+          <div class="flex flex-col h-full overflow-hidden">
+            <div class="px-6 py-2 border-b border-border-base text-11-regular text-text-weak shrink-0">
+              Issue/opportunity dev cycle — <code class="text-text-base">completed</code> means notified; merge is still manual on GitHub.
+            </div>
+            <div class="flex-1 overflow-y-auto p-6 space-y-8">
+              <For each={Object.entries(repoJobsGrouped()).sort(([a], [b]) => a.localeCompare(b))}>
+                {([repo, jobs]) => (
+                  <div class="rounded-lg border border-border-base bg-surface-base overflow-hidden">
+                    <div class="px-4 py-2 bg-surface-raised-base border-b border-border-base font-mono text-12-medium text-text-strong">
+                      {repo}
+                    </div>
+                    <div class="px-4 py-3 flex flex-wrap gap-2 text-10-regular text-text-weak border-b border-border-base">
+                      <For each={REPO_STATUS_ORDER}>
+                        {(s) => (
+                          <span class="px-1.5 py-0.5 rounded border border-border-base">{s}</span>
+                        )}
+                      </For>
+                    </div>
+                    <div class="divide-y divide-border-base">
+                      <For each={jobs.sort((a, b) => b.updatedAt - a.updatedAt)}>
+                        {(j) => (
+                          <div class="px-4 py-3 flex flex-wrap items-center gap-3 text-12-regular">
+                            <span class={`px-2 py-0.5 rounded text-11-medium shrink-0 ${repoStatusClass(j.status)}`}>
+                              {j.status}
+                            </span>
+                            <span class="text-text-strong flex-1 min-w-0">
+                              {j.issueNumber != null ? <span class="text-text-weak mr-2">#{j.issueNumber}</span> : null}
+                              {j.issueTitle}
+                            </span>
+                            <Show when={j.prUrl}>
+                              <a
+                                href={j.prUrl!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="px-2 py-1 rounded-md bg-surface-raised-base border border-border-base text-11-medium text-text-info hover:underline shrink-0"
+                              >
+                                Ver PR
+                              </a>
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                )}
+              </For>
+              <Show when={(repoJobs() ?? []).length === 0 && !repoJobs.loading}>
+                <p class="text-12-regular text-text-weak">No repo issue jobs yet. Add a pipeline with strategy <code class="font-mono">repo-issue-worker</code> on Schedules.</p>
+              </Show>
             </div>
           </div>
         </Show>

@@ -40,6 +40,8 @@ The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /pro
 | POST | `/server/discovery` | Enqueue a discovery idea (body: `idea_text`, `session_id?`, `trigger_pipeline?`). Creates a row with status `pending`. If `trigger_pipeline: true`, runs the first enabled pipeline with strategy `project_discovery` (when the daemon provides run callbacks). |
 | GET | `/server/discovery/:id` | Get a discovery report by id (idea, status, report_md, report_json, etc.). |
 | POST | `/server/pipelines/:id/run` | Run the given pipeline once (synchronous run). Returns `{ jobId, ok }` or 503 if run is not available (e.g. server started without daemon context). |
+| GET | `/server/repo-issue-jobs` | Lista jobs do ciclo fechado (issues label / opportunities). Query: `?status=`, `?repo=`, `?limit=50`. |
+| GET | `/server/repo-issue-jobs/:id` | Detalhe (spec, testFiles, docs, prUrl, etc.). |
 
 ## Config
 
@@ -55,6 +57,7 @@ Built-in strategies are registered by the `@opencode-ai/server` package. The def
 - **`memory_consolidation`** — Phase 2: consolidates extractions into `MEMORY.md`, `memory_summary.md`, and optional skills on disk. See [Memory pipeline runbook](../runbooks/runbook-memory-pipeline.md) and [architecture](../architecture/memory-pipeline.md).
 - **`memory_rag_index`** — Indexes MEMORY.md, memory_summary.md, and skills into Qdrant for retrieval. Requires `OPENCODE_QDRANT_URL` and `memoryEmbed`. See [Memory RAG](../features/memory-rag.md).
 - **`project_discovery`** — Processes pending rows in `discovery_reports`: calls the configured LLM with the discovery prompt and idea text, writes `report_md` and sets status to `done` or `failed`. Config: `max_per_run` (default 10). Requires `memoryLlm` to be injected by the host. See [Project Discovery Validator](../features/project-discovery-validator.md).
+- **`repo-issue-worker`** — Busca issues abertas com label no repo configurado; enfileira ciclo spec→PR por issue. Ver [Repo issue dev cycle](../features/repo-issue-dev-cycle.md).
 
 ## Cron format
 

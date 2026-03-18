@@ -307,3 +307,30 @@ export const projectSpecs = sqliteTable("project_specs", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })
+
+/** Closed dev cycle: labeled GitHub issues or opportunities (spec → TDD → impl → docs → PR). */
+export const repoIssueJobs = sqliteTable("repo_issue_jobs", {
+  id: text("id").primaryKey(),
+  pipelineId: text("pipeline_id").references(() => daemonPipelines.id),
+  opportunityId: text("opportunity_id").references(() => oppOpportunities.id),
+  repoFullName: text("repo_full_name").notNull(),
+  issueNumber: integer("issue_number"),
+  issueTitle: text("issue_title").notNull(),
+  issueBody: text("issue_body"),
+  status: text("status").notNull().default("pending"),
+  specJson: text("spec_json"),
+  testFiles: text("test_files"),
+  docsMarkdown: text("docs_markdown"),
+  branchName: text("branch_name"),
+  forkRepoFullName: text("fork_repo_full_name"),
+  upstreamOwner: text("upstream_owner"),
+  upstreamRepo: text("upstream_repo"),
+  localWorkPath: text("local_work_path"),
+  prUrl: text("pr_url"),
+  prNumber: integer("pr_number"),
+  prDraft: integer("pr_draft").notNull().default(1),
+  baseBranch: text("base_branch").notNull().default("main"),
+  useFork: integer("use_fork").notNull().default(0),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+})

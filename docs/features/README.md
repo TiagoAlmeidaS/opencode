@@ -8,3 +8,5 @@ Funcionalidades e capacidades do produto: especificação, configuração, statu
 | [project-discovery-validator.md](project-discovery-validator.md) | Discovery (validação de ideias de projeto) no chat: skill project-discovery, uso e relatório. |
 | [env-vars.md](env-vars.md) | Variáveis de ambiente (OpenCode e migração Jarvis). |
 | [opportunity-content-sources.md](opportunity-content-sources.md) | Fontes de oportunidades de conteúdo (ProBlogger, WWR, RemoteOK) — texto, roteiro, copywriting. |
+| [repo-issue-dev-cycle.md](repo-issue-dev-cycle.md) | Ciclo fechado spec→TDD→PR (issues com label + oportunidades); pipeline `repo-issue-worker`. |
+| [server-dashboard-ui.md](server-dashboard-ui.md) | Dashboard do servidor: sidebar, tokens UI, toasts, ordenação de tabelas. |

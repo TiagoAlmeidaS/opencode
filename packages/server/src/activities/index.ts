@@ -25,6 +25,12 @@ import { scanHackerOneProgramsActivity } from "./scan-hackerone-programs"
 import { deliverContentActivity } from "./deliver-content"
 import { extractLearningsActivity } from "./extract-learnings"
 import { createSkillGapIssueActivity } from "./create-skill-gap-issue"
+import { generateSpecActivity } from "./generate-spec"
+import { generateTddTestsActivity } from "./generate-tdd-tests"
+import { implementCodeActivity } from "./implement-code"
+import { generateDocsActivity } from "./generate-docs"
+import { openPrActivity } from "./open-pr"
+import { notifyPrApprovalActivity } from "./notify-pr-approval"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -52,3 +58,9 @@ registerActivity(scanHackerOneProgramsActivity)
 registerActivity(deliverContentActivity)
 registerActivity(extractLearningsActivity)
 registerActivity(createSkillGapIssueActivity)
+registerActivity(generateSpecActivity)
+registerActivity(generateTddTestsActivity)
+registerActivity(implementCodeActivity)
+registerActivity(generateDocsActivity)
+registerActivity(openPrActivity)
+registerActivity(notifyPrApprovalActivity)

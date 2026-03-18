@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs, agentLearnings } from "./schema"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs, agentLearnings, repoIssueJobs } from "./schema"
 import { eq, desc, sql, gte, and, asc, inArray } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
@@ -399,6 +399,28 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
   app.get("/opportunities/:id", async (c) => {
     const id = c.req.param("id")
     const [row] = await db.select().from(oppOpportunities).where(eq(oppOpportunities.id, id))
+    if (!row) return c.json({ error: "Not found" }, 404)
+    return c.json(row)
+  })
+
+  app.get("/repo-issue-jobs", async (c) => {
+    const status = c.req.query("status")
+    const repo = c.req.query("repo")?.trim().toLowerCase()
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    const rows = await db
+      .select()
+      .from(repoIssueJobs)
+      .orderBy(desc(repoIssueJobs.updatedAt))
+      .limit(limit * 2)
+    let list = rows
+    if (status) list = list.filter((r) => r.status === status)
+    if (repo) list = list.filter((r) => r.repoFullName.toLowerCase().includes(repo))
+    return c.json(list.slice(0, limit))
+  })
+
+  app.get("/repo-issue-jobs/:id", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
     if (!row) return c.json({ error: "Not found" }, 404)
     return c.json(row)
   })
