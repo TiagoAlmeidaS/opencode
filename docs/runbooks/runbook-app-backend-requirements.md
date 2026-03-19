@@ -28,6 +28,7 @@ Se o daemon estiver no **mesmo** processo `opencode serve --daemon`, deixe *Daem
 - **Request:** `GET http://localhost:4096/path` → **404 Not Found**
 - **Console:** `TypeError: Cannot read properties of undefined (reading '0')` durante init de providers (por exemplo ao acessar store de diretório ainda não criado).
 - **Console (UI):** `(…command || []).map is not a function` — o cliente assumia que `GET /command` devolvia um array; com `/path` em 404 o estado podia ficar inconsistente ou a API podia devolver um corpo inesperado. O App normaliza a lista de comandos com `Array.isArray`.
+- **Console (UI):** `(…data ?? []).map is not a function` — o operador `??` só substitui `null`/`undefined`. Se o JSON de `data` for um **objeto** (erro, envelope errado, proxy), continua a ser usado e `.map` rebenta. O hook `useFilteredList` e várias chamadas SDK passam a exigir `Array.isArray` antes de `.map`/`.filter`.
 
 ### 404 em `/path` com o OpenCode Server “certo”
 

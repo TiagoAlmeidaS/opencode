@@ -30,7 +30,8 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
     async ({ filter, items }) => {
       const query = filter ?? ""
       const needle = query.toLowerCase()
-      const all = (await Promise.resolve(items)) || []
+      const raw = await Promise.resolve(items)
+      const all = Array.isArray(raw) ? raw : []
       const result = pipe(
         all,
         (x) => {

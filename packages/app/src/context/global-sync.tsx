@@ -205,7 +205,8 @@ function createGlobalSync() {
       list: (query) => globalSDK.client.session.list(query),
     })
       .then((x) => {
-        const nonArchived = (x.data ?? [])
+        const roots = Array.isArray(x.data) ? x.data : []
+        const nonArchived = roots
           .filter((s) => !!s?.id)
           .filter((s) => !s.time?.archived)
           .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
@@ -309,7 +310,7 @@ function createGlobalSync() {
       loadLsp: () => {
         sdkFor(directory)
           .lsp.status()
-          .then((x) => setStore("lsp", x.data ?? []))
+          .then((x) => setStore("lsp", Array.isArray(x.data) ? x.data : []))
       },
     })
   })

@@ -67,7 +67,7 @@ export async function bootstrapGlobal(input: {
     ),
     retry(() =>
       input.globalSDK.project.list().then((x) => {
-        const projects = (x.data ?? [])
+        const projects = (Array.isArray(x.data) ? x.data : [])
           .filter((p) => !!p?.id)
           .filter((p) => !!p.worktree && !p.worktree.includes("opencode-test"))
           .slice()
@@ -128,7 +128,8 @@ export async function bootstrapDirectory(input: {
       input.sdk.provider.list().then((x) => {
         input.setStore("provider", normalizeProviderList(x.data!))
       }),
-    agent: () => input.sdk.app.agents().then((x) => input.setStore("agent", x.data ?? [])),
+    agent: () =>
+      input.sdk.app.agents().then((x) => input.setStore("agent", Array.isArray(x.data) ? x.data : [])),
     config: () => input.sdk.config.get().then((x) => input.setStore("config", x.data!)),
   }
 
@@ -165,7 +166,9 @@ export async function bootstrapDirectory(input: {
     }),
     input.sdk.permission.list().then((x) => {
       const grouped = groupBySession(
-        (x.data ?? []).filter((perm): perm is PermissionRequest => !!perm?.id && !!perm.sessionID),
+        (Array.isArray(x.data) ? x.data : []).filter(
+          (perm): perm is PermissionRequest => !!perm?.id && !!perm.sessionID,
+        ),
       )
       batch(() => {
         for (const sessionID of Object.keys(input.store.permission)) {
@@ -185,7 +188,9 @@ export async function bootstrapDirectory(input: {
       })
     }),
     input.sdk.question.list().then((x) => {
-      const grouped = groupBySession((x.data ?? []).filter((q): q is QuestionRequest => !!q?.id && !!q.sessionID))
+      const grouped = groupBySession(
+        (Array.isArray(x.data) ? x.data : []).filter((q): q is QuestionRequest => !!q?.id && !!q.sessionID),
+      )
       batch(() => {
         for (const sessionID of Object.keys(input.store.question)) {
           if (grouped[sessionID]) continue
