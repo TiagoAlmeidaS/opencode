@@ -12,11 +12,17 @@ Todos os 20 repo-issue-jobs falharam por 3 causas raiz distintas: modulo ausente
 
 ## Erros encontrados
 
-### Erro 1: `Cannot find module '@opencode-ai/util/error'` (16+ jobs)
+### Erro 1a: `Cannot find module '@opencode-ai/util/error'` (16+ jobs)
 
 - **Step:** `implement-code` (via `spawnOpenCode`)
 - **Causa:** `packages/server/Dockerfile` nao copiava `packages/util` para o estagio runtime. O symlink do workspace em `node_modules/@opencode-ai/util` apontava para `../../packages/util` que nao existia.
-- **Fix:** Adicionado `COPY --from=deps /app/packages/util ./packages/util` ao Dockerfile.
+- **Fix:** Copiar `packages/util` no runtime.
+
+### Erro 1b: `Cannot find module '@opencode-ai/sdk/v2'` (apos fix 1a)
+
+- **Step:** `implement-code` (via `spawnOpenCode`)
+- **Causa:** A CLI (`bun packages/opencode/src/index.ts`) importa estaticamente todos os comandos no boot, incluindo `acp.ts` → `@opencode-ai/sdk/v2`. O pacote SDK fica em `packages/sdk/js` e nao estava no container. O mesmo vale para `@opencode-ai/plugin` (ex.: `tool/registry.ts`) e o pacote `server` completo (ex.: `ServeCommand` → `server/server.ts` → `@opencode-ai/server`).
+- **Fix:** No Dockerfile, copiar do stage `deps` para o runtime: `packages/sdk/js`, `packages/plugin`, e `packages/server` inteiro (alem de `opencode` e `util`).
 
 ### Erro 2: `Executable not found in $PATH: "npm"` (1 job)
 
@@ -54,7 +60,7 @@ A CLI salva `.opencode/spec.json` no repo para rastreabilidade, que o server le 
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `packages/server/Dockerfile` | `COPY packages/util` no runtime |
+| `packages/server/Dockerfile` | Copia `util`, `sdk/js`, `plugin`, `server` e `opencode` do stage deps (symlinks workspace) |
 | `packages/server/src/repo-job-chain.ts` | Remove `generate-spec` e `generate-tdd-tests` da chain |
 | `packages/server/src/activities/implement-code.ts` | Delega tudo para CLI; le spec apos execucao |
 | `packages/server/src/activities/dev-cycle-shared.ts` | `try/catch` em `runCommand` |

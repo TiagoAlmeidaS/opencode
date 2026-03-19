@@ -17,12 +17,12 @@ WORKDIR /app
 # Copia node_modules resolvidos (workspace: deps ficam no root)
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copia código fonte do server, opencode (CLI) e util (workspace dep de opencode)
-COPY packages/server/src ./packages/server/src
-COPY packages/server/public ./packages/server/public
-COPY packages/server/package.json packages/server/
+# Copia workspace packages exigidos pelos symlinks em node_modules (opencode importa tudo no boot)
+COPY --from=deps /app/packages/server ./packages/server
 COPY --from=deps /app/packages/opencode ./packages/opencode
 COPY --from=deps /app/packages/util ./packages/util
+COPY --from=deps /app/packages/sdk/js ./packages/sdk/js
+COPY --from=deps /app/packages/plugin ./packages/plugin
 COPY package.json bunfig.toml ./
 
 # Instala git (necessário para fork+clone em submit-github-pr)
