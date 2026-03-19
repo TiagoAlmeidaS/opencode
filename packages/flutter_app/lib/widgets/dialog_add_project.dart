@@ -16,10 +16,7 @@ typedef AddProjectCallback = Future<dynamic> Function(
 });
 
 /// Add a GitHub repo to OpenCode.
-///
-/// Supports two auth methods:
-///   1. GitHub OAuth via Device Flow (server-proxied, recommended)
-///   2. Personal Access Token (manual fallback)
+/// Adaptive: compact dialog on wide screens, near-fullscreen on narrow screens.
 class DialogAddProject extends StatefulWidget {
   const DialogAddProject({super.key, required this.onAdd});
 
@@ -42,18 +39,18 @@ class _DialogAddProjectState extends State<DialogAddProject> {
   String? _repoErr;
   List<GithubRepoBrief> _repos = [];
 
-  // GitHub Device Flow state: none | starting | code | done
+  // 'none' | 'starting' | 'code' | 'done'
   String _authState = 'none';
   String? _deviceCode;
   String? _userCode;
   String? _verificationUri;
   int _pollInterval = 5;
   Timer? _pollTimer;
+  bool _polling = false; // guard against concurrent poll calls
 
   @override
   void initState() {
     super.initState();
-    // If already signed in from this session, restore state and load repos.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final token = context.read<AppState>().githubToken;
@@ -73,7 +70,7 @@ class _DialogAddProjectState extends State<DialogAddProject> {
     super.dispose();
   }
 
-  // ── Validation / submission ────────────────────────────────────────────────
+  // ── Validation & submission ────────────────────────────────────────────────
 
   bool _validUrl() {
     final u = _url.text.trim();
@@ -97,13 +94,9 @@ class _DialogAddProjectState extends State<DialogAddProject> {
 
   Future<void> _submit() async {
     if (!_validUrl()) return;
-    setState(() {
-      _busy = true;
-      _err = null;
-    });
+    setState(() { _busy = true; _err = null; });
     try {
       final b = _branch.text.trim();
-      // Prefer OAuth token, fall back to manual PAT.
       final oauthToken = context.read<AppState>().githubToken;
       final pat = _pat.text.trim();
       final tok = oauthToken ?? (pat.isNotEmpty ? pat : null);
@@ -118,26 +111,23 @@ class _DialogAddProjectState extends State<DialogAddProject> {
     }
   }
 
-  void _pick(GithubRepoBrief r) {
-    setState(() {
-      _url.text = 'https://github.com/${r.fullName}';
-      _err = null;
-    });
-  }
+  void _pick(GithubRepoBrief r) => setState(() {
+        _url.text = 'https://github.com/${r.fullName}';
+        _err = null;
+      });
 
   // ── Repo listing ───────────────────────────────────────────────────────────
 
   Future<void> _loadRepos() async {
-    final state = context.read<AppState>();
-    final token = state.githubToken ?? (_pat.text.trim().isNotEmpty ? _pat.text.trim() : null);
+    if (!mounted) return;
+    final appState = context.read<AppState>();
+    final token = appState.githubToken ?? (_pat.text.trim().isNotEmpty ? _pat.text.trim() : null);
     if (token == null) return;
 
-    setState(() {
-      _reposBusy = true;
-      _repoErr = null;
-      _repos = [];
-    });
+    setState(() { _reposBusy = true; _repoErr = null; _repos = []; });
+
     final out = await _gh.listRepos(token);
+
     if (!mounted) return;
     setState(() {
       _reposBusy = false;
@@ -149,17 +139,14 @@ class _DialogAddProjectState extends State<DialogAddProject> {
   // ── GitHub Device Flow ─────────────────────────────────────────────────────
 
   Future<void> _startGithubAuth() async {
-    final state = context.read<AppState>();
-    final client = state.client;
+    final appState = context.read<AppState>();
+    final client = appState.client;
     if (client == null) {
       setState(() => _repoErr = 'Not connected to OpenCode server');
       return;
     }
 
-    setState(() {
-      _authState = 'starting';
-      _repoErr = null;
-    });
+    setState(() { _authState = 'starting'; _repoErr = null; });
 
     final data = await client.githubAuthStart();
     if (!mounted) return;
@@ -169,7 +156,7 @@ class _DialogAddProjectState extends State<DialogAddProject> {
         _authState = 'none';
         _repoErr = data?['error'] as String? ??
             'Failed to start GitHub sign-in.\n'
-                'Make sure GITHUB_OAUTH_CLIENT_ID is set on the server.';
+            'Make sure GITHUB_OAUTH_CLIENT_ID is set on the server.';
       });
       return;
     }
@@ -189,26 +176,31 @@ class _DialogAddProjectState extends State<DialogAddProject> {
     );
   }
 
+  /// Guard prevents concurrent polls when a previous one is still in flight.
   Future<void> _pollGithubAuth() async {
-    if (!mounted) return;
+    if (_polling || !mounted || _authState != 'code') return;
     final dc = _deviceCode;
     if (dc == null) return;
 
-    final state = context.read<AppState>();
-    final client = state.client;
-    if (client == null) return;
+    _polling = true;
+    try {
+      final appState = context.read<AppState>();
+      final client = appState.client;
+      if (client == null) return;
 
-    final result = await client.githubAuthPoll(dc);
-    if (!mounted) return;
+      final result = await client.githubAuthPoll(dc);
 
-    final status = result?['status'] as String?;
+      // Re-check after async gap
+      if (!mounted || _authState != 'code') return;
 
-    switch (status) {
-      case 'done':
+      final status = result?['status'] as String?;
+
+      if (status == 'done') {
         _pollTimer?.cancel();
         _pollTimer = null;
         final token = result!['token'] as String?;
-        state.setGithubToken(token);
+        appState.setGithubToken(token);
+        if (!mounted) return;
         setState(() {
           _authState = 'done';
           _deviceCode = null;
@@ -216,32 +208,25 @@ class _DialogAddProjectState extends State<DialogAddProject> {
           _verificationUri = null;
         });
         _loadRepos();
-
-      case 'expired':
+      } else if (status == 'expired') {
         _pollTimer?.cancel();
         _pollTimer = null;
-        setState(() {
-          _authState = 'none';
-          _repoErr = 'Code expired. Please try again.';
-        });
-
-      case 'denied':
+        setState(() { _authState = 'none'; _repoErr = 'Code expired. Please try again.'; });
+      } else if (status == 'denied') {
         _pollTimer?.cancel();
         _pollTimer = null;
-        setState(() {
-          _authState = 'none';
-          _repoErr = 'Access denied by GitHub.';
-        });
-
-      case 'error':
+        setState(() { _authState = 'none'; _repoErr = 'Access denied by GitHub.'; });
+      } else if (status == 'error') {
         _pollTimer?.cancel();
         _pollTimer = null;
         setState(() {
           _authState = 'none';
           _repoErr = result?['error'] as String? ?? 'Authentication error';
         });
-
-      // 'pending' → keep polling
+      }
+      // status == 'pending' → keep polling
+    } finally {
+      _polling = false;
     }
   }
 
@@ -258,62 +243,113 @@ class _DialogAddProjectState extends State<DialogAddProject> {
 
   void _signOut() {
     context.read<AppState>().setGithubToken(null);
-    setState(() {
-      _authState = 'none';
-      _repos = [];
-      _repoErr = null;
-    });
+    setState(() { _authState = 'none'; _repos = []; _repoErr = null; });
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add repository'),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _url,
-                decoration: InputDecoration(
-                  labelText: 'Repository URL',
-                  hintText: 'https://github.com/owner/repo',
-                  errorText: _err,
-                ),
-                keyboardType: TextInputType.url,
-                onChanged: (_) => setState(() => _err = null),
+    final screenW = MediaQuery.sizeOf(context).width;
+    final isNarrow = screenW < 520;
+
+    return Dialog(
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: isNarrow ? 8 : 40,
+        vertical: isNarrow ? 8 : 32,
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildTitleBar(context),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                child: _buildFormContent(context),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _branch,
-                decoration: const InputDecoration(
-                  labelText: 'Branch (optional)',
-                  hintText: 'main',
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Divider(),
-              const SizedBox(height: 8),
-              _buildAuthSection(context),
-            ],
-          ),
+            ),
+            _buildActions(context),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+    );
+  }
+
+  Widget _buildTitleBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Add repository',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 20),
+            onPressed: () => Navigator.of(context).pop(),
+            padding: const EdgeInsets.all(8),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActions(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          TextButton(
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          const SizedBox(width: 8),
+          OpenCodeButton(
+            onPressed: _busy ? null : _submit,
+            variant: OpenCodeButtonVariant.primary,
+            child: Text(_busy ? 'Adding…' : 'Add to OpenCode'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormContent(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        TextField(
+          controller: _url,
+          decoration: InputDecoration(
+            labelText: 'Repository URL',
+            hintText: 'https://github.com/owner/repo',
+            errorText: _err,
+          ),
+          keyboardType: TextInputType.url,
+          onChanged: (_) => setState(() => _err = null),
         ),
-        OpenCodeButton(
-          onPressed: _busy ? null : _submit,
-          variant: OpenCodeButtonVariant.primary,
-          child: Text(_busy ? 'Adding…' : 'Add to OpenCode'),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _branch,
+          decoration: const InputDecoration(
+            labelText: 'Branch (optional)',
+            hintText: 'main',
+          ),
         ),
+        const SizedBox(height: 16),
+        const Divider(height: 1),
+        const SizedBox(height: 12),
+        _buildAuthSection(context),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -326,10 +362,12 @@ class _DialogAddProjectState extends State<DialogAddProject> {
     };
   }
 
-  // State: none | starting — shows sign-in button + PAT fallback.
+  // ── Auth sections ──────────────────────────────────────────────────────────
+
   Widget _buildSignInButton(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
         OpenCodeButton(
           onPressed: _authState == 'starting' ? null : _startGithubAuth,
@@ -346,60 +384,62 @@ class _DialogAddProjectState extends State<DialogAddProject> {
             ),
           ),
         const SizedBox(height: 4),
-        // PAT fallback in an expansion tile
-        ExpansionTile(
-          title: const Text('Use a token manually', style: TextStyle(fontSize: 14)),
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: EdgeInsets.zero,
-          children: [
-            TextField(
-              controller: _pat,
-              obscureText: _hidePat,
-              decoration: InputDecoration(
-                labelText: 'Personal access token',
-                suffixIcon: IconButton(
-                  icon: Icon(_hidePat ? Icons.visibility : Icons.visibility_off),
-                  onPressed: () => setState(() => _hidePat = !_hidePat),
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            title: const Text('Use a token manually', style: TextStyle(fontSize: 14)),
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            children: [
+              const SizedBox(height: 4),
+              TextField(
+                controller: _pat,
+                obscureText: _hidePat,
+                decoration: InputDecoration(
+                  labelText: 'Personal access token',
+                  suffixIcon: IconButton(
+                    icon: Icon(_hidePat ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () => setState(() => _hidePat = !_hidePat),
+                  ),
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _reposBusy || _pat.text.trim().isEmpty ? null : _loadRepos,
+                  icon: _reposBusy
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.cloud_download_outlined, size: 18),
+                  label: Text(_reposBusy ? 'Loading…' : 'Load my repositories'),
                 ),
               ),
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: _reposBusy || _pat.text.trim().isEmpty ? null : _loadRepos,
-                icon: _reposBusy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.cloud_download_outlined, size: 20),
-                label: Text(_reposBusy ? 'Loading…' : 'Load my repositories'),
-              ),
-            ),
-          ],
+              if (_repos.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _buildRepoList(context),
+              ],
+            ],
+          ),
         ),
-        if (_repos.isNotEmpty) _buildRepoList(context),
       ],
     );
   }
 
-  // State: code — Device Flow card with user_code.
   Widget _buildDeviceFlowCard(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         border: Border.all(color: cs.outlineVariant),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // Header
           Row(
             children: [
               const SizedBox(
@@ -408,16 +448,19 @@ class _DialogAddProjectState extends State<DialogAddProject> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               const SizedBox(width: 10),
-              Text(
-                'Waiting for GitHub authorization…',
-                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+              Expanded(
+                child: Text(
+                  'Waiting for GitHub authorization…',
+                  style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          // Step 1: open URL
-          Text('1. Open in your browser:', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+          // Step 1
+          Text('1. Open in your browser:',
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
           const SizedBox(height: 4),
           Row(
             children: [
@@ -434,15 +477,15 @@ class _DialogAddProjectState extends State<DialogAddProject> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          // Step 2: enter code
-          Text('2. Enter this code on GitHub:', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+          // Step 2 — the code, prominent
+          Text('2. Enter this code:', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
           const SizedBox(height: 6),
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
                   border: Border.all(color: cs.primary, width: 1.5),
                   borderRadius: BorderRadius.circular(6),
@@ -452,7 +495,7 @@ class _DialogAddProjectState extends State<DialogAddProject> {
                   _userCode ?? '…',
                   style: TextStyle(
                     fontFamily: 'monospace',
-                    fontSize: 20,
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: cs.primary,
                     letterSpacing: 3,
@@ -467,9 +510,10 @@ class _DialogAddProjectState extends State<DialogAddProject> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           TextButton(
             onPressed: _cancelGithubAuth,
+            style: TextButton.styleFrom(padding: EdgeInsets.zero),
             child: const Text('Cancel sign-in'),
           ),
         ],
@@ -477,26 +521,31 @@ class _DialogAddProjectState extends State<DialogAddProject> {
     );
   }
 
-  // State: done — shows signed-in status + repo list.
   Widget _buildSignedInSection(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           children: [
             Icon(Icons.check_circle_outline, size: 18, color: cs.primary),
             const SizedBox(width: 8),
-            const Text('Signed in with GitHub', style: TextStyle(fontSize: 14)),
-            const Spacer(),
-            TextButton(onPressed: _signOut, child: const Text('Sign out')),
+            const Expanded(
+              child: Text('Signed in with GitHub', style: TextStyle(fontSize: 14)),
+            ),
+            TextButton(
+              onPressed: _signOut,
+              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: const Text('Sign out'),
+            ),
           ],
         ),
         const SizedBox(height: 8),
         if (_reposBusy)
           const Center(
             child: Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+              padding: EdgeInsets.symmetric(vertical: 20),
               child: CircularProgressIndicator(),
             ),
           )
@@ -507,7 +556,7 @@ class _DialogAddProjectState extends State<DialogAddProject> {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               onPressed: _loadRepos,
-              icon: const Icon(Icons.cloud_download_outlined, size: 20),
+              icon: const Icon(Icons.cloud_download_outlined, size: 18),
               label: const Text('Load my repositories'),
             ),
           )
@@ -519,12 +568,14 @@ class _DialogAddProjectState extends State<DialogAddProject> {
 
   Widget _buildRepoList(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 200,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 220),
       child: Material(
         color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
         borderRadius: BorderRadius.circular(8),
         child: ListView.builder(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
           itemCount: _repos.length,
           itemBuilder: (_, i) {
             final r = _repos[i];
@@ -536,7 +587,9 @@ class _DialogAddProjectState extends State<DialogAddProject> {
                 color: cs.onSurfaceVariant,
               ),
               title: Text(r.fullName, style: const TextStyle(fontSize: 14)),
-              subtitle: r.private ? const Text('Private', style: TextStyle(fontSize: 12)) : null,
+              subtitle: r.private
+                  ? const Text('Private', style: TextStyle(fontSize: 12))
+                  : null,
               onTap: () => _pick(r),
             );
           },
@@ -546,9 +599,13 @@ class _DialogAddProjectState extends State<DialogAddProject> {
   }
 }
 
-/// Small copy-to-clipboard icon button with a SnackBar confirmation.
+/// Small copy-to-clipboard icon button with SnackBar feedback.
 class _CopyButton extends StatelessWidget {
-  const _CopyButton({required this.text, required this.tooltip, required this.snackMessage});
+  const _CopyButton({
+    required this.text,
+    required this.tooltip,
+    required this.snackMessage,
+  });
 
   final String text;
   final String tooltip;
@@ -559,12 +616,15 @@ class _CopyButton extends StatelessWidget {
     return IconButton(
       icon: const Icon(Icons.copy, size: 16),
       tooltip: tooltip,
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(6),
       constraints: const BoxConstraints(),
       onPressed: () {
         Clipboard.setData(ClipboardData(text: text));
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(snackMessage), duration: const Duration(seconds: 2)),
+          SnackBar(
+            content: Text(snackMessage),
+            duration: const Duration(seconds: 2),
+          ),
         );
       },
     );

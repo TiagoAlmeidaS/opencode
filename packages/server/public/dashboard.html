@@ -132,7 +132,7 @@
   .cards { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .card {
     background: var(--surface-raised-base); border: 1px solid var(--border-base); border-radius: var(--radius-md);
-    padding: 14px; box-shadow: var(--shadow-card); transition: border-color .15s;
+    padding: 14px; box-shadow: var(--shadow-card); transition: border-color .15s; cursor: pointer;
   }
   .card:hover { border-color: var(--border-strong); }
   .card-type { font-size: 12px; font-weight: 600; word-break: break-all; }
@@ -681,8 +681,10 @@ async function renderPipelines() {
       <td><strong>${esc(p.name)}</strong></td>
       <td style="color:var(--text-weak);font-family:monospace">${esc(p.strategy)}</td>
       <td style="color:var(--text-weak);font-family:monospace">${esc(p.scheduleCron)}</td>
+      <td style="color:var(--text-weak)">${p.maxRunsPerDay || '∞'}</td>
       <td>
         <button class="link-btn exec" onclick="runPipeline('${p.id}')">▶ Run</button>
+        <button class="link-btn edit" onclick='openPipelineModal(${JSON.stringify(p)})'>✎ Edit</button>
       </td>
     </tr>`
   }).join('')
@@ -690,7 +692,7 @@ async function renderPipelines() {
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th></th><th class="sortable" data-pipe-sort="name">Nome</th><th>Strategy</th><th>Cron</th><th></th>
+          <th></th><th class="sortable" data-pipe-sort="name">Nome</th><th>Strategy</th><th>Cron</th><th>Max/dia</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -806,7 +808,7 @@ async function renderQueue() {
     for (const item of list) {
       let summary = ''
       try { const out = JSON.parse(item.outputJson || '{}'); if (out.summary) summary = out.summary } catch {}
-      html += `<div class="card">
+      html += `<div class="card" onclick='openQueueDetail(${JSON.stringify(item)})'>
         <div class="card-type">${esc(item.activityType)}</div>
         <div class="card-meta">
           <span>p${item.priority}</span>
@@ -815,7 +817,7 @@ async function renderQueue() {
         </div>
         ${item.errorMessage ? `<div class="card-error">${esc(item.errorMessage)}</div>` : ''}
         ${summary ? `<div class="card-summary">${esc(summary)}</div>` : ''}
-        ${item.status === 'pending' ? `<button class="card-cancel" onclick="cancelItem('${item.id}')">✕ Cancel</button>` : ''}
+        ${item.status === 'pending' ? `<button class="card-cancel" onclick="event.stopPropagation();cancelItem('${item.id}')">✕ Cancel</button>` : ''}
       </div>`
     }
     html += '</div></div>'
@@ -1536,6 +1538,118 @@ async function triggerExtractLearnings() {
   } catch (e) { showToast(e.message, 'error') }
 }
 
+// ── Pipeline Edit ─────────────────────────────────────────────────────────────
+let _pipelineEditId = null
+
+function openPipelineModal(p) {
+  _pipelineEditId = p.id
+  document.getElementById('pe-name').value = p.name || ''
+  document.getElementById('pe-cron').value = p.scheduleCron || '0 3 * * *'
+  document.getElementById('pe-maxruns').value = p.maxRunsPerDay ?? 0
+  let cfg = '{}'
+  try { cfg = JSON.stringify(typeof p.configJson === 'string' ? JSON.parse(p.configJson) : p.configJson || {}, null, 2) } catch {}
+  document.getElementById('pe-config').value = cfg
+  const enabled = p.enabled === 1
+  const toggleBtn = document.getElementById('pe-toggle-btn')
+  toggleBtn.textContent = enabled ? 'Desativar' : 'Ativar'
+  toggleBtn.className = 'btn ' + (enabled ? 'btn-danger' : '')
+  document.getElementById('pe-error').style.display = 'none'
+  document.getElementById('pipeline-edit-modal').style.display = 'flex'
+}
+
+function closePipelineModal() {
+  document.getElementById('pipeline-edit-modal').style.display = 'none'
+}
+
+async function savePipeline() {
+  const id = _pipelineEditId
+  let configJson
+  try {
+    configJson = JSON.parse(document.getElementById('pe-config').value || '{}')
+  } catch {
+    const el = document.getElementById('pe-error')
+    el.textContent = 'Config JSON inválido'
+    el.style.display = 'block'
+    return
+  }
+  try {
+    await apiFetch('/pipelines/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('pe-name').value.trim(),
+        schedule_cron: document.getElementById('pe-cron').value.trim(),
+        max_runs_per_day: parseInt(document.getElementById('pe-maxruns').value, 10) || 0,
+        config_json: configJson,
+      }),
+    })
+    closePipelineModal()
+    showToast('Pipeline atualizado', 'success')
+    refresh()
+  } catch (e) {
+    const el = document.getElementById('pe-error')
+    el.textContent = e.message
+    el.style.display = 'block'
+  }
+}
+
+async function togglePipelineEnabled() {
+  const btn = document.getElementById('pe-toggle-btn')
+  const willDisable = btn.textContent === 'Desativar'
+  try {
+    await apiFetch('/pipelines/' + _pipelineEditId + '/' + (willDisable ? 'disable' : 'enable'), { method: 'POST' })
+    closePipelineModal()
+    showToast(willDisable ? 'Pipeline desativado' : 'Pipeline ativado', 'success')
+    refresh()
+  } catch (e) { showToast(e.message, 'error') }
+}
+
+// ── Queue Detail ──────────────────────────────────────────────────────────────
+function openQueueDetail(item) {
+  document.getElementById('qd-title').textContent = item.activityType
+
+  const start = item.startedAt ? new Date(item.startedAt * 1000).toLocaleString() : null
+  const end   = item.completedAt ? new Date(item.completedAt * 1000).toLocaleString() : null
+  const dur   = item.durationMs ? durationStr(item.durationMs) : elapsed(item.startedAt, item.completedAt)
+  const statusClass = { pending:'badge-pending', running:'badge-running', completed:'badge-done', failed:'badge-fail' }[item.status] || ''
+  document.getElementById('qd-meta').innerHTML = [
+    `<span>Status: <span class="badge-status ${statusClass}">${item.status}</span></span>`,
+    `<span>Priority: p${item.priority}</span>`,
+    start ? `<span>Started: ${start}</span>` : '',
+    end   ? `<span>Finished: ${end}</span>` : '',
+    dur   ? `<span>Duration: ${dur}</span>` : '',
+    item.triggeredBy ? `<span>Triggered by: ${esc(item.triggeredBy)}</span>` : '',
+  ].filter(Boolean).join('')
+
+  const errSection = document.getElementById('qd-error-section')
+  if (item.errorMessage) {
+    document.getElementById('qd-error').textContent = item.errorMessage
+    errSection.style.display = 'block'
+  } else {
+    errSection.style.display = 'none'
+  }
+
+  let outputText = '—'
+  try {
+    const out = JSON.parse(item.outputJson || 'null')
+    if (out !== null) outputText = JSON.stringify(out, null, 2)
+  } catch { outputText = item.outputJson || '—' }
+  document.getElementById('qd-output').textContent = outputText
+
+  let inputText = '—'
+  try {
+    const inp = JSON.parse(item.inputJson || 'null')
+    if (inp !== null) inputText = JSON.stringify(inp, null, 2)
+  } catch { inputText = item.inputJson || '—' }
+  document.getElementById('qd-input').textContent = inputText
+
+  document.getElementById('queue-detail-modal').style.display = 'flex'
+}
+
+function closeQueueDetail() {
+  document.getElementById('queue-detail-modal').style.display = 'none'
+}
+
 // ── Refresh ───────────────────────────────────────────────────────────────────
 async function refresh() {
   await loadStatus()
@@ -1565,5 +1679,63 @@ apiFetch('/specs?limit=100').then(list => { _specsList = list }).catch(() => {})
 refresh()
 autoRefreshInterval = setInterval(refresh, 30_000)
 </script>
+
+<!-- Pipeline Edit Modal -->
+<div class="modal-overlay" id="pipeline-edit-modal" style="display:none"
+     onclick="if(event.target===this)closePipelineModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Editar Pipeline</h2>
+      <button class="btn btn-sm" onclick="closePipelineModal()">✕</button>
+    </div>
+    <label>Nome
+      <input type="text" id="pe-name">
+    </label>
+    <label>Cron schedule
+      <input type="text" id="pe-cron" placeholder="0 3 * * *" style="font-family:monospace">
+      <span style="font-size:10px;color:var(--text-weak)">
+        Formato: minuto hora dia mês dia-semana&nbsp;&nbsp;
+        Exemplos: <code>0 3 * * *</code> (3h diário) · <code>0 9 * * 1</code> (9h segunda)
+      </span>
+    </label>
+    <label>Max execuções/dia <span style="font-size:10px">(0 = sem limite)</span>
+      <input type="number" id="pe-maxruns" min="0" max="999" value="0">
+    </label>
+    <label>Config JSON
+      <textarea id="pe-config" rows="5" class="mono">{}</textarea>
+    </label>
+    <div id="pe-error" class="error-msg" style="display:none"></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="pe-toggle-btn" onclick="togglePipelineEnabled()">Desativar</button>
+      <div style="flex:1"></div>
+      <button class="btn" onclick="closePipelineModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="savePipeline()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Queue Detail Modal -->
+<div class="modal-overlay" id="queue-detail-modal" style="display:none"
+     onclick="if(event.target===this)closeQueueDetail()">
+  <div class="modal modal-wide" style="max-width:700px;max-height:85vh">
+    <div class="modal-header">
+      <h2 id="qd-title">Queue Item</h2>
+      <button class="btn btn-sm" onclick="closeQueueDetail()">✕</button>
+    </div>
+    <div id="qd-meta" style="display:flex;flex-wrap:wrap;gap:8px 20px;font-size:11px;color:var(--text-weak)"></div>
+    <div id="qd-error-section" style="display:none">
+      <div style="font-size:11px;font-weight:600;color:var(--danger);margin-bottom:4px">Erro</div>
+      <pre id="qd-error" style="font-size:11px;color:var(--danger);white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;max-height:160px;overflow-y:auto"></pre>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:600;color:var(--text-weak);margin-bottom:4px">Output</div>
+      <pre id="qd-output" style="font-size:11px;white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;max-height:200px;overflow-y:auto;color:var(--text-base)">—</pre>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:600;color:var(--text-weak);margin-bottom:4px">Input</div>
+      <pre id="qd-input" style="font-size:11px;white-space:pre-wrap;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;max-height:160px;overflow-y:auto;color:var(--text-weak)">—</pre>
+    </div>
+  </div>
+</div>
 </body>
 </html>
