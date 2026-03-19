@@ -106,14 +106,19 @@ export const implementCodeActivity: Activity = {
     await runGit(["checkout", "-b", branch], workDir)
 
     const task = buildTask(job)
+    const MAX_OUTPUT = 10_000
 
     let lastOut = ""
+    let sessionId: string | null = null
+    let cliOutput = ""
     for (let n = 1; n <= MAX_TRIES; n++) {
       await ctx.updateProgress?.(`OpenCode tentativa ${n}/${MAX_TRIES}`)
-      await ctx.spawnOpenCode(
+      const result = await ctx.spawnOpenCode(
         n === 1 ? task : `${task}\n\nPREVIOUS FAILURE:\n${lastOut.slice(0, 2000)}`,
         workDir,
       )
+      sessionId = result.sessionId ?? sessionId
+      cliOutput = result.output.slice(-MAX_OUTPUT)
 
       const testCmd = await detectTestCommand(workDir)
       if (!testCmd) break
@@ -128,7 +133,6 @@ export const implementCodeActivity: Activity = {
       }
     }
 
-    // Persist spec from CLI output if available
     const spec = await readSpec(workDir)
     const now = Math.floor(Date.now() / 1000)
     await ctx.db
@@ -138,6 +142,8 @@ export const implementCodeActivity: Activity = {
         localWorkPath: workDir,
         forkRepoFullName: forkFull,
         specJson: spec,
+        session_id: sessionId,
+        cli_output: cliOutput,
         status: "implementing",
         updatedAt: now,
       })
@@ -145,7 +151,7 @@ export const implementCodeActivity: Activity = {
 
     return {
       summary: `Branch ${branch} — workspace ${workDir}`,
-      extra: { branch, fork: forkFull },
+      extra: { branch, fork: forkFull, sessionId },
     }
   },
 }

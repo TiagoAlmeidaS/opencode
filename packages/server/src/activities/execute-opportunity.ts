@@ -82,7 +82,7 @@ export const executeOpportunityActivity: Activity = {
           : baseTask
 
       try {
-        lastOutput = await ctx.spawnOpenCode(task, cwd)
+        lastOutput = (await ctx.spawnOpenCode(task, cwd)).output
       } catch (err) {
         if (attempt === maxRetries) {
           await ctx.db

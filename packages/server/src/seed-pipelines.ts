@@ -46,6 +46,19 @@ const DEFAULTS: Array<{
     scheduleCron: "0 9 * * 1",
     configJson: { top_n: 20 },
   },
+  // Dev cycle learning + session cleanup
+  {
+    strategy: "dev_cycle_learning",
+    name: "Dev Cycle Learning",
+    scheduleCron: "30 3 * * *", // daily 03:30
+    configJson: { since_days: 7, max_jobs: 20 },
+  },
+  {
+    strategy: "session_cleanup",
+    name: "Session Cleanup (7d retention)",
+    scheduleCron: "0 4 * * *", // daily 04:00 (after memory_extract + learning)
+    configJson: { retention_days: 7 },
+  },
 ]
 
 export async function seedDefaultPipelines(db: ServerDb) {

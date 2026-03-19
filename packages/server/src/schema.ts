@@ -335,6 +335,18 @@ export const repoIssueJobs = sqliteTable("repo_issue_jobs", {
   useFork: integer("use_fork").notNull().default(0),
   /** 1 = must pass all tests before PR (default); 0 = open draft PR even if tests fail after max retries */
   requirePassingTests: integer("require_passing_tests").notNull().default(1),
+  /** CLI session ID from opencode.db (linked after spawnOpenCode). */
+  session_id: text("session_id"),
+  /** Truncated stdout+stderr from spawnOpenCode (max ~10 KB). */
+  cli_output: text("cli_output"),
+  /** Timestamp when dev_cycle_learning extracted learnings for this job. */
+  learning_extracted_at: integer("learning_extracted_at"),
+  /** PR merge outcome: merged | rejected | closed. */
+  pr_outcome: text("pr_outcome"),
+  /** Timestamp when pr_outcome was recorded. */
+  pr_outcome_at: integer("pr_outcome_at"),
+  /** Concatenated review comments from the PR (for feeding into learning). */
+  pr_review_comments: text("pr_review_comments"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })

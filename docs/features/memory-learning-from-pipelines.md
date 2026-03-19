@@ -1,27 +1,31 @@
-# Feature: aprendizado a partir dos pipelines (memória)
+# Feature: aprendizado a partir dos pipelines (memoria)
 
-Como os resultados dos pipelines do OpenCode Server podem alimentar o ciclo de memória e melhorar o agente ao longo do tempo.
+Como os resultados dos pipelines do OpenCode Server alimentam o ciclo de memoria e melhoram o agente ao longo do tempo.
 
 ## Objetivo
 
-- Usar outcomes dos pipelines (jobs concluídos, content publicado, proposals aprovados/executados) como entrada adicional ao ciclo de memória.
-- Permitir que a consolidação e o RAG incorporem não só conversas, mas também padrões de sucesso/falha das execuções em background.
+- Usar outcomes dos pipelines (jobs concluidos, content publicado, proposals aprovados/executados) como entrada adicional ao ciclo de memoria.
+- Permitir que a consolidacao e o RAG incorporem nao so conversas, mas tambem padroes de sucesso/falha das execucoes em background.
 
-## Estado atual
+## Implementacao: Dev Cycle Learning
 
-- O pipeline de memória hoje consome apenas **sessões e mensagens** do `opencode.db` (via `memory_extract`).
-- Os resultados dos pipelines ficam em `daemon_jobs`, `daemon_content`, `daemon_proposals`; não são ainda automaticamente transformados em “raw memory” ou em entradas para a Fase 2.
+O primeiro caminho implementado foi o **Pipeline de learning** (opcao 2 do doc original), especificamente para o dev cycle:
 
-## Caminhos de implementação
+- Pipeline `dev_cycle_learning` (cron diario): le `repo_issue_jobs` completed/failed, extrai padroes via LLM, e upsert em `agent_learnings` com categorias `dev-cycle`, `repo`, `pattern`.
+- Activity `pr-outcome-check`: consulta GitHub API para capturar merge/rejection de PRs, alimentando review comments no learning.
+- Session tracking: `spawnOpenCode` agora retorna `session_id`, vinculando a sessao CLI ao job para leitura do transcript completo.
 
-1. **Tabela de outcomes:** Criar uma tabela (ex.: `pipeline_outcomes`) onde um job ou um pipeline pós-execução grava um resumo (job id, strategy, status, output resumido). O `memory_extract` ou um pipeline dedicado lê essa tabela e produz “sessões sintéticas” ou blocos de texto que a Fase 2 consolida junto com as extrações de conversas.
-2. **Pipeline de learning:** Um pipeline agendado (ex.: `memory_learning`) que lê os últimos N jobs/content/proposals, gera um texto resumido (ex.: “job X concluiu com sucesso; conteúdo Y publicado”) e insere em `memory_extractions` ou em uma tabela intermediária que a consolidação considera.
-3. **Integração no strategy_analyzer:** Quando o strategy_analyzer (ou executor) produz resultado, chamar um webhook ou escrever em uma fila/tabela que o pipeline de memória processa.
+Ver detalhes em [dev-cycle-learning.md](dev-cycle-learning.md).
 
-A decisão de qual caminho adotar e a implementação ficam para uma fase posterior; este doc registra a intenção e as opções.
+## Caminhos futuros
 
-## Referências
+1. **Opportunity outcomes**: Estender o learning para alem do dev cycle -- submissoes aceitas/rejeitadas (ja parcialmente coberto por `extract-learnings` activity).
+2. **Content delivery outcomes**: Aprender padroes de sucesso de conteudo publicado (views, engagement).
+3. **Strategy analyzer feedback**: Integrar outcomes do `strategy_analyzer` e `executor` ao pipeline de memoria.
 
+## Referencias
+
+- [Dev Cycle Learning](dev-cycle-learning.md)
 - [Memory pipeline](memory-pipeline.md)
-- [Visão: operação autônoma e renda](../planning/autonomous-operation-revenue.md)
+- [Visao: operacao autonoma e renda](../planning/autonomous-operation-revenue.md)
 - [Arquitetura: memory pipeline](../architecture/memory-pipeline.md)
