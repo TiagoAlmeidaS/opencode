@@ -57,7 +57,7 @@ export function DialogAddRepository(props: {
       })
       const data = res.data
       if (!data) {
-        const err = (res as { error?: string }).error ?? language.t("common.requestFailed")
+        const err = (res as unknown as { error?: string }).error ?? language.t("common.requestFailed")
         setError(err)
         return
       }
