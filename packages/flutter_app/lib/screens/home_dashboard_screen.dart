@@ -89,10 +89,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final palette = _palette;
 
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Container(
+        color: palette.backgroundBase,
+        child: const Center(child: CircularProgressIndicator()),
+      );
     }
 
-    return SingleChildScrollView(
+    return Container(
+      color: palette.backgroundBase,
+      child: SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -129,7 +134,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           const SizedBox(height: 24),
         ],
       ),
-    );
+    ));
   }
 }
 
