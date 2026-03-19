@@ -49,7 +49,15 @@
       "Bash(find /e/projects/ia/opencode/packages/server/src -name \"*.ts\" -exec grep -l \"write\\\\|modify.*file\\\\|fs\\\\.\\\\|exec\\\\|spawn\" {})",
       "Bash(bun turbo:*)",
       "Bash(npx tsc:*)",
-      "Bash(node_modules/.bin/tsc --noEmit)"
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(find /e/projects/ia/opencode/packages/app/src -type f -name *branch* -o -name *vcs* -o -name *git*)",
+      "Bash(flutter analyze:*)",
+      "Bash(dart analyze:*)",
+      "Bash(xargs ls:*)",
+      "Bash(ls:*)",
+      "Bash(find /e/projects/ia/opencode/packages/server -name *.ts -path */routes/* -o -name router*.ts)",
+      "Bash(find /e/projects/ia/opencode/packages/server/src -name *.ts)"
     ]
   }
 }

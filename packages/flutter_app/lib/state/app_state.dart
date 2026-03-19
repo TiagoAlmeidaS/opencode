@@ -64,6 +64,23 @@ class AppState extends ChangeNotifier {
   ServerStatus? _serverStatus;
   ServerStatus? get serverStatus => _serverStatus;
 
+  String? _githubToken;
+  String? get githubToken => _githubToken;
+  void setGithubToken(String? token) {
+    _githubToken = token;
+    notifyListeners();
+  }
+
+  String? _currentBranch;
+  String? get currentBranch => _currentBranch;
+
+  final Map<String, String?> _sessionModels = {};
+  String? getSessionModel(String sessionID) => _sessionModels[sessionID];
+  void setSessionModel(String sessionID, String? modelId) {
+    _sessionModels[sessionID] = modelId;
+    notifyListeners();
+  }
+
   void addServer(ServerConfig cfg) {
     if (_servers.any((s) => s.key == cfg.key)) return;
     _servers = [..._servers, cfg];
@@ -86,6 +103,7 @@ class AppState extends ChangeNotifier {
     _sessions = [];
     _daemonAvailable = false;
     _serverStatus = null;
+    _githubToken = null;
     _sseSub?.cancel();
 
     if (key != null) {
@@ -207,6 +225,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> loadBranch(String directory) async {
+    final c = _client;
+    if (c == null) return;
+    final branch = await c.vcsGetBranch(directory);
+    _currentBranch = branch;
+    notifyListeners();
+  }
+
   Future<void> loadSessions(String directory) async {
     final c = _client;
     if (c == null) return;
@@ -214,6 +240,7 @@ class AppState extends ChangeNotifier {
     _activeDirectory = directory;
     final list = await c.sessionList(directory, roots: true, limit: 50);
     _sessions = list ?? [];
+    loadBranch(directory);
     notifyListeners();
   }
 

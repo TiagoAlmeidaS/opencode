@@ -7,9 +7,11 @@ import '../theme/oc2_colors.dart';
 import '../widgets/dialog_add_project.dart';
 import '../widgets/opencode_button.dart';
 import '../widgets/opencode_icon_button.dart';
+import 'home_dashboard_screen.dart';
 import 'llm_settings_screen.dart';
-import 'session_screen.dart';
+import 'repo_jobs_screen.dart';
 import 'server_dashboard_screen.dart';
+import 'session_screen.dart';
 
 const _breakpoint = 600.0;
 
@@ -176,11 +178,30 @@ class _MainLayoutState extends State<MainLayout> {
             ),
             const Divider(),
             ListTile(
+              leading: Icon(Icons.home_outlined, color: _palette.iconBase),
+              title: const Text('Home'),
+              onTap: () {
+                setState(() {
+                  _selectedTab = 0;
+                  _selectedSession = null;
+                });
+                _closeDrawer();
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.dashboard, color: _palette.iconBase),
               title: const Text('Server dashboard'),
               onTap: () {
                 setState(() => _selectedTab = 1);
                 _closeDrawer();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.merge_type, color: _palette.iconBase),
+              title: const Text('Repo issue jobs'),
+              onTap: () {
+                _closeDrawer();
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen()));
               },
             ),
             ListTile(
@@ -224,6 +245,15 @@ class _MainLayoutState extends State<MainLayout> {
               ),
           const Spacer(),
           OpenCodeIconButton(
+            icon: Icons.home_outlined,
+            onPressed: () => setState(() {
+              _selectedTab = 0;
+              _selectedSession = null;
+            }),
+            tooltip: 'Home',
+          ),
+          const SizedBox(height: 8),
+          OpenCodeIconButton(
             icon: Icons.add,
             onPressed: () => _showAddProject(context, state),
             tooltip: 'Open project',
@@ -233,6 +263,12 @@ class _MainLayoutState extends State<MainLayout> {
             icon: Icons.dashboard,
             onPressed: () => setState(() => _selectedTab = 1),
             tooltip: 'Server dashboard',
+          ),
+          const SizedBox(height: 8),
+          OpenCodeIconButton(
+            icon: Icons.merge_type,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen())),
+            tooltip: 'Repo issue jobs',
           ),
           const SizedBox(height: 8),
           OpenCodeIconButton(
@@ -317,6 +353,10 @@ class _MainLayoutState extends State<MainLayout> {
         directory: directory,
         sessionID: _selectedSession!,
       );
+    }
+
+    if (state.daemonAvailable) {
+      return const HomeDashboardScreen();
     }
 
     return Center(

@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme/oc2_colors.dart';
 import '../theme/button_style.dart';
 import '../widgets/opencode_button.dart';
+import 'repo_jobs_screen.dart';
 
 class ServerDashboardScreen extends StatefulWidget {
   const ServerDashboardScreen({super.key});
@@ -21,6 +22,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   Map<String, dynamic>? _metrics;
   List<Map<String, dynamic>>? _discovery;
   List<Map<String, dynamic>>? _chunks;
+  List<Map<String, dynamic>>? _repoJobs;
   final _memQ = TextEditingController();
   final _idea = TextEditingController();
   final _repoIssueName = TextEditingController();
@@ -29,6 +31,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   final _repoCron = TextEditingController(text: '0 8,14,20 * * *');
   final _repoMaxDay = TextEditingController(text: '3');
   final _repoMaxIssues = TextEditingController(text: '3');
+  bool _repoRequirePassTests = true;
   bool _loading = true;
   bool _memBusy = false;
   bool _discBusy = false;
@@ -62,6 +65,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     final proposals = await client.serverProposals();
     final metrics = await client.serverDashboard();
     final disc = await client.serverDiscoveryList(limit: 30);
+    final repoJobs = await client.serverRepoIssueJobs(limit: 10);
     if (!mounted) return;
 
     setState(() {
@@ -71,6 +75,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
       _proposals = proposals;
       _metrics = metrics;
       _discovery = disc;
+      _repoJobs = repoJobs;
       _loading = false;
     });
   }
@@ -161,6 +166,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
         'repo_full_name': repo,
         'label': _repoLabel.text.trim().isEmpty ? 'agent' : _repoLabel.text.trim(),
         'max_issues_per_run': maxIssues.clamp(1, 30),
+        'require_passing_tests': _repoRequirePassTests,
       },
     );
     if (!mounted) return;
@@ -417,6 +423,19 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
                   ),
                 ),
               ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Switch(
+                    value: _repoRequirePassTests,
+                    onChanged: (v) => setState(() => _repoRequirePassTests = v),
+                  ),
+                  Text(
+                    'Require passing tests',
+                    style: TextStyle(fontSize: 12, color: palette.textWeak),
+                  ),
+                ],
+              ),
               OpenCodeButton(
                 onPressed: _createRepoIssuePipeline,
                 variant: OpenCodeButtonVariant.primary,
@@ -425,6 +444,20 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
             ],
           ),
           const SizedBox(height: 24),
+          if (_repoJobs != null && _repoJobs!.isNotEmpty) ...[
+            Row(
+              children: [
+                Expanded(child: Text('Recent repo jobs', style: Theme.of(context).textTheme.titleMedium)),
+                TextButton(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen())),
+                  child: const Text('View all'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ..._repoJobs!.take(5).map((j) => _buildRepoJobCard(context, palette, j)),
+            const SizedBox(height: 24),
+          ],
           if (_pipelines != null && _pipelines!.isNotEmpty) ...[
             Text('Pipelines', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -519,33 +552,177 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     );
   }
 
+  Widget _buildRepoJobCard(BuildContext context, Oc2Palette palette, Map<String, dynamic> job) {
+    final repo = job['repoFullName'] as String? ?? job['repo_full_name'] as String? ?? '-';
+    final issueNum = job['issueNumber'] ?? job['issue_number'];
+    final title = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? '-';
+    final status = job['status'] as String? ?? 'pending';
+
+    const steps = ['pending', 'spec', 'tests', 'implementing', 'docs', 'pr-open', 'completed'];
+    const labels = ['Q', 'Spec', 'Tests', 'Code', 'Docs', 'PR', 'Done'];
+    final failed = status == 'failed';
+    final idx = failed ? -1 : steps.indexOf(status);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen())),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '$repo${issueNum != null ? " #$issueNum" : ""} — $title',
+                      style: const TextStyle(fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: (failed ? Colors.red : (status == 'completed' ? Colors.green : Theme.of(context).colorScheme.primary)).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      status,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: failed ? Colors.red : (status == 'completed' ? Colors.green : Theme.of(context).colorScheme.primary),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: List.generate(steps.length, (i) {
+                  Color color;
+                  if (failed) {
+                    color = Colors.grey.withOpacity(0.3);
+                  } else if (i < idx) {
+                    color = Colors.green;
+                  } else if (i == idx) {
+                    color = Theme.of(context).colorScheme.primary;
+                  } else {
+                    color = Colors.grey.withOpacity(0.25);
+                  }
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1),
+                      child: Tooltip(
+                        message: labels[i],
+                        child: Container(height: 4, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildProposalCard(BuildContext context, Oc2Palette palette, Map<String, dynamic> pr) {
     final id = pr['id'] as String? ?? '';
     final status = pr['status'] as String? ?? '-';
+    final title = pr['title'] as String? ?? '';
+    final description = pr['description'] as String? ?? '';
+    final riskLevel = pr['riskLevel'] as String? ?? pr['risk_level'] as String? ?? '';
+    final confidence = pr['confidence'];
+    final confidencePct = confidence is num ? '${(confidence * 100).toStringAsFixed(0)}%' : null;
+
+    Color riskColor;
+    switch (riskLevel) {
+      case 'high':
+        riskColor = Colors.red;
+      case 'medium':
+        riskColor = Colors.orange;
+      default:
+        riskColor = Colors.green;
+    }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(id.substring(0, id.length >= 8 ? 8 : id.length), style: const TextStyle(fontFamily: 'monospace')),
-            Text(status, style: TextStyle(color: palette.textWeak)),
-            if (status == 'pending') ...[
-              OpenCodeButton(
-                onPressed: () => _proposalAction(id, true),
-                variant: OpenCodeButtonVariant.primary,
-                size: OpenCodeButtonSize.small,
-                child: const Text('Approve'),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (title.isNotEmpty)
+                        Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      Text(
+                        id.substring(0, id.length >= 8 ? 8 : id.length),
+                        style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: palette.textWeak),
+                      ),
+                    ],
+                  ),
+                ),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    if (riskLevel.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: riskColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('risk: $riskLevel', style: TextStyle(fontSize: 10, color: riskColor)),
+                      ),
+                    if (confidencePct != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: palette.backgroundWeak,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text('conf: $confidencePct', style: TextStyle(fontSize: 10, color: palette.textWeak)),
+                      ),
+                    Text(status, style: TextStyle(color: palette.textWeak, fontSize: 12)),
+                  ],
+                ),
+              ],
+            ),
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                description.length > 180 ? '${description.substring(0, 180)}…' : description,
+                style: TextStyle(fontSize: 12, color: palette.textWeak),
               ),
-              OpenCodeButton(
-                onPressed: () => _proposalAction(id, false),
-                variant: OpenCodeButtonVariant.secondary,
-                size: OpenCodeButtonSize.small,
-                child: const Text('Reject'),
+            ],
+            if (status == 'pending') ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  OpenCodeButton(
+                    onPressed: () => _proposalAction(id, true),
+                    variant: OpenCodeButtonVariant.primary,
+                    size: OpenCodeButtonSize.small,
+                    child: const Text('Approve'),
+                  ),
+                  OpenCodeButton(
+                    onPressed: () => _proposalAction(id, false),
+                    variant: OpenCodeButtonVariant.secondary,
+                    size: OpenCodeButtonSize.small,
+                    child: const Text('Reject'),
+                  ),
+                ],
               ),
             ],
           ],

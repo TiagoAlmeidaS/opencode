@@ -144,7 +144,13 @@ Make minimal changes. Do not commit or push.`
       const r = await runCommand(testCmd, workDir)
       if (r.ok) break
       lastOut = r.out
-      if (n === MAX_TRIES) throw new Error(`Testes ainda falhando após ${MAX_TRIES} tentativas: ${lastOut.slice(0, 500)}`)
+      if (n === MAX_TRIES) {
+        if (job.requirePassingTests !== 0) {
+          throw new Error(`Testes ainda falhando após ${MAX_TRIES} tentativas: ${lastOut.slice(0, 500)}`)
+        }
+        // require_passing_tests=false: continue to open PR as draft even with failing tests
+        await ctx.updateProgress?.("Testes falhando mas require_passing_tests=false — abrindo PR como draft")
+      }
     }
 
     const now = Math.floor(Date.now() / 1000)

@@ -195,9 +195,16 @@ class OpenCodeClient {
     String sessionID,
     String text, {
     String? workspace,
+    Map<String, String>? model,
+    List<Map<String, dynamic>>? extraParts,
   }) async {
     final uri = Uri.parse('$_base/session/$sessionID/message').replace(queryParameters: _dirQuery(directory, workspace));
-    final body = {'parts': [{'type': 'text', 'text': text}]};
+    final parts = <Map<String, dynamic>>[
+      {'type': 'text', 'text': text},
+      if (extraParts != null) ...extraParts,
+    ];
+    final body = <String, dynamic>{'parts': parts};
+    if (model != null) body['model'] = {'providerID': model['providerID'], 'modelID': model['modelID']};
     final r = await _http.post(uri, headers: _headers, body: jsonEncode(body));
     return r.statusCode == 200;
   }
@@ -486,6 +493,46 @@ class OpenCodeClient {
     return r.statusCode == 200;
   }
 
+  // GitHub OAuth Device Flow (proxied – client_secret stays on server)
+
+  /// Start Device Flow. Returns map with deviceCode, userCode, verificationUri,
+  /// interval, expiresIn — or {error: ...} if the server is not configured.
+  Future<Map<String, dynamic>?> githubAuthStart() async {
+    final r = await _http.post(Uri.parse('$_base/github/auth/start'), headers: _headers);
+    try {
+      return jsonDecode(r.body) as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Poll for token. Returns {status: pending|done|expired|denied|error, token?}.
+  Future<Map<String, dynamic>?> githubAuthPoll(String deviceCode) async {
+    final r = await _http.post(
+      Uri.parse('$_base/github/auth/poll'),
+      headers: _headers,
+      body: jsonEncode({'deviceCode': deviceCode}),
+    );
+    try {
+      return jsonDecode(r.body) as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // VCS
+  Future<String?> vcsGetBranch(String directory, {String? workspace}) async {
+    final uri = Uri.parse('$_base/vcs').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    try {
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      return data['branch'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> serverDashboard({int days = 30}) async {
     final uri = Uri.parse('$_base/server/dashboard').replace(queryParameters: {'days': '$days'});
     final r = await _http.get(uri, headers: _headers);
@@ -522,5 +569,116 @@ class OpenCodeClient {
     );
     if (r.statusCode != 201) return null;
     return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  // Repo Issue Jobs
+  Future<List<Map<String, dynamic>>?> serverRepoIssueJobs({String? status, String? repo, int limit = 50}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (status != null) q['status'] = status;
+    if (repo != null) q['repo'] = repo;
+    final uri = Uri.parse('$_base/server/repo-issue-jobs').replace(queryParameters: q);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> serverRepoIssueJob(String id) async {
+    final r = await _http.get(Uri.parse('$_base/server/repo-issue-jobs/$id'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<Map<String, dynamic>?> serverProposalGet(String id) async {
+    final r = await _http.get(Uri.parse('$_base/server/proposals/$id'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  // Reports
+  Future<List<Map<String, dynamic>>?> serverReports({String? reportType, int limit = 30}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (reportType != null) q['type'] = reportType;
+    final uri = Uri.parse('$_base/server/reports').replace(queryParameters: q);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> serverReport(String id) async {
+    final r = await _http.get(Uri.parse('$_base/server/reports/$id'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  // Learnings
+  Future<List<Map<String, dynamic>>?> serverLearnings({String? category, int limit = 50}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (category != null) q['category'] = category;
+    final uri = Uri.parse('$_base/server/learnings').replace(queryParameters: q);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> serverLearningExtract() async {
+    final r = await _http.post(Uri.parse('$_base/server/learnings/extract'), headers: _headers);
+    if (r.statusCode != 200 && r.statusCode != 201 && r.statusCode != 202) return null;
+    try {
+      return jsonDecode(r.body) as Map<String, dynamic>?;
+    } catch (_) {
+      return {'ok': true};
+    }
+  }
+
+  // Opportunities
+  Future<Map<String, dynamic>?> serverOpportunitiesStats() async {
+    final r = await _http.get(Uri.parse('$_base/server/opportunities/stats'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<List<Map<String, dynamic>>?> serverOpportunities({String? status, double? minScore, int limit = 50}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (status != null) q['status'] = status;
+    if (minScore != null) q['min_score'] = '$minScore';
+    final uri = Uri.parse('$_base/server/opportunities').replace(queryParameters: q);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  // Submissions
+  Future<List<Map<String, dynamic>>?> serverSubmissions({String? status, int limit = 30}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (status != null) q['status'] = status;
+    final uri = Uri.parse('$_base/server/submissions').replace(queryParameters: q);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<bool> serverSubmissionApprove(String id) async {
+    final r = await _http.post(Uri.parse('$_base/server/submissions/$id/approve'), headers: _headers);
+    return r.statusCode == 200;
+  }
+
+  Future<bool> serverSubmissionReject(String id) async {
+    final r = await _http.post(Uri.parse('$_base/server/submissions/$id/reject'), headers: _headers);
+    return r.statusCode == 200;
+  }
+
+  Future<bool> serverOpportunityShortlist(String id) async {
+    final r = await _http.post(Uri.parse('$_base/server/opportunities/$id/shortlist'), headers: _headers);
+    return r.statusCode == 200;
+  }
+
+  Future<bool> serverOpportunityIgnore(String id) async {
+    final r = await _http.post(Uri.parse('$_base/server/opportunities/$id/ignore'), headers: _headers);
+    return r.statusCode == 200;
   }
 }

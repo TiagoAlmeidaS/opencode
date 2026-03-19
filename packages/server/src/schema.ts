@@ -333,6 +333,8 @@ export const repoIssueJobs = sqliteTable("repo_issue_jobs", {
   prDraft: integer("pr_draft").notNull().default(1),
   baseBranch: text("base_branch").notNull().default("main"),
   useFork: integer("use_fork").notNull().default(0),
+  /** 1 = must pass all tests before PR (default); 0 = open draft PR even if tests fail after max retries */
+  requirePassingTests: integer("require_passing_tests").notNull().default(1),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })

@@ -13,6 +13,8 @@ interface Cfg {
   base_branch?: string
   max_issues_per_run?: number
   priority_label_prefix?: string
+  /** If false, agent opens a draft PR even when tests still fail after max retries. Default: true */
+  require_passing_tests?: boolean
 }
 
 const ACTIVE = ["pending", "spec", "tests", "implementing", "docs", "pr-open"]
@@ -156,6 +158,7 @@ registerPipeline({
         status: "pending",
         baseBranch,
         useFork: 0,
+        requirePassingTests: cfg.require_passing_tests === false ? 0 : 1,
         createdAt: now,
         updatedAt: now,
       })
