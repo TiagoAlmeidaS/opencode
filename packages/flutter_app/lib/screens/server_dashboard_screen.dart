@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
-import '../theme/oc2_colors.dart';
 import '../theme/button_style.dart';
+import '../theme/oc2_colors.dart';
 import '../widgets/opencode_button.dart';
 import 'repo_jobs_screen.dart';
 
@@ -21,8 +21,9 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   List<Map<String, dynamic>>? _proposals;
   Map<String, dynamic>? _metrics;
   List<Map<String, dynamic>>? _discovery;
-  List<Map<String, dynamic>>? _chunks;
   List<Map<String, dynamic>>? _repoJobs;
+  List<Map<String, dynamic>>? _chunks;
+
   final _memQ = TextEditingController();
   final _idea = TextEditingController();
   final _repoIssueName = TextEditingController();
@@ -35,6 +36,10 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   bool _loading = true;
   bool _memBusy = false;
   bool _discBusy = false;
+
+  Oc2Palette get _palette =>
+      Theme.of(context).brightness == Brightness.dark ? Oc2Colors.dark : Oc2Colors.light;
+
   @override
   void initState() {
     super.initState();
@@ -55,29 +60,94 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   }
 
   Future<void> _load() async {
-    final state = context.read<AppState>();
-    final client = state.client;
-    if (client == null) return;
+    setState(() => _loading = true);
+    final client = context.read<AppState>().client;
+    if (client == null) { setState(() => _loading = false); return; }
 
-    final pipelines = await client.serverPipelines();
-    final jobs = await client.serverJobs();
-    final goals = await client.serverGoals();
-    final proposals = await client.serverProposals();
-    final metrics = await client.serverDashboard();
-    final disc = await client.serverDiscoveryList(limit: 30);
-    final repoJobs = await client.serverRepoIssueJobs(limit: 10);
+    final results = await Future.wait([
+      client.serverPipelines(),
+      client.serverJobs(),
+      client.serverGoals(),
+      client.serverProposals(),
+      client.serverDashboard(),
+      client.serverDiscoveryList(limit: 20),
+      client.serverRepoIssueJobs(limit: 8),
+    ]);
     if (!mounted) return;
 
     setState(() {
-      _pipelines = pipelines;
-      _jobs = jobs;
-      _goals = goals;
-      _proposals = proposals;
-      _metrics = metrics;
-      _discovery = disc;
-      _repoJobs = repoJobs;
-      _loading = false;
+      _pipelines  = results[0] as List<Map<String, dynamic>>?;
+      _jobs       = results[1] as List<Map<String, dynamic>>?;
+      _goals      = results[2] as List<Map<String, dynamic>>?;
+      _proposals  = results[3] as List<Map<String, dynamic>>?;
+      _metrics    = results[4] as Map<String, dynamic>?;
+      _discovery  = results[5] as List<Map<String, dynamic>>?;
+      _repoJobs   = results[6] as List<Map<String, dynamic>>?;
+      _loading    = false;
     });
+  }
+
+  Future<void> _togglePipeline(String id, bool enable) async {
+    final client = context.read<AppState>().client;
+    if (client == null) return;
+    final ok = enable
+        ? await client.serverPipelineEnable(id)
+        : await client.serverPipelineDisable(id);
+    if (!mounted) return;
+    if (ok) {
+      await _load();
+      await context.read<AppState>().refreshServerStatus();
+    }
+  }
+
+  Future<void> _runPipeline(String id) async {
+    final client = context.read<AppState>().client;
+    if (client == null) return;
+    final r = await client.serverPipelineRun(id);
+    if (!mounted) return;
+    final msg = r == null
+        ? 'Run failed (HTTP)'
+        : r['ok'] == true
+            ? 'Started job ${r['jobId'] ?? ''}'
+            : (r['error']?.toString() ?? 'Run failed');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    await _load();
+  }
+
+  Future<void> _editDailyCap(String id, int current) async {
+    final ctrl = TextEditingController(text: '$current');
+    final n = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Max runs per day (UTC)'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(hintText: '0 = unlimited'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text.trim()) ?? 0),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (n == null || !mounted) return;
+    await context.read<AppState>().client?.serverPipelinePatch(id, maxRunsPerDay: n.clamp(0, 500));
+    if (mounted) await _load();
+  }
+
+  Future<void> _proposalAction(String id, bool approve) async {
+    final client = context.read<AppState>().client;
+    if (client == null) return;
+    final ok = approve
+        ? await client.serverProposalApprove(id)
+        : await client.serverProposalReject(id);
+    if (mounted && ok) await _load();
   }
 
   Future<void> _searchMem() async {
@@ -89,12 +159,11 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     final raw = await client.serverMemoryRetrieve(q, limit: 8);
     if (!mounted) return;
     final list = raw?['chunks'];
-    final out = list is List
-        ? list.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
-        : <Map<String, dynamic>>[];
     setState(() {
       _memBusy = false;
-      _chunks = out;
+      _chunks = list is List
+          ? list.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
+          : [];
     });
   }
 
@@ -107,46 +176,8 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     await client.serverDiscoveryEnqueue(t, triggerPipeline: false);
     _idea.clear();
     if (!mounted) return;
-    final disc = await client.serverDiscoveryList(limit: 30);
-    setState(() {
-      _discBusy = false;
-      _discovery = disc;
-    });
-  }
-
-  Future<void> _refreshStatus() async {
-    final state = context.read<AppState>();
-    if (!mounted) return;
-    await state.refreshServerStatus();
-  }
-
-  Future<void> _togglePipeline(String id, bool enabled) async {
-    final state = context.read<AppState>();
-    final client = state.client;
-    if (client == null) return;
-
-    final ok = enabled ? await client.serverPipelineEnable(id) : await client.serverPipelineDisable(id);
-    if (!mounted) return;
-    if (ok) {
-      await _load();
-      await _refreshStatus();
-    }
-  }
-
-  Future<void> _runPipeline(String id) async {
-    final state = context.read<AppState>();
-    final client = state.client;
-    if (client == null) return;
-
-    final r = await client.serverPipelineRun(id);
-    if (!mounted) return;
-    final msg = r == null
-        ? 'Run failed (HTTP)'
-        : (r['ok'] == true)
-            ? 'Started job ${r['jobId'] ?? ''}'
-            : (r['error']?.toString() ?? 'Run failed');
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    await _load();
+    final disc = await client.serverDiscoveryList(limit: 20);
+    setState(() { _discBusy = false; _discovery = disc; });
   }
 
   Future<void> _createRepoIssuePipeline() async {
@@ -155,7 +186,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     if (name.isEmpty || repo.isEmpty) return;
     final client = context.read<AppState>().client;
     if (client == null) return;
-    final maxDay = int.tryParse(_repoMaxDay.text.trim()) ?? 0;
+    final maxDay    = int.tryParse(_repoMaxDay.text.trim()) ?? 0;
     final maxIssues = int.tryParse(_repoMaxIssues.text.trim()) ?? 3;
     final row = await client.serverPipelineCreate(
       name: name,
@@ -170,380 +201,332 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
       },
     );
     if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(row != null ? 'Pipeline created' : 'Create failed')),
+    );
     if (row != null) {
       _repoIssueName.clear();
       _repoFull.clear();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pipeline created')));
       await _load();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Create failed')));
     }
   }
 
-  Future<void> _editPipelineDailyCap(String id, int current) async {
-    final ctrl = TextEditingController(text: current > 0 ? '$current' : '0');
-    if (!mounted) return;
-    final n = await showDialog<int?>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Max runs per day (UTC)'),
-        content: TextField(
-          controller: ctrl,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(hintText: '0 = unlimited'),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text.trim()) ?? 0),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    ctrl.dispose();
-    if (n == null || !mounted) return;
-    final client = context.read<AppState>().client;
-    if (client == null) return;
-    await client.serverPipelinePatch(id, maxRunsPerDay: n.clamp(0, 500));
-    if (!mounted) return;
-    await _load();
-  }
-
-  Future<void> _proposalAction(String id, bool approve) async {
-    final state = context.read<AppState>();
-    final client = state.client;
-    if (client == null) return;
-
-    final ok = approve ? await client.serverProposalApprove(id) : await client.serverProposalReject(id);
-    if (!mounted) return;
-    if (ok) await _load();
-  }
+  // ─────────────────────────────────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final palette = Theme.of(context).brightness == Brightness.dark ? Oc2Colors.dark : Oc2Colors.light;
-    final state = context.watch<AppState>();
-    final status = state.serverStatus;
+    final palette = _palette;
+    final status  = context.watch<AppState>().serverStatus;
 
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return Container(
+        color: palette.backgroundBase,
+        child: const Center(child: CircularProgressIndicator()),
+      );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Server Dashboard', style: Theme.of(context).textTheme.headlineMedium),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Daemon status and pipelines',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.textWeak),
-                    ),
-                  ],
-                ),
-              ),
-              OpenCodeButton(
-                onPressed: _load,
-                variant: OpenCodeButtonVariant.secondary,
-                icon: Icons.refresh,
-                child: const Text('Refresh'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          if (status != null) ...[
-            _buildCard(
-              context,
-              'Status',
-              [
-                _row('Pipelines total', status.pipelinesTotal?.toString() ?? '-'),
-                _row('Pipelines enabled', status.pipelinesEnabled?.toString() ?? '-'),
-                _row('Jobs running', status.jobsRunning?.toString() ?? '-'),
-                _row('Proposals pending', status.proposalsPending?.toString() ?? '-'),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
-          if (_metrics != null) ...[
-            Text('Dashboard (period)', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            _buildCard(
-              context,
-              '',
-              [
-                _row('Revenue USD', _dashRevenue(_metrics!)),
-                _row('Health', _metrics!['health']?.toString() ?? '-'),
-              ],
-            ),
-            const SizedBox(height: 24),
-          ],
-          Text('Memory (RAG)', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _memQ,
-                  decoration: const InputDecoration(
-                    hintText: 'Search query',
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (_) => _searchMem(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              OpenCodeButton(
-                onPressed: _memBusy ? null : _searchMem,
-                variant: OpenCodeButtonVariant.primary,
-                icon: Icons.search,
-                child: const Text('Search'),
-              ),
-            ],
-          ),
-          if (_chunks != null && _chunks!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ..._chunks!.map(
-              (c) {
-                final tx = c['text']?.toString() ?? '';
-                final short = tx.length > 200 ? '${tx.substring(0, 200)}…' : tx;
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    title: Text(short, style: TextStyle(fontSize: 12, color: palette.textWeak)),
-                    subtitle: Text('score: ${c['score']}  ${c['source'] ?? ''}', style: const TextStyle(fontSize: 11)),
-                  ),
-                );
-              },
-            ),
-          ],
-          const SizedBox(height: 24),
-          Text('Discovery', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _idea,
-                  decoration: const InputDecoration(
-                    hintText: 'Idea text',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              OpenCodeButton(
-                onPressed: _discBusy ? null : _enqueueDiscovery,
-                variant: OpenCodeButtonVariant.primary,
-                child: const Text('Enqueue'),
-              ),
-            ],
-          ),
-          if (_discovery != null && _discovery!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _buildCard(
-              context,
-              '',
-              _discovery!.take(20).map((d) {
-                final idea = d['idea_text']?.toString() ?? '-';
-                final head = idea.length > 48 ? '${idea.substring(0, 48)}…' : idea;
-                return _row(head, d['status'] as String? ?? '-');
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-          ],
-          Text('Repo issue worker (new)', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            'Choose repo, label (e.g. agent), cron windows, and max runs per UTC day.',
-            style: TextStyle(fontSize: 12, color: palette.textWeak),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              SizedBox(
-                width: 160,
-                child: TextField(
-                  controller: _repoIssueName,
-                  decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder()),
-                ),
-              ),
-              SizedBox(
-                width: 200,
-                child: TextField(
-                  controller: _repoFull,
-                  decoration: const InputDecoration(
-                    labelText: 'owner/repo',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 100,
-                child: TextField(
-                  controller: _repoLabel,
-                  decoration: const InputDecoration(labelText: 'Label', border: OutlineInputBorder()),
-                ),
-              ),
-              SizedBox(
-                width: 140,
-                child: TextField(
-                  controller: _repoCron,
-                  decoration: const InputDecoration(labelText: 'Cron', border: OutlineInputBorder()),
-                ),
-              ),
-              SizedBox(
-                width: 100,
-                child: TextField(
-                  controller: _repoMaxDay,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Max/day UTC',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 100,
-                child: TextField(
-                  controller: _repoMaxIssues,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Issues/run',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Switch(
-                    value: _repoRequirePassTests,
-                    onChanged: (v) => setState(() => _repoRequirePassTests = v),
-                  ),
-                  Text(
-                    'Require passing tests',
-                    style: TextStyle(fontSize: 12, color: palette.textWeak),
-                  ),
-                ],
-              ),
-              OpenCodeButton(
-                onPressed: _createRepoIssuePipeline,
-                variant: OpenCodeButtonVariant.primary,
-                child: const Text('Create'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          if (_repoJobs != null && _repoJobs!.isNotEmpty) ...[
-            Row(
-              children: [
-                Expanded(child: Text('Recent repo jobs', style: Theme.of(context).textTheme.titleMedium)),
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen())),
-                  child: const Text('View all'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ..._repoJobs!.take(5).map((j) => _buildRepoJobCard(context, palette, j)),
-            const SizedBox(height: 24),
-          ],
-          if (_pipelines != null && _pipelines!.isNotEmpty) ...[
-            Text('Pipelines', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            ..._pipelines!.map((p) => _buildPipelineCard(context, palette, p)),
-            const SizedBox(height: 24),
-          ],
-          if (_jobs != null && _jobs!.isNotEmpty) ...[
-            Text('Recent jobs', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            _buildCard(
-              context,
-              '',
-              _jobs!.take(15).map((j) => _row(j['id']?.toString().substring(0, 8) ?? '-', j['status'] as String? ?? '-')).toList(),
-            ),
-            const SizedBox(height: 24),
-          ],
-          if (_goals != null && _goals!.isNotEmpty) ...[
-            Text('Goals', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            _buildCard(
-              context,
-              '',
-              _goals!.take(10).map((g) => _row(g['name'] as String? ?? '-', g['status'] as String? ?? '-')).toList(),
-            ),
-            const SizedBox(height: 24),
-          ],
-          if (_proposals != null && _proposals!.isNotEmpty) ...[
-            Text('Proposals', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            ..._proposals!.take(10).map((pr) => _buildProposalCard(context, palette, pr)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPipelineCard(BuildContext context, Oc2Palette palette, Map<String, dynamic> p) {
-    final id = p['id'] as String? ?? '';
-    final name = p['name'] as String? ?? '-';
-    final strategy = p['strategy'] as String? ?? '-';
-    final enabled = (p['enabled'] as int?) == 1;
-    final maxDay = p['maxRunsPerDay'] ?? p['max_runs_per_day'];
-    final cap = maxDay is int ? maxDay : int.tryParse('$maxDay') ?? 0;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Container(
+      color: palette.backgroundBase,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            // ── Header ──────────────────────────────────────────────────────
+            Row(
               children: [
-                SizedBox(
-                  width: 200,
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: Theme.of(context).textTheme.titleSmall),
-                      Text(strategy, style: TextStyle(fontSize: 12, color: palette.textWeak)),
-                      if (cap > 0)
-                        Text('Max $cap runs/day (UTC)', style: TextStyle(fontSize: 11, color: palette.textWeak)),
+                      Text('Server', style: Theme.of(context).textTheme.headlineMedium),
+                      Text(
+                        'Daemon · Pipelines · Proposals',
+                        style: TextStyle(fontSize: 13, color: palette.textWeak),
+                      ),
                     ],
                   ),
                 ),
                 OpenCodeButton(
-                  onPressed: () => _editPipelineDailyCap(id, cap),
+                  onPressed: _load,
                   variant: OpenCodeButtonVariant.secondary,
                   size: OpenCodeButtonSize.small,
-                  child: const Text('Daily cap'),
+                  icon: Icons.refresh,
+                  child: const Text('Refresh'),
                 ),
-                OpenCodeButton(
-                  onPressed: () => _togglePipeline(id, !enabled),
-                  variant: OpenCodeButtonVariant.secondary,
-                  size: OpenCodeButtonSize.small,
-                  child: Text(enabled ? 'Disable' : 'Enable'),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // ── Status chips ─────────────────────────────────────────────────
+            if (status != null) ...[
+              _StatusRow(status: status, metrics: _metrics, palette: palette),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Proposals ────────────────────────────────────────────────────
+            if (_proposals != null && _proposals!.isNotEmpty) ...[
+              _sectionHeader(context, 'Proposals', badge: _proposals!.length),
+              const SizedBox(height: 8),
+              ..._proposals!.map((p) => _ProposalCard(
+                    proposal: p,
+                    palette: palette,
+                    onAction: _proposalAction,
+                  )),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Pipelines ────────────────────────────────────────────────────
+            if (_pipelines != null && _pipelines!.isNotEmpty) ...[
+              _sectionHeader(context, 'Pipelines', badge: _pipelines!.length),
+              const SizedBox(height: 8),
+              ..._pipelines!.map((p) => _PipelineCard(
+                    pipeline: p,
+                    palette: palette,
+                    onToggle: _togglePipeline,
+                    onRun: _runPipeline,
+                    onEditCap: _editDailyCap,
+                  )),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Repo jobs ────────────────────────────────────────────────────
+            if (_repoJobs != null && _repoJobs!.isNotEmpty) ...[
+              Row(
+                children: [
+                  Expanded(child: _sectionHeader(context, 'Repo Jobs')),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen()),
+                    ),
+                    child: const Text('View all →'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ..._repoJobs!.map((j) => _RepoJobCard(job: j, palette: palette)),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Goals ────────────────────────────────────────────────────────
+            if (_goals != null && _goals!.isNotEmpty) ...[
+              _sectionHeader(context, 'Goals'),
+              const SizedBox(height: 8),
+              Card(
+                child: Column(
+                  children: _goals!.take(10).map((g) {
+                    final st = g['status'] as String? ?? '-';
+                    return ListTile(
+                      dense: true,
+                      title: Text(g['name'] as String? ?? '-', style: const TextStyle(fontSize: 13)),
+                      trailing: _StatusBadge(status: st),
+                    );
+                  }).toList(),
                 ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Recent jobs ──────────────────────────────────────────────────
+            if (_jobs != null && _jobs!.isNotEmpty) ...[
+              _sectionHeader(context, 'Recent Jobs'),
+              const SizedBox(height: 8),
+              Card(
+                child: Column(
+                  children: _jobs!.take(12).map((j) {
+                    final st = j['status'] as String? ?? '-';
+                    final shortId = (j['id']?.toString() ?? '-').substring(0, 8);
+                    return ListTile(
+                      dense: true,
+                      title: Text(shortId, style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: palette.textWeak)),
+                      trailing: _StatusBadge(status: st),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Tools (collapsible) ──────────────────────────────────────────
+            _ToolsSection(
+              palette: palette,
+              memQ: _memQ,
+              idea: _idea,
+              chunks: _chunks,
+              discovery: _discovery,
+              memBusy: _memBusy,
+              discBusy: _discBusy,
+              repoIssueName: _repoIssueName,
+              repoFull: _repoFull,
+              repoLabel: _repoLabel,
+              repoCron: _repoCron,
+              repoMaxDay: _repoMaxDay,
+              repoMaxIssues: _repoMaxIssues,
+              repoRequirePassTests: _repoRequirePassTests,
+              onRepoRequirePassTestsChanged: (v) => setState(() => _repoRequirePassTests = v),
+              onSearchMem: _searchMem,
+              onEnqueueDiscovery: _enqueueDiscovery,
+              onCreateRepoIssuePipeline: _createRepoIssuePipeline,
+            ),
+
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(BuildContext context, String title, {int? badge}) {
+    return Row(
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        if (badge != null) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: _palette.backgroundWeak,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text('$badge', style: TextStyle(fontSize: 11, color: _palette.textWeak)),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status row
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusRow extends StatelessWidget {
+  const _StatusRow({required this.status, required this.metrics, required this.palette});
+  final dynamic status;
+  final Map<String, dynamic>? metrics;
+  final Oc2Palette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final revenue = _revenue(metrics);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _chip('${status.pipelinesEnabled ?? 0}/${status.pipelinesTotal ?? 0}', 'Pipelines', Colors.green),
+            _chip('${status.jobsRunning ?? 0}', 'Running', Colors.blue),
+            _chip('${status.proposalsPending ?? 0}', 'Proposals', Colors.orange),
+            if (revenue != null) _chip(revenue, 'Revenue', Colors.teal),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String value, String label, Color color) => Column(
+        children: [
+          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(height: 2),
+          Text(label, style: TextStyle(fontSize: 11, color: palette.textWeak)),
+        ],
+      );
+
+  static String? _revenue(Map<String, dynamic>? m) {
+    final met = m?['metrics'];
+    if (met is! Map) return null;
+    final rev = met['revenue'];
+    if (rev is! Map) return null;
+    final v = rev['total_usd'];
+    return v != null ? '\$$v' : null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pipeline card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PipelineCard extends StatelessWidget {
+  const _PipelineCard({
+    required this.pipeline,
+    required this.palette,
+    required this.onToggle,
+    required this.onRun,
+    required this.onEditCap,
+  });
+  final Map<String, dynamic> pipeline;
+  final Oc2Palette palette;
+  final Future<void> Function(String id, bool enable) onToggle;
+  final Future<void> Function(String id) onRun;
+  final Future<void> Function(String id, int current) onEditCap;
+
+  @override
+  Widget build(BuildContext context) {
+    final id       = pipeline['id'] as String? ?? '';
+    final name     = pipeline['name'] as String? ?? '-';
+    final strategy = pipeline['strategy'] as String? ?? '-';
+    final enabled  = (pipeline['enabled'] as int?) == 1;
+    final maxDay   = pipeline['maxRunsPerDay'] ?? pipeline['max_runs_per_day'];
+    final cap      = maxDay is int ? maxDay : int.tryParse('$maxDay') ?? 0;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 8, height: 8,
+                  margin: const EdgeInsets.only(right: 8, top: 2),
+                  decoration: BoxDecoration(
+                    color: enabled ? Colors.green : palette.textWeak,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      Text(
+                        strategy + (cap > 0 ? ' · max $cap/day' : ''),
+                        style: TextStyle(fontSize: 12, color: palette.textWeak),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
                 OpenCodeButton(
-                  onPressed: () => _runPipeline(id),
+                  onPressed: () => onRun(id),
                   variant: OpenCodeButtonVariant.primary,
                   size: OpenCodeButtonSize.small,
                   icon: Icons.play_arrow,
                   child: const Text('Run'),
                 ),
+                OpenCodeButton(
+                  onPressed: () => onToggle(id, !enabled),
+                  variant: OpenCodeButtonVariant.secondary,
+                  size: OpenCodeButtonSize.small,
+                  child: Text(enabled ? 'Disable' : 'Enable'),
+                ),
+                OpenCodeButton(
+                  onPressed: () => onEditCap(id, cap),
+                  variant: OpenCodeButtonVariant.secondary,
+                  size: OpenCodeButtonSize.small,
+                  child: const Text('Cap'),
+                ),
               ],
             ),
           ],
@@ -551,25 +534,151 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
       ),
     );
   }
+}
 
-  Widget _buildRepoJobCard(BuildContext context, Oc2Palette palette, Map<String, dynamic> job) {
-    final repo = job['repoFullName'] as String? ?? job['repo_full_name'] as String? ?? '-';
+// ─────────────────────────────────────────────────────────────────────────────
+// Proposal card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ProposalCard extends StatelessWidget {
+  const _ProposalCard({required this.proposal, required this.palette, required this.onAction});
+  final Map<String, dynamic> proposal;
+  final Oc2Palette palette;
+  final Future<void> Function(String id, bool approve) onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final id          = proposal['id'] as String? ?? '';
+    final title       = proposal['title'] as String? ?? '';
+    final description = proposal['description'] as String? ?? '';
+    final status      = proposal['status'] as String? ?? '-';
+    final riskLevel   = proposal['riskLevel'] as String? ?? '';
+    final confidence  = proposal['confidence'];
+    final confPct     = confidence is num ? '${(confidence * 100).toStringAsFixed(0)}%' : null;
+
+    final riskColor = riskLevel == 'high'
+        ? Colors.red
+        : riskLevel == 'medium'
+            ? Colors.orange
+            : Colors.green;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (title.isNotEmpty)
+                        Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      Text(
+                        id.substring(0, id.length.clamp(0, 8)),
+                        style: TextStyle(fontSize: 11, color: palette.textWeak, fontFamily: 'monospace'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    if (riskLevel.isNotEmpty)
+                      _badge('risk: $riskLevel', riskColor),
+                    if (confPct != null)
+                      _badge('conf: $confPct', palette.textWeak),
+                    _badge(status, palette.textWeak),
+                  ],
+                ),
+              ],
+            ),
+            if (description.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                description.length > 160 ? '${description.substring(0, 160)}…' : description,
+                style: TextStyle(fontSize: 12, color: palette.textWeak),
+              ),
+            ],
+            if (status == 'pending') ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  OpenCodeButton(
+                    onPressed: () => onAction(id, true),
+                    variant: OpenCodeButtonVariant.primary,
+                    size: OpenCodeButtonSize.small,
+                    icon: Icons.check,
+                    child: const Text('Approve'),
+                  ),
+                  const SizedBox(width: 8),
+                  OpenCodeButton(
+                    onPressed: () => onAction(id, false),
+                    variant: OpenCodeButtonVariant.secondary,
+                    size: OpenCodeButtonSize.small,
+                    child: const Text('Reject'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _badge(String label, Color color) => Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w500)),
+      );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Repo job card (mini — summary only, tap goes to full screen)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _RepoJobCard extends StatelessWidget {
+  const _RepoJobCard({required this.job, required this.palette});
+  final Map<String, dynamic> job;
+  final Oc2Palette palette;
+
+  static const _steps  = ['pending', 'spec', 'tests', 'implementing', 'docs', 'pr-open', 'completed'];
+  static const _labels = ['Q', 'Spec', 'Tests', 'Code', 'Docs', 'PR', 'Done'];
+
+  @override
+  Widget build(BuildContext context) {
+    final repo     = job['repoFullName'] as String? ?? job['repo_full_name'] as String? ?? '-';
     final issueNum = job['issueNumber'] ?? job['issue_number'];
-    final title = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? '-';
-    final status = job['status'] as String? ?? 'pending';
+    final title    = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? '-';
+    final status   = job['status'] as String? ?? 'pending';
+    final failed   = status == 'failed';
+    final idx      = failed ? -1 : _steps.indexOf(status);
 
-    const steps = ['pending', 'spec', 'tests', 'implementing', 'docs', 'pr-open', 'completed'];
-    const labels = ['Q', 'Spec', 'Tests', 'Code', 'Docs', 'PR', 'Done'];
-    final failed = status == 'failed';
-    final idx = failed ? -1 : steps.indexOf(status);
+    final statusColor = failed
+        ? Colors.red
+        : status == 'completed'
+            ? Colors.green
+            : Theme.of(context).colorScheme.primary;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen())),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen()),
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -586,39 +695,32 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: (failed ? Colors.red : (status == 'completed' ? Colors.green : Theme.of(context).colorScheme.primary)).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
+                      color: statusColor.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(
-                      status,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: failed ? Colors.red : (status == 'completed' ? Colors.green : Theme.of(context).colorScheme.primary),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    child: Text(status, style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.w600)),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
               Row(
-                children: List.generate(steps.length, (i) {
-                  Color color;
-                  if (failed) {
-                    color = Colors.grey.withOpacity(0.3);
-                  } else if (i < idx) {
-                    color = Colors.green;
-                  } else if (i == idx) {
-                    color = Theme.of(context).colorScheme.primary;
-                  } else {
-                    color = Colors.grey.withOpacity(0.25);
-                  }
+                children: List.generate(_steps.length, (i) {
+                  final color = failed
+                      ? Colors.grey.withOpacity(0.3)
+                      : i < idx
+                          ? Colors.green
+                          : i == idx
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey.withOpacity(0.22);
                   return Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 1),
                       child: Tooltip(
-                        message: labels[i],
-                        child: Container(height: 4, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+                        message: _labels[i],
+                        child: Container(
+                          height: 4,
+                          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+                        ),
                       ),
                     ),
                   );
@@ -630,138 +732,226 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
       ),
     );
   }
+}
 
-  Widget _buildProposalCard(BuildContext context, Oc2Palette palette, Map<String, dynamic> pr) {
-    final id = pr['id'] as String? ?? '';
-    final status = pr['status'] as String? ?? '-';
-    final title = pr['title'] as String? ?? '';
-    final description = pr['description'] as String? ?? '';
-    final riskLevel = pr['riskLevel'] as String? ?? pr['risk_level'] as String? ?? '';
-    final confidence = pr['confidence'];
-    final confidencePct = confidence is num ? '${(confidence * 100).toStringAsFixed(0)}%' : null;
+// ─────────────────────────────────────────────────────────────────────────────
+// Status badge (small pill)
+// ─────────────────────────────────────────────────────────────────────────────
 
-    Color riskColor;
-    switch (riskLevel) {
-      case 'high':
-        riskColor = Colors.red;
-      case 'medium':
-        riskColor = Colors.orange;
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
+  final String status;
+
+  Color _color() {
+    switch (status) {
+      case 'completed': case 'done': case 'active':
+        return Colors.green;
+      case 'running': case 'implementing': case 'spec': case 'tests':
+        return Colors.blue;
+      case 'failed': case 'error':
+        return Colors.red;
+      case 'pending': case 'queued':
+        return Colors.orange;
       default:
-        riskColor = Colors.green;
+        return Colors.grey;
     }
+  }
 
+  @override
+  Widget build(BuildContext context) {
+    final c = _color();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+      child: Text(status, style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tools section (collapsible)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ToolsSection extends StatelessWidget {
+  const _ToolsSection({
+    required this.palette,
+    required this.memQ,
+    required this.idea,
+    required this.chunks,
+    required this.discovery,
+    required this.memBusy,
+    required this.discBusy,
+    required this.repoIssueName,
+    required this.repoFull,
+    required this.repoLabel,
+    required this.repoCron,
+    required this.repoMaxDay,
+    required this.repoMaxIssues,
+    required this.repoRequirePassTests,
+    required this.onRepoRequirePassTestsChanged,
+    required this.onSearchMem,
+    required this.onEnqueueDiscovery,
+    required this.onCreateRepoIssuePipeline,
+  });
+
+  final Oc2Palette palette;
+  final TextEditingController memQ, idea;
+  final TextEditingController repoIssueName, repoFull, repoLabel, repoCron, repoMaxDay, repoMaxIssues;
+  final List<Map<String, dynamic>>? chunks;
+  final List<Map<String, dynamic>>? discovery;
+  final bool memBusy, discBusy, repoRequirePassTests;
+  final ValueChanged<bool> onRepoRequirePassTestsChanged;
+  final VoidCallback onSearchMem, onEnqueueDiscovery, onCreateRepoIssuePipeline;
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (title.isNotEmpty)
-                        Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                      Text(
-                        id.substring(0, id.length >= 8 ? 8 : id.length),
-                        style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: palette.textWeak),
-                      ),
-                    ],
-                  ),
-                ),
-                Wrap(
-                  spacing: 6,
-                  children: [
-                    if (riskLevel.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: riskColor.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text('risk: $riskLevel', style: TextStyle(fontSize: 10, color: riskColor)),
-                      ),
-                    if (confidencePct != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: palette.backgroundWeak,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text('conf: $confidencePct', style: TextStyle(fontSize: 10, color: palette.textWeak)),
-                      ),
-                    Text(status, style: TextStyle(color: palette.textWeak, fontSize: 12)),
-                  ],
-                ),
-              ],
-            ),
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                description.length > 180 ? '${description.substring(0, 180)}…' : description,
-                style: TextStyle(fontSize: 12, color: palette.textWeak),
-              ),
-            ],
-            if (status == 'pending') ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
+      child: Column(
+        children: [
+          // Memory RAG
+          ExpansionTile(
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('Memory (RAG)', style: TextStyle(fontWeight: FontWeight.w600)),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              Row(
                 children: [
+                  Expanded(
+                    child: TextField(
+                      controller: memQ,
+                      decoration: const InputDecoration(hintText: 'Search query', border: OutlineInputBorder(), isDense: true),
+                      onSubmitted: (_) => onSearchMem(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   OpenCodeButton(
-                    onPressed: () => _proposalAction(id, true),
+                    onPressed: memBusy ? null : onSearchMem,
                     variant: OpenCodeButtonVariant.primary,
                     size: OpenCodeButtonSize.small,
-                    child: const Text('Approve'),
+                    icon: Icons.search,
+                    child: const Text('Search'),
+                  ),
+                ],
+              ),
+              if (chunks != null && chunks!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                ...chunks!.map((c) {
+                  final tx = c['text']?.toString() ?? '';
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    color: palette.backgroundWeak,
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            tx.length > 180 ? '${tx.substring(0, 180)}…' : tx,
+                            style: TextStyle(fontSize: 12, color: palette.textWeak),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('score: ${c['score']}  ${c['source'] ?? ''}', style: TextStyle(fontSize: 11, color: palette.textWeak)),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+          const Divider(height: 1),
+
+          // Discovery
+          ExpansionTile(
+            leading: const Icon(Icons.explore_outlined),
+            title: const Text('Discovery', style: TextStyle(fontWeight: FontWeight.w600)),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: idea,
+                      decoration: const InputDecoration(hintText: 'Idea text', border: OutlineInputBorder(), isDense: true),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OpenCodeButton(
+                    onPressed: discBusy ? null : onEnqueueDiscovery,
+                    variant: OpenCodeButtonVariant.primary,
+                    size: OpenCodeButtonSize.small,
+                    child: const Text('Enqueue'),
+                  ),
+                ],
+              ),
+              if (discovery != null && discovery!.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                ...discovery!.take(15).map((d) {
+                  final txt = d['idea_text']?.toString() ?? '-';
+                  final head = txt.length > 52 ? '${txt.substring(0, 52)}…' : txt;
+                  final st   = d['status'] as String? ?? '-';
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        Expanded(child: Text(head, style: TextStyle(fontSize: 12, color: palette.textWeak))),
+                        _StatusBadge(status: st),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+          const Divider(height: 1),
+
+          // New repo-issue pipeline
+          ExpansionTile(
+            leading: const Icon(Icons.add_circle_outline),
+            title: const Text('New Repo Pipeline', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text('repo-issue-worker strategy', style: TextStyle(fontSize: 12, color: palette.textWeak)),
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _field(repoIssueName, 'Name', 150),
+                  _field(repoFull, 'owner/repo', 190),
+                  _field(repoLabel, 'Label', 90),
+                  _field(repoCron, 'Cron', 160),
+                  _field(repoMaxDay, 'Max/day', 90, numeric: true),
+                  _field(repoMaxIssues, 'Issues/run', 90, numeric: true),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Switch(value: repoRequirePassTests, onChanged: onRepoRequirePassTestsChanged),
+                      Text('Require passing tests', style: TextStyle(fontSize: 12, color: palette.textWeak)),
+                    ],
                   ),
                   OpenCodeButton(
-                    onPressed: () => _proposalAction(id, false),
-                    variant: OpenCodeButtonVariant.secondary,
+                    onPressed: onCreateRepoIssuePipeline,
+                    variant: OpenCodeButtonVariant.primary,
                     size: OpenCodeButtonSize.small,
-                    child: const Text('Reject'),
+                    icon: Icons.add,
+                    child: const Text('Create'),
                   ),
                 ],
               ),
             ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildCard(BuildContext context, String title, List<Widget> children) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (title.isNotEmpty) ...[
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 12),
-            ],
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _row(String a, String b) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [Text(a), Text(b)],
+  Widget _field(TextEditingController ctrl, String label, double w, {bool numeric = false}) =>
+      SizedBox(
+        width: w,
+        child: TextField(
+          controller: ctrl,
+          keyboardType: numeric ? TextInputType.number : TextInputType.text,
+          decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true),
         ),
       );
-
-  static String _dashRevenue(Map<String, dynamic> m) {
-    final met = m['metrics'];
-    if (met is! Map) return '-';
-    final rev = met['revenue'];
-    if (rev is! Map) return '-';
-    return rev['total_usd']?.toString() ?? '-';
-  }
 }
