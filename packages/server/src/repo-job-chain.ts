@@ -4,8 +4,6 @@ import { daemonQueue } from "./schema"
 import { enqueueDeduped } from "./queue"
 
 const STEPS: [string, number][] = [
-  ["generate-spec", 5],
-  ["generate-tdd-tests", 5],
   ["implement-code", 5],
   ["generate-docs", 6],
   ["open-pr", 6],

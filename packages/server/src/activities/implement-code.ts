@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm"
 import { Octokit } from "@octokit/rest"
 import path from "path"
-import { mkdir, rm, writeFile } from "fs/promises"
+import { mkdir, rm } from "fs/promises"
 import { repoIssueJobs } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 import {
@@ -16,6 +16,7 @@ interface Input {
 }
 
 const MAX_TRIES = 3
+const SPEC_PATH = ".opencode/spec.json"
 
 function slug(s: string): string {
   return s
@@ -28,7 +29,7 @@ function slug(s: string): string {
 export const implementCodeActivity: Activity = {
   type: "implement-code",
   displayName: "Implement Code",
-  description: "Clone/fork, escreve testes, spawnOpenCode até testes passarem",
+  description: "Clone/fork, delega spec+testes+impl para a CLI OpenCode",
 
   async execute(ctx: ActivityContext): Promise<ActivityOutput> {
     const input = ctx.input as unknown as Input
@@ -42,9 +43,8 @@ export const implementCodeActivity: Activity = {
       .from(repoIssueJobs)
       .where(eq(repoIssueJobs.id, input.repo_issue_job_id))
       .limit(1)
-    if (!job?.specJson || !job.testFiles) throw new Error("spec ou testFiles ausentes")
+    if (!job) throw new Error(`repo_issue_job não encontrado: ${input.repo_issue_job_id}`)
 
-    const tests = JSON.parse(job.testFiles) as { path: string; content: string }[]
     const octokit = new Octokit({ auth: token })
     const { data: user } = await octokit.users.getAuthenticated()
     const forkOwner = user.login
@@ -105,41 +105,17 @@ export const implementCodeActivity: Activity = {
         : `agent/opp-${job.id.slice(-8)}-${Date.now()}`
     await runGit(["checkout", "-b", branch], workDir)
 
-    for (const f of tests) {
-      const full = path.join(workDir, f.path)
-      await mkdir(path.dirname(full), { recursive: true })
-      await writeFile(full, f.content, "utf8")
-    }
+    const task = buildTask(job)
 
-    const testCmd = await detectTestCommand(workDir)
-    let failOut = ""
-    if (testCmd) {
-      const first = await runCommand(testCmd, workDir)
-      failOut = first.ok ? "(tests passed before impl — continuing)" : first.out
-    } else {
-      failOut = "(no test runner detected)"
-    }
-
-    const task = `Implement code to satisfy this spec and pass all tests.
-
-SPEC (JSON):
-${job.specJson!.slice(0, 6000)}
-
-TEST FILES:
-${tests.map((t) => `--- ${t.path} ---\n${t.content.slice(0, 2000)}`).join("\n\n")}
-
-LAST TEST OUTPUT:
-${failOut.slice(0, 2500)}
-
-Make minimal changes. Do not commit or push.`
-
-    let lastOut = failOut
+    let lastOut = ""
     for (let n = 1; n <= MAX_TRIES; n++) {
       await ctx.updateProgress?.(`OpenCode tentativa ${n}/${MAX_TRIES}`)
       await ctx.spawnOpenCode(
         n === 1 ? task : `${task}\n\nPREVIOUS FAILURE:\n${lastOut.slice(0, 2000)}`,
         workDir,
       )
+
+      const testCmd = await detectTestCommand(workDir)
       if (!testCmd) break
       const r = await runCommand(testCmd, workDir)
       if (r.ok) break
@@ -148,11 +124,12 @@ Make minimal changes. Do not commit or push.`
         if (job.requirePassingTests !== 0) {
           throw new Error(`Testes ainda falhando após ${MAX_TRIES} tentativas: ${lastOut.slice(0, 500)}`)
         }
-        // require_passing_tests=false: continue to open PR as draft even with failing tests
         await ctx.updateProgress?.("Testes falhando mas require_passing_tests=false — abrindo PR como draft")
       }
     }
 
+    // Persist spec from CLI output if available
+    const spec = await readSpec(workDir)
     const now = Math.floor(Date.now() / 1000)
     await ctx.db
       .update(repoIssueJobs)
@@ -160,6 +137,7 @@ Make minimal changes. Do not commit or push.`
         branchName: branch,
         localWorkPath: workDir,
         forkRepoFullName: forkFull,
+        specJson: spec,
         status: "implementing",
         updatedAt: now,
       })
@@ -170,4 +148,34 @@ Make minimal changes. Do not commit or push.`
       extra: { branch, fork: forkFull },
     }
   },
+}
+
+function buildTask(job: typeof repoIssueJobs.$inferSelect): string {
+  const issue = job.issueBody ? job.issueBody.slice(0, 6000) : "(sem descrição)"
+  return `Implement code to satisfy this GitHub issue.
+
+ISSUE TITLE: ${job.issueTitle}
+ISSUE BODY:
+${issue}
+
+REPO: ${job.repoFullName}
+
+Instructions:
+1. Read the codebase to understand the existing architecture and conventions.
+2. Write a spec file at ${SPEC_PATH} as JSON with: title, goal, scope, acceptance_criteria, technical_approach, files_to_touch, test_scenarios.
+3. Write tests following the project's existing test patterns and conventions.
+4. Implement the code to pass all tests.
+5. Install any missing dependencies as needed (npm install, pip install, cargo add, etc.).
+6. Run tests and ensure they pass.
+7. Make minimal, focused changes. Do not commit or push.`
+}
+
+async function readSpec(cwd: string): Promise<string | null> {
+  try {
+    const raw = await Bun.file(path.join(cwd, SPEC_PATH)).text()
+    JSON.parse(raw)
+    return raw
+  } catch {
+    return null
+  }
 }

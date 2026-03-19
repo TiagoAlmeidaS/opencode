@@ -40,14 +40,18 @@ export async function runGit(args: string[], cwd: string): Promise<string> {
 }
 
 export async function runCommand(cmd: string, cwd: string): Promise<{ ok: boolean; out: string }> {
-  const parts = cmd.split(/\s+/)
-  const proc = Bun.spawn(parts, { cwd, stdout: "pipe", stderr: "pipe" })
-  const [out, err] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ])
-  await proc.exited
-  return { ok: proc.exitCode === 0, out: (out + "\n" + err).trim().slice(0, 4000) }
+  try {
+    const parts = cmd.split(/\s+/)
+    const proc = Bun.spawn(parts, { cwd, stdout: "pipe", stderr: "pipe" })
+    const [out, err] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ])
+    await proc.exited
+    return { ok: proc.exitCode === 0, out: (out + "\n" + err).trim().slice(0, 4000) }
+  } catch (err) {
+    return { ok: false, out: `Runtime not available: ${err}` }
+  }
 }
 
 export async function detectTestCommand(cwd: string): Promise<string | null> {

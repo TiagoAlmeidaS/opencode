@@ -50,126 +50,159 @@ const QDRANT_URL = process.env.QDRANT_URL
 const API_TOKEN = process.env.API_TOKEN
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*"
 
+const RETRY_CODES = new Set([429, 502, 503, 529])
+const MAX_RETRIES = 3
+
+async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let delay = 2000
+  for (let i = 0; i <= MAX_RETRIES; i++) {
+    try {
+      return await fn()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const retryable = i < MAX_RETRIES && RETRY_CODES.has(parseStatus(msg))
+      if (!retryable) throw err
+      console.warn(`[${label}] retry ${i + 1}/${MAX_RETRIES} after ${delay}ms — ${msg.slice(0, 120)}`)
+      await new Promise((r) => setTimeout(r, delay))
+      delay *= 2
+    }
+  }
+  throw new Error("unreachable")
+}
+
+function parseStatus(msg: string): number {
+  const m = msg.match(/API (\d{3})/)
+  return m ? parseInt(m[1], 10) : 0
+}
+
 // ── LLM via Anthropic API direta (pago) ──────────────────────────────────────
 async function anthropicLlm(opts: MemoryLlmOptions): Promise<string> {
-  if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY não configurada")
+  return withRetry(async () => {
+    if (!ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY não configurada")
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: LLM_MODEL,
-      max_tokens: opts.maxTokens ?? 1024,
-      system: opts.system ?? "You are a helpful assistant.",
-      messages: [{ role: "user", content: opts.prompt }],
-    }),
-  })
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        max_tokens: opts.maxTokens ?? 1024,
+        system: opts.system ?? "You are a helpful assistant.",
+        messages: [{ role: "user", content: opts.prompt }],
+      }),
+    })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Anthropic API ${res.status}: ${err.slice(0, 200)}`)
-  }
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Anthropic API ${res.status}: ${err.slice(0, 200)}`)
+    }
 
-  const data = (await res.json()) as { content: Array<{ type: string; text: string }> }
-  return data.content.find((c) => c.type === "text")?.text ?? ""
+    const data = (await res.json()) as { content: Array<{ type: string; text: string }> }
+    return data.content.find((c) => c.type === "text")?.text ?? ""
+  }, "Anthropic")
 }
 
 // ── LLM via OpenRouter (free tier: openrouter/free) ───────────────────────────
 async function openRouterLlm(opts: MemoryLlmOptions): Promise<string> {
-  if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY não configurada")
+  return withRetry(async () => {
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY não configurada")
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://opencode.dev",
-    },
-    body: JSON.stringify({
-      model: OPENROUTER_MODEL,
-      max_tokens: opts.maxTokens ?? 1024,
-      messages: [
-        ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
-        { role: "user" as const, content: opts.prompt },
-      ],
-    }),
-  })
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://opencode.dev",
+      },
+      body: JSON.stringify({
+        model: OPENROUTER_MODEL,
+        max_tokens: opts.maxTokens ?? 1024,
+        messages: [
+          ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
+          { role: "user" as const, content: opts.prompt },
+        ],
+      }),
+    })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`OpenRouter API ${res.status}: ${err.slice(0, 200)}`)
-  }
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`OpenRouter API ${res.status}: ${err.slice(0, 200)}`)
+    }
 
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-  const content = data.choices?.[0]?.message?.content
-  return typeof content === "string" ? content : ""
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const content = data.choices?.[0]?.message?.content
+    return typeof content === "string" ? content : ""
+  }, "OpenRouter")
 }
 
 // ── LLM via Azure OpenAI (OpenAI-compatible endpoint) ─────────────────────────
 async function azureLlm(opts: MemoryLlmOptions): Promise<string> {
-  if (!AZURE_OPENAI_API_KEY || !AZURE_OPENAI_BASE_URL || !AZURE_OPENAI_DEPLOYMENT) {
-    throw new Error("AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL e AZURE_OPENAI_DEPLOYMENT são obrigatórios")
-  }
-  const base = AZURE_OPENAI_BASE_URL.replace(/\/$/, "")
-  const url = `${base}/openai/deployments/${encodeURIComponent(AZURE_OPENAI_DEPLOYMENT)}/chat/completions?api-version=${encodeURIComponent(AZURE_OPENAI_API_VERSION)}`
+  return withRetry(async () => {
+    if (!AZURE_OPENAI_API_KEY || !AZURE_OPENAI_BASE_URL || !AZURE_OPENAI_DEPLOYMENT) {
+      throw new Error("AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL e AZURE_OPENAI_DEPLOYMENT são obrigatórios")
+    }
+    const base = AZURE_OPENAI_BASE_URL.replace(/\/$/, "")
+    const url = `${base}/openai/deployments/${encodeURIComponent(AZURE_OPENAI_DEPLOYMENT)}/chat/completions?api-version=${encodeURIComponent(AZURE_OPENAI_API_VERSION)}`
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "api-key": AZURE_OPENAI_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      max_tokens: opts.maxTokens ?? 1024,
-      messages: [
-        ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
-        { role: "user" as const, content: opts.prompt },
-      ],
-    }),
-  })
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "api-key": AZURE_OPENAI_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        max_tokens: opts.maxTokens ?? 1024,
+        messages: [
+          ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
+          { role: "user" as const, content: opts.prompt },
+        ],
+      }),
+    })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Azure OpenAI API ${res.status}: ${err.slice(0, 200)}`)
-  }
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`Azure OpenAI API ${res.status}: ${err.slice(0, 200)}`)
+    }
 
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-  const content = data.choices?.[0]?.message?.content
-  return typeof content === "string" ? content : ""
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const content = data.choices?.[0]?.message?.content
+    return typeof content === "string" ? content : ""
+  }, "Azure")
 }
 
 // ── LLM via OpenAI (api.openai.com) ─────────────────────────────────────────
 async function openaiLlm(opts: MemoryLlmOptions): Promise<string> {
-  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY não configurada")
+  return withRetry(async () => {
+    if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY não configurada")
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      max_tokens: opts.maxTokens ?? 1024,
-      messages: [
-        ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
-        { role: "user" as const, content: opts.prompt },
-      ],
-    }),
-  })
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        max_tokens: opts.maxTokens ?? 1024,
+        messages: [
+          ...(opts.system ? [{ role: "system" as const, content: opts.system }] : []),
+          { role: "user" as const, content: opts.prompt },
+        ],
+      }),
+    })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`OpenAI API ${res.status}: ${err.slice(0, 200)}`)
-  }
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`OpenAI API ${res.status}: ${err.slice(0, 200)}`)
+    }
 
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-  const content = data.choices?.[0]?.message?.content
-  return typeof content === "string" ? content : ""
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const content = data.choices?.[0]?.message?.content
+    return typeof content === "string" ? content : ""
+  }, "OpenAI")
 }
 
 // ── Resolução do memoryLlm por MEMORY_LLM_PROVIDER ou prioridade implícita ───
