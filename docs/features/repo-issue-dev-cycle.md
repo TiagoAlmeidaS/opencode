@@ -1,11 +1,27 @@
-# Repo issue dev cycle (Sprint D)
+# Repo issue dev cycle
 
 ## Objetivo
 
-Ciclo fechado **Spec → testes TDD → implementação (OpenCode) → docs → PR draft → Telegram**, compartilhado entre:
+Ciclo fechado **implementação (OpenCode CLI) → docs → PR draft → Telegram**, compartilhado entre:
 
 1. **Repos próprios** — pipeline `repo-issue-worker`: issues abertas com label configurável (`agent` por padrão).
 2. **Oportunidades** — após `classify-workspace-strategy` (`fork-temp`, `extend-repo`) ou após `create-dedicated-repo` (`dedicated-repo`).
+
+## Chain de steps
+
+```
+implement-code → generate-docs → open-pr → notify-pr-approval
+```
+
+O `implement-code` delega o ciclo completo para a CLI OpenCode:
+
+1. Clone/fork do repo
+2. CLI lê o codebase e entende a arquitetura
+3. CLI gera spec em `.opencode/spec.json` (persistido no banco para rastreabilidade)
+4. CLI escreve testes seguindo padrões do projeto
+5. CLI implementa o código
+6. CLI instala dependências e roda testes
+7. Validação pós-agent: server verifica se testes passam (com fallback graceful se runtime não estiver disponível)
 
 ## Config / env
 
@@ -13,7 +29,8 @@ Ciclo fechado **Spec → testes TDD → implementação (OpenCode) → docs → 
 |----------|-----|
 | `GITHUB_TOKEN` | Issues, clone, fork, PR |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Aviso de PR draft (opcional) |
-| LLM no daemon (`memoryLlm`) | `generate-spec`, `generate-tdd-tests`, `generate-docs` |
+| LLM no daemon (`memoryLlm`) | `generate-docs` (e outras activities do sistema) |
+| `OPENCODE_CLI_PATH` | Caminho para a CLI OpenCode no container |
 
 ## Pipeline `repo-issue-worker`
 
@@ -40,6 +57,7 @@ Dedup na fila por `opportunity_id` da oportunidade.
 
 - `GET /server/repo-issue-jobs?status=&repo=&limit=50`
 - `GET /server/repo-issue-jobs/:id`
+- `GET /server/repo-issue-jobs/:id/errors`
 
 ## UI
 
@@ -48,4 +66,13 @@ Dedup na fila por `opportunity_id` da oportunidade.
 
 ## Tabela
 
-`repo_issue_jobs` — estado do ciclo por issue ou por oportunidade.
+`repo_issue_jobs` — estado do ciclo por issue ou por oportunidade. Campos relevantes:
+
+- `spec_json`: spec gerada pela CLI (lida de `.opencode/spec.json` após execução)
+- `test_files`: legado (anteriormente gerado por `generate-tdd-tests`, agora criado pela CLI direto no repo)
+- `branch_name`, `pr_url`, `pr_number`: estado do PR
+- `require_passing_tests`: 1 = testes devem passar; 0 = abre PR draft mesmo com falha
+
+## Referências
+
+- [Incidente 2026-03-19](../bugs/incident-2026-03-19-dev-cycle-errors.md) — refatoração que removeu `generate-spec` e `generate-tdd-tests` da chain
