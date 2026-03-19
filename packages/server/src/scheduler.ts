@@ -2,6 +2,7 @@ import type { ServerDb } from "./db"
 import { runJob, type RunJobExtra } from "./runner"
 import { cronMatches } from "./cron"
 import { executePendingProposals } from "./executor"
+import { countPipelineJobsToday, dailyLimitBlocks } from "./pipeline-daily-limit"
 import { daemonPipelines, daemonJobs } from "./schema"
 import { eq, and } from "drizzle-orm"
 
@@ -52,6 +53,12 @@ export function createScheduler(opts: SchedulerOpts) {
         .orderBy(daemonJobs.createdAt)
         .limit(1)
       if (pending) continue
+
+      const cap = row.maxRunsPerDay ?? 0
+      if (cap > 0) {
+        const n = await countPipelineJobsToday(db, row.id, Math.floor(now.getTime() / 1000))
+        if (dailyLimitBlocks(cap, n)) continue
+      }
 
       await runJob(
         db,

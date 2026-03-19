@@ -7,8 +7,11 @@ import '../theme/oc2_colors.dart';
 import '../widgets/dialog_add_project.dart';
 import '../widgets/opencode_button.dart';
 import '../widgets/opencode_icon_button.dart';
+import 'llm_settings_screen.dart';
 import 'session_screen.dart';
 import 'server_dashboard_screen.dart';
+
+const _breakpoint = 600.0;
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -21,19 +24,27 @@ class _MainLayoutState extends State<MainLayout> {
   String? _selectedProject;
   String? _selectedSession;
   int _selectedTab = 0;
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  Oc2Palette get _palette =>
+      Theme.of(context).brightness == Brightness.dark ? Oc2Colors.dark : Oc2Colors.light;
 
   void _showAddProject(BuildContext context, AppState state) {
     showDialog<bool>(
       context: context,
       builder: (ctx) => DialogAddProject(
-        onAdd: (url, {branch}) async {
-          final p = await state.addProjectByUrl(url, branch: branch);
+        onAdd: (url, {branch, token}) async {
+          final p = await state.addProjectByUrl(url, branch: branch, token: token);
           if (p == null) throw Exception('Failed to add project');
           if (mounted) setState(() => _selectedProject = p.worktree);
           return p;
         },
       ),
     );
+  }
+
+  void _closeDrawer() {
+    Navigator.of(context).pop();
   }
 
   @override
@@ -51,6 +62,28 @@ class _MainLayoutState extends State<MainLayout> {
       });
     }
 
+    final width = MediaQuery.of(context).size.width;
+    final mobile = width < _breakpoint;
+
+    if (mobile) {
+      return Scaffold(
+        key: _scaffoldKey,
+        appBar: AppBar(
+          title: const Text('OpenCode'),
+          backgroundColor: _palette.backgroundBase,
+          foregroundColor: _palette.textStrong,
+          leading: IconButton(
+            icon: const Icon(Icons.menu),
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+          ),
+        ),
+        drawer: _buildDrawer(context, state, projects, sessions, directory),
+        body: state.connected
+            ? _buildMain(context, state, directory)
+            : Center(child: Text('Connecting…', style: TextStyle(color: _palette.textWeak))),
+      );
+    }
+
     return Scaffold(
       body: Row(
         children: [
@@ -66,10 +99,113 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
+  Widget _buildDrawer(
+    BuildContext context,
+    AppState state,
+    List<dynamic> projects,
+    List<dynamic> sessions,
+    String? directory,
+  ) {
+    return Drawer(
+      backgroundColor: _palette.backgroundBase,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text('Projects', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            ...projects.take(8).map(
+                  (p) => ListTile(
+                    leading: Icon(Icons.folder, color: _palette.iconBase),
+                    title: Text(p.name ?? p.worktree.split('/').last, overflow: TextOverflow.ellipsis),
+                    selected: _selectedProject == p.worktree,
+                    onTap: () {
+                      setState(() {
+                        _selectedProject = p.worktree;
+                        _selectedTab = 0;
+                      });
+                      _closeDrawer();
+                    },
+                  ),
+                ),
+            ListTile(
+              leading: Icon(Icons.add, color: _palette.iconBase),
+              title: const Text('Add project'),
+              onTap: () {
+                _closeDrawer();
+                _showAddProject(context, state);
+              },
+            ),
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: OpenCodeButton(
+                onPressed: directory != null
+                    ? () async {
+                        final s = await state.createSession(directory);
+                        if (s != null && mounted) {
+                          setState(() => _selectedSession = s.id);
+                          _closeDrawer();
+                        }
+                      }
+                    : null,
+                variant: OpenCodeButtonVariant.primary,
+                size: OpenCodeButtonSize.large,
+                icon: Icons.add,
+                child: const Text('New session'),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  if (directory != null)
+                    ...sessions.map(
+                      (s) => ListTile(
+                        title: Text(s.title ?? 'Session', style: const TextStyle(fontSize: 14)),
+                        selected: _selectedSession == s.id,
+                        onTap: () {
+                          setState(() => _selectedSession = s.id);
+                          _closeDrawer();
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(Icons.dashboard, color: _palette.iconBase),
+              title: const Text('Server dashboard'),
+              onTap: () {
+                setState(() => _selectedTab = 1);
+                _closeDrawer();
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.settings, color: _palette.iconBase),
+              title: const Text('LLM & provider'),
+              onTap: () {
+                _closeDrawer();
+                if (!state.connected) return;
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => LlmSettingsScreen(catalogDirectory: directory),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildRail(BuildContext context, AppState state) {
     return Container(
       width: 64,
-      color: Oc2Colors.light.backgroundBase,
+      color: _palette.backgroundBase,
       child: Column(
         children: [
           const SizedBox(height: 16),
@@ -101,8 +237,19 @@ class _MainLayoutState extends State<MainLayout> {
           const SizedBox(height: 8),
           OpenCodeIconButton(
             icon: Icons.settings,
-            onPressed: () {},
-            tooltip: 'Settings',
+            onPressed: state.connected
+                ? () {
+                    final d = _selectedProject ??
+                        state.activeDirectory ??
+                        (state.projects.isNotEmpty ? state.projects.first.worktree : null);
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => LlmSettingsScreen(catalogDirectory: d),
+                      ),
+                    );
+                  }
+                : null,
+            tooltip: 'LLM & provider',
           ),
           const SizedBox(height: 24),
         ],
@@ -120,8 +267,8 @@ class _MainLayoutState extends State<MainLayout> {
     return Container(
       width: 280,
       decoration: BoxDecoration(
-        color: Oc2Colors.light.backgroundWeak,
-        border: Border(right: BorderSide(color: Oc2Colors.light.borderWeak)),
+        color: _palette.backgroundWeak,
+        border: Border(right: BorderSide(color: _palette.borderWeak)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -176,7 +323,7 @@ class _MainLayoutState extends State<MainLayout> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 64, color: Oc2Colors.light.iconBase),
+          Icon(Icons.chat_bubble_outline, size: 64, color: _palette.iconBase),
           const SizedBox(height: 16),
           Text(
             'Select a session',
@@ -185,7 +332,7 @@ class _MainLayoutState extends State<MainLayout> {
           const SizedBox(height: 8),
           Text(
             'Create a new session or select one from the list',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Oc2Colors.light.textWeak),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: _palette.textWeak),
           ),
         ],
       ),

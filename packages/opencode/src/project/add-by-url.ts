@@ -63,17 +63,18 @@ export async function addProjectByUrl(input: {
   const parsed = parseGitHubUrl(url)
   if (!parsed) throw new Error("Invalid GitHub URL; use https://github.com/owner/repo")
 
-  const token = input.token ?? process.env.GITHUB_TOKEN
-  if (!token?.trim()) {
-    throw new Error("GITHUB_TOKEN is not set; required to clone private repositories")
-  }
+  const reqTok = input.token?.trim() ?? ""
+  const envTok = process.env.GITHUB_TOKEN?.trim() ?? ""
+  const token = reqTok || envTok
 
   if (!which("git")) throw new Error("Git is not installed")
 
   const slug = `${parsed.owner}-${parsed.repo}`
   const baseDir = path.join(Global.Path.data, "projects")
   const targetDir = path.join(baseDir, slug)
-  const cloneUrl = `https://x-access-token:${token}@github.com/${parsed.owner}/${parsed.repo}.git`
+  const cloneUrl = token
+    ? `https://x-access-token:${token}@github.com/${parsed.owner}/${parsed.repo}.git`
+    : `https://github.com/${parsed.owner}/${parsed.repo}.git`
 
   if (existsSync(targetDir)) {
     log.info("addProjectByUrl: directory exists, registering", { targetDir })
@@ -84,7 +85,17 @@ export async function addProjectByUrl(input: {
   await mkdir(baseDir, { recursive: true })
   const cloneArgs = ["clone", "--depth", "1", cloneUrl, slug]
   if (branch) cloneArgs.splice(2, 0, "-b", branch)
-  await runClone(cloneArgs, baseDir)
+  try {
+    await runClone(cloneArgs, baseDir)
+  } catch (err) {
+    if (!token) {
+      const msg = err instanceof Error ? err.message : String(err)
+      throw new Error(
+        `${msg} — For private repos, send a GitHub PAT from the app or set GITHUB_TOKEN on the server.`,
+      )
+    }
+    throw err
+  }
 
   const { project } = await Project.fromDirectory(targetDir)
   return project

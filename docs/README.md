@@ -27,6 +27,7 @@
 - **Goals e proposals:** [runbooks/runbook-daemon-goals.md](runbooks/runbook-daemon-goals.md) — uso de metas e executor de propostas.
 - **Project Discovery:** [features/project-discovery-validator.md](features/project-discovery-validator.md) — validação de ideias de projeto no chat; [runbooks/runbook-project-discovery.md](runbooks/runbook-project-discovery.md) — prática e formato do relatório.
 - **Oportunidades de conteúdo:** [features/opportunity-content-sources.md](features/opportunity-content-sources.md) — fontes de texto, roteiro e copywriting (ProBlogger, WWR); [runbooks/runbook-troubleshoot-schedules-reports.md](runbooks/runbook-troubleshoot-schedules-reports.md) — troubleshooting.
+- **App Flutter:** [features/flutter-app.md](features/flutter-app.md) — integração ao OpenCode Server, design parity, MVP; [architecture/flutter-design-parity.md](architecture/flutter-design-parity.md) — mapeamento tokens CSS → Flutter.
 
 ## Padrão de documentação
 

@@ -31,6 +31,14 @@ class AppState extends ChangeNotifier {
   SseClient? _sse;
   StreamSubscription<GlobalEvent>? _sseSub;
 
+  final StreamController<({String dir, String sid})> _chat = StreamController.broadcast();
+  Stream<({String dir, String sid})> get chatReload => _chat.stream;
+
+  final StreamController<String> _attention = StreamController.broadcast();
+  Stream<String> get sessionAttention => _attention.stream;
+
+  final Map<String, Timer> _debounce = {};
+
   List<ServerConfig> get servers => List.unmodifiable(_servers);
   String? get activeKey => _activeKey;
   OpenCodeClient? get client => _client;
@@ -125,20 +133,77 @@ class AppState extends ChangeNotifier {
 
     _sseSub?.cancel();
     _sseSub = _sse?.connect(onError: (_) {}).listen((e) {
-      if (e.payload is Map && e.directory != null) {
-        _onSseEvent(e.directory!, e.payload as Map<String, dynamic>);
-      }
+      if (e.payload is! Map) return;
+      final raw = Map<String, dynamic>.from(e.payload as Map);
+      final dir = e.directory ?? raw['directory'] as String?;
+      if (dir == null) return;
+      _onSse(dir, raw);
     });
 
     notifyListeners();
     return true;
   }
 
-  void _onSseEvent(String directory, Map<String, dynamic> payload) {
-    final type = payload['type'] as String?;
+  void _pulse(String dir, String sid) {
+    final k = '$dir\x00$sid';
+    _debounce[k]?.cancel();
+    _debounce[k] = Timer(const Duration(milliseconds: 400), () {
+      _debounce.remove(k);
+      if (!_chat.isClosed) _chat.add((dir: dir, sid: sid));
+    });
+  }
+
+  String? _sid(String? t, Map<String, dynamic>? p) {
+    if (p == null || t == null) return null;
+    if (t.startsWith('message.part.') && t != 'message.part.updated') return p['sessionID'] as String?;
+    if (t == 'message.removed') return p['sessionID'] as String?;
+    if (t == 'message.updated') {
+      final info = p['info'];
+      if (info is Map) return info['sessionID'] as String?;
+    }
+    if (t == 'message.part.updated') {
+      final part = p['part'];
+      if (part is Map) return part['sessionID'] as String?;
+    }
+    if (t == 'session.status' || t == 'session.idle') return p['sessionID'] as String?;
+    if (t == 'permission.asked' || t == 'question.asked') return p['sessionID'] as String?;
+    if (t == 'permission.replied' || t == 'question.replied' || t == 'question.rejected') {
+      return p['sessionID'] as String?;
+    }
+    return null;
+  }
+
+  bool _msg(String? t) {
+    if (t == null) return false;
+    return t.startsWith('message.') || t == 'session.status' || t == 'session.idle';
+  }
+
+  void _onSse(String directory, Map<String, dynamic> raw) {
+    final inner = raw['payload'];
+    final body = inner is Map ? Map<String, dynamic>.from(inner) : null;
+    final type = body?['type'] as String? ?? raw['type'] as String?;
+    final props = body?['properties'];
+    final prop = props is Map ? Map<String, dynamic>.from(props) : null;
+
     if (type == 'session.created' || type == 'session.updated' || type == 'session.deleted') {
       loadSessions(directory);
+      final info = prop?['info'];
+      if (info is Map && info['id'] is String) {
+        _pulse(directory, info['id'] as String);
+      }
     }
+
+    final sid = _sid(type, prop);
+    if (sid != null && _msg(type)) {
+      _pulse(directory, sid);
+    }
+    if (type == 'permission.asked' || type == 'question.asked') {
+      if (sid != null && !_attention.isClosed) _attention.add(sid);
+    }
+    if (sid != null && (type == 'permission.replied' || type == 'question.replied' || type == 'question.rejected')) {
+      _pulse(directory, sid);
+    }
+
     notifyListeners();
   }
 
@@ -181,11 +246,11 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
   }
 
-  Future<Project?> addProjectByUrl(String url, {String? branch}) async {
+  Future<Project?> addProjectByUrl(String url, {String? branch, String? token}) async {
     final c = _client;
     if (c == null) return null;
 
-    final p = await c.projectAddByUrl(url, branch: branch);
+    final p = await c.projectAddByUrl(url, branch: branch, token: token);
     if (p != null) loadProjects();
     return p;
   }
@@ -193,6 +258,12 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _sseSub?.cancel();
+    for (final t in _debounce.values) {
+      t.cancel();
+    }
+    _debounce.clear();
+    _chat.close();
+    _attention.close();
     super.dispose();
   }
 }

@@ -35,6 +35,19 @@ class OpenCodeClient {
     return q;
   }
 
+  static String _hintNonJson(String body) {
+    final b = body.trimLeft();
+    final lower = b.toLowerCase();
+    if (lower.startsWith('<!doctype') || lower.startsWith('<html')) {
+      return 'The server returned HTML, not the API. Use the OpenCode API URL (e.g. http://host:4096), '
+          'not a web app. If the server uses a password, set Basic auth in connection settings.';
+    }
+    if (!b.startsWith('[') && !b.startsWith('{')) {
+      return 'Response was not JSON. Check base URL and authentication.';
+    }
+    return 'Invalid JSON from server.';
+  }
+
   Future<T?> _get<T>(String path, T Function(Map<String, dynamic>) fromJson) async {
     final r = await _http.get(Uri.parse('$_base$path'), headers: _headers);
     if (r.statusCode != 200) return null;
@@ -61,6 +74,49 @@ class OpenCodeClient {
 
   Future<PathInfo?> path() => _get('/path', PathInfo.fromJson);
 
+  /// Workspace config merge (writes project `config.json` under that directory).
+  Future<Map<String, dynamic>?> configGet(String directory, {String? workspace}) async {
+    final uri = Uri.parse('$_base/config').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<Map<String, dynamic>?> configPatch(
+    String directory,
+    Map<String, dynamic> patch, {
+    String? workspace,
+  }) async {
+    final uri = Uri.parse('$_base/config').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.patch(uri, headers: _headers, body: jsonEncode(patch));
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  /// Configured providers + models for the instance (`provider/model` ids).
+  Future<Map<String, dynamic>?> configProviders(String directory, {String? workspace}) async {
+    final uri = Uri.parse('$_base/config/providers').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<Map<String, dynamic>?> globalConfigGet() async {
+    final r = await _http.get(Uri.parse('$_base/global/config'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<Map<String, dynamic>?> globalConfigPatch(Map<String, dynamic> patch) async {
+    final r = await _http.patch(
+      Uri.parse('$_base/global/config'),
+      headers: _headers,
+      body: jsonEncode(patch),
+    );
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
   // Project
   Future<List<Project>?> projectList({String? directory, String? workspace}) async {
     final q = <String, String>{};
@@ -74,8 +130,12 @@ class OpenCodeClient {
     return list?.map((e) => Project.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  Future<Project?> projectAddByUrl(String url, {String? branch}) =>
-      _post('/project/add-by-url', {'url': url, if (branch != null) 'branch': branch}, Project.fromJson);
+  Future<Project?> projectAddByUrl(String url, {String? branch, String? token}) {
+    final body = <String, dynamic>{'url': url};
+    if (branch != null && branch.trim().isNotEmpty) body['branch'] = branch.trim();
+    if (token != null && token.trim().isNotEmpty) body['token'] = token.trim();
+    return _post('/project/add-by-url', body, Project.fromJson);
+  }
 
   // Session
   Future<List<Session>?> sessionList(
@@ -208,9 +268,62 @@ class OpenCodeClient {
     return r.statusCode == 200;
   }
 
+  /// Returns `{ok: true, jobId}` on 202, `{ok: false, error}` on 400 (e.g. daily limit).
   Future<Map<String, dynamic>?> serverPipelineRun(String id) async {
     final r = await _http.post(Uri.parse('$_base/server/pipelines/$id/run'), headers: _headers);
-    if (r.statusCode != 202) return null;
+    Map<String, dynamic>? j;
+    try {
+      final d = jsonDecode(r.body);
+      if (d is Map<String, dynamic>) j = d;
+    } catch (_) {}
+    if (r.statusCode == 202) return {...?j, 'ok': true};
+    if (r.statusCode == 400) return {'ok': false, 'error': j?['error']?.toString() ?? 'Run failed'};
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> serverPipelineCreate({
+    required String name,
+    required String strategy,
+    Map<String, dynamic>? configJson,
+    String? scheduleCron,
+    int? maxRunsPerDay,
+  }) async {
+    final body = <String, dynamic>{
+      'name': name,
+      'strategy': strategy,
+      if (configJson != null) 'config_json': configJson,
+      if (scheduleCron != null) 'schedule_cron': scheduleCron,
+      if (maxRunsPerDay != null) 'max_runs_per_day': maxRunsPerDay,
+    };
+    final r = await _http.post(
+      Uri.parse('$_base/server/pipelines'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    if (r.statusCode != 201) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<Map<String, dynamic>?> serverPipelinePatch(
+    String id, {
+    String? name,
+    String? scheduleCron,
+    int? maxRunsPerDay,
+    Map<String, dynamic>? configJson,
+  }) async {
+    final body = <String, dynamic>{
+      if (name != null) 'name': name,
+      if (scheduleCron != null) 'schedule_cron': scheduleCron,
+      if (maxRunsPerDay != null) 'max_runs_per_day': maxRunsPerDay,
+      if (configJson != null) 'config_json': configJson,
+    };
+    if (body.isEmpty) return null;
+    final r = await _http.patch(
+      Uri.parse('$_base/server/pipelines/$id'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    if (r.statusCode != 200) return null;
     return jsonDecode(r.body) as Map<String, dynamic>?;
   }
 
@@ -239,7 +352,7 @@ class OpenCodeClient {
   }
 
   // File
-  Future<List<String>?> fileFind(
+  Future<({List<String>? paths, String? error})> fileFind(
     String directory, {
     String? workspace,
     required String query,
@@ -252,12 +365,23 @@ class OpenCodeClient {
     if (limit != null) q['limit'] = limit.toString();
     final uri = Uri.parse('$_base/find/file').replace(queryParameters: q);
     final r = await _http.get(uri, headers: _headers);
-    if (r.statusCode != 200) return null;
-    final list = jsonDecode(r.body) as List<dynamic>?;
-    return list?.map((e) => e as String).toList();
+    if (r.statusCode != 200) return (paths: null, error: 'HTTP ${r.statusCode}');
+    final t = r.body.trimLeft();
+    if (!t.startsWith('[')) return (paths: null, error: _hintNonJson(r.body));
+    try {
+      final v = jsonDecode(r.body);
+      if (v is! List) return (paths: null, error: 'Expected JSON array');
+      return (
+        paths: v.map((e) => e.toString()).toList(),
+        error: null,
+      );
+    } catch (_) {
+      return (paths: null, error: 'Invalid JSON');
+    }
   }
 
-  Future<List<FileNode>?> fileList(
+  /// [nodes] null means failure; see [error].
+  Future<({List<FileNode>? nodes, String? error})> fileList(
     String directory, {
     String? workspace,
     required String path,
@@ -266,12 +390,25 @@ class OpenCodeClient {
     q['path'] = path;
     final uri = Uri.parse('$_base/file').replace(queryParameters: q);
     final r = await _http.get(uri, headers: _headers);
-    if (r.statusCode != 200) return null;
-    final list = jsonDecode(r.body) as List<dynamic>?;
-    return list?.map((e) => FileNode.fromJson(e as Map<String, dynamic>)).toList();
+    if (r.statusCode != 200) return (nodes: null, error: 'HTTP ${r.statusCode}');
+    final t = r.body.trimLeft();
+    if (!t.startsWith('[')) return (nodes: null, error: _hintNonJson(r.body));
+    try {
+      final v = jsonDecode(r.body);
+      if (v is! List) return (nodes: null, error: 'Expected JSON array');
+      final nodes = <FileNode>[];
+      for (final e in v) {
+        if (e is! Map) return (nodes: null, error: 'Invalid file entry');
+        nodes.add(FileNode.fromJson(Map<String, dynamic>.from(e)));
+      }
+      return (nodes: nodes, error: null);
+    } catch (_) {
+      return (nodes: null, error: 'Invalid JSON');
+    }
   }
 
-  Future<FileContent?> fileRead(
+  /// [content] null with [error] set means failure.
+  Future<({FileContent? content, String? error})> fileRead(
     String directory, {
     String? workspace,
     required String path,
@@ -280,8 +417,16 @@ class OpenCodeClient {
     q['path'] = path;
     final uri = Uri.parse('$_base/file/content').replace(queryParameters: q);
     final r = await _http.get(uri, headers: _headers);
-    if (r.statusCode != 200) return null;
-    return FileContent.fromJson(jsonDecode(r.body) as Map<String, dynamic>);
+    if (r.statusCode != 200) return (content: null, error: 'HTTP ${r.statusCode}');
+    final t = r.body.trimLeft();
+    if (!t.startsWith('{')) return (content: null, error: _hintNonJson(r.body));
+    try {
+      final m = jsonDecode(r.body);
+      if (m is! Map) return (content: null, error: 'Expected JSON object');
+      return (content: FileContent.fromJson(Map<String, dynamic>.from(m)), error: null);
+    } catch (_) {
+      return (content: null, error: 'Invalid JSON');
+    }
   }
 
   Future<List<FileStatusEntry>?> fileStatus(String directory, {String? workspace}) async {
@@ -297,6 +442,85 @@ class OpenCodeClient {
     final uri = Uri.parse('$_base/session/$sessionID/diff').replace(queryParameters: _dirQuery(directory, workspace));
     final r = await _http.get(uri, headers: _headers);
     if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  // Permission / question (agent prompts)
+  Future<List<Map<String, dynamic>>?> permissionList(String directory, {String? workspace}) async {
+    final uri = Uri.parse('$_base/permission').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<bool> permissionReply(String directory, String requestID, {required String reply, String? message, String? workspace}) async {
+    final body = <String, dynamic>{'reply': reply};
+    if (message != null) body['message'] = message;
+    final uri = Uri.parse('$_base/permission/$requestID/reply').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.post(uri, headers: _headers, body: jsonEncode(body));
+    return r.statusCode == 200;
+  }
+
+  Future<List<Map<String, dynamic>>?> questionList(String directory, {String? workspace}) async {
+    final uri = Uri.parse('$_base/question').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<bool> questionReply(String directory, String requestID, List<List<String>> answers, {String? workspace}) async {
+    final uri = Uri.parse('$_base/question/$requestID/reply').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode({'answers': answers}),
+    );
+    return r.statusCode == 200;
+  }
+
+  Future<bool> questionReject(String directory, String requestID, {String? workspace}) async {
+    final uri = Uri.parse('$_base/question/$requestID/reject').replace(queryParameters: _dirQuery(directory, workspace));
+    final r = await _http.post(uri, headers: _headers);
+    return r.statusCode == 200;
+  }
+
+  Future<Map<String, dynamic>?> serverDashboard({int days = 30}) async {
+    final uri = Uri.parse('$_base/server/dashboard').replace(queryParameters: {'days': '$days'});
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<Map<String, dynamic>?> serverMemoryRetrieve(String q, {int limit = 5}) async {
+    final uri = Uri.parse('$_base/server/memory/retrieve').replace(queryParameters: {'q': q, 'limit': '$limit'});
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<List<Map<String, dynamic>>?> serverDiscoveryList({String? status, int limit = 50, int offset = 0}) async {
+    final q = <String, String>{'limit': '$limit', 'offset': '$offset'};
+    if (status != null) q['status'] = status;
+    final uri = Uri.parse('$_base/server/discovery').replace(queryParameters: q);
+    final r = await _http.get(uri, headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> serverDiscoveryEnqueue(String ideaText, {String? sessionId, bool triggerPipeline = false}) async {
+    final r = await _http.post(
+      Uri.parse('$_base/server/discovery'),
+      headers: _headers,
+      body: jsonEncode({
+        'idea_text': ideaText,
+        if (sessionId != null) 'session_id': sessionId,
+        'trigger_pipeline': triggerPipeline,
+      }),
+    );
+    if (r.statusCode != 201) return null;
     return jsonDecode(r.body) as Map<String, dynamic>?;
   }
 }

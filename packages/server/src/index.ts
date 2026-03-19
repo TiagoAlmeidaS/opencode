@@ -9,6 +9,7 @@ import { createScheduler } from "./scheduler"
 import { createQueueProcessor } from "./queue"
 import { ServerRoutes } from "./routes"
 import { runJob, type RunJobExtra } from "./runner"
+import { countPipelineJobsToday, dailyLimitBlocks } from "./pipeline-daily-limit"
 import { daemonPipelines } from "./schema"
 import { seedDefaultPipelines } from "./seed-pipelines"
 import "./pipelines"
@@ -71,6 +72,17 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
   const runPipelineNow = async (pipelineId: string) => {
     const [row] = await db.select().from(daemonPipelines).where(eq(daemonPipelines.id, pipelineId))
     if (!row) return { jobId: "", ok: false, error: "Not found" }
+    const cap = row.maxRunsPerDay ?? 0
+    if (cap > 0) {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const n = await countPipelineJobsToday(db, pipelineId, nowSec)
+      if (dailyLimitBlocks(cap, n))
+        return {
+          jobId: "",
+          ok: false,
+          error: `Daily run limit reached (${cap}/day UTC). Try tomorrow or increase max_runs_per_day.`,
+        }
+    }
     return runJob(db, pipelineId, row, runJobExtra)
   }
   const runPipelineByStrategy = async (strategy: string) => {
@@ -80,6 +92,17 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
       .where(and(eq(daemonPipelines.strategy, strategy), eq(daemonPipelines.enabled, 1)))
       .limit(1)
     if (!row) return { jobId: "", ok: false, error: `No enabled pipeline with strategy: ${strategy}` }
+    const cap = row.maxRunsPerDay ?? 0
+    if (cap > 0) {
+      const nowSec = Math.floor(Date.now() / 1000)
+      const n = await countPipelineJobsToday(db, row.id, nowSec)
+      if (dailyLimitBlocks(cap, n))
+        return {
+          jobId: "",
+          ok: false,
+          error: `Daily run limit reached (${cap}/day UTC) for this pipeline.`,
+        }
+    }
     return runJob(db, row.id, row, runJobExtra)
   }
 

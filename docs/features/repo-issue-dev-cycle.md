@@ -17,6 +17,8 @@ Ciclo fechado **Spec → testes TDD → implementação (OpenCode) → docs → 
 
 ## Pipeline `repo-issue-worker`
 
+Limite diário de **disparos** da pipeline (cron + Run manual): ver [pipeline-max-runs-per-day](pipeline-max-runs-per-day.md) (`max_runs_per_day` na pipeline, não no `config_json`).
+
 `config_json`:
 
 - `repo_full_name` (obrigatório): `owner/repo`

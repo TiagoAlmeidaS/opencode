@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme/button_style.dart';
 import '../theme/oc2_colors.dart';
 import '../widgets/opencode_button.dart';
+import '../widgets/session_pending_dialogs.dart';
 import 'files_screen.dart';
 import 'terminal_screen.dart';
 
@@ -26,16 +29,61 @@ class _SessionScreenState extends State<SessionScreen> with SingleTickerProvider
   List<Message> _messages = [];
   bool _loading = true;
   bool _sending = false;
+  StreamSubscription<({String dir, String sid})>? _sub;
+  StreamSubscription<String>? _att;
+  Timer? _poll;
+  bool _pendingBusy = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadMessages();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _wire());
+  }
+
+  void _wire() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    _sub = state.chatReload.listen((k) {
+      if (k.dir == widget.directory && k.sid == widget.sessionID && mounted) {
+        _loadMessages();
+      }
+    });
+    _att = state.sessionAttention.listen((sid) {
+      if (sid == widget.sessionID && mounted) _pending();
+    });
+    _poll = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted) _pending();
+    });
+  }
+
+  Future<void> _pending() async {
+    if (_pendingBusy || !mounted) return;
+    final state = context.read<AppState>();
+    final c = state.client;
+    if (c == null) return;
+    _pendingBusy = true;
+    try {
+      await SessionPendingDialogs.pollAndShow(
+        context,
+        client: c,
+        directory: widget.directory,
+        sessionID: widget.sessionID,
+        onAfter: () {
+          if (mounted) _loadMessages();
+        },
+      );
+    } finally {
+      _pendingBusy = false;
+    }
   }
 
   @override
   void dispose() {
+    _sub?.cancel();
+    _att?.cancel();
+    _poll?.cancel();
     _tabController.dispose();
     _promptController.dispose();
     _scrollController.dispose();
@@ -81,6 +129,7 @@ class _SessionScreenState extends State<SessionScreen> with SingleTickerProvider
 
     setState(() => _sending = false);
     await _loadMessages();
+    await _pending();
   }
 
   @override

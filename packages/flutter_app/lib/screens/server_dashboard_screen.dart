@@ -18,11 +18,37 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   List<Map<String, dynamic>>? _jobs;
   List<Map<String, dynamic>>? _goals;
   List<Map<String, dynamic>>? _proposals;
+  Map<String, dynamic>? _metrics;
+  List<Map<String, dynamic>>? _discovery;
+  List<Map<String, dynamic>>? _chunks;
+  final _memQ = TextEditingController();
+  final _idea = TextEditingController();
+  final _repoIssueName = TextEditingController();
+  final _repoFull = TextEditingController();
+  final _repoLabel = TextEditingController(text: 'agent');
+  final _repoCron = TextEditingController(text: '0 8,14,20 * * *');
+  final _repoMaxDay = TextEditingController(text: '3');
+  final _repoMaxIssues = TextEditingController(text: '3');
   bool _loading = true;
+  bool _memBusy = false;
+  bool _discBusy = false;
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _memQ.dispose();
+    _idea.dispose();
+    _repoIssueName.dispose();
+    _repoFull.dispose();
+    _repoLabel.dispose();
+    _repoCron.dispose();
+    _repoMaxDay.dispose();
+    _repoMaxIssues.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -34,6 +60,8 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     final jobs = await client.serverJobs();
     final goals = await client.serverGoals();
     final proposals = await client.serverProposals();
+    final metrics = await client.serverDashboard();
+    final disc = await client.serverDiscoveryList(limit: 30);
     if (!mounted) return;
 
     setState(() {
@@ -41,7 +69,43 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
       _jobs = jobs;
       _goals = goals;
       _proposals = proposals;
+      _metrics = metrics;
+      _discovery = disc;
       _loading = false;
+    });
+  }
+
+  Future<void> _searchMem() async {
+    final q = _memQ.text.trim();
+    if (q.isEmpty) return;
+    final client = context.read<AppState>().client;
+    if (client == null) return;
+    setState(() => _memBusy = true);
+    final raw = await client.serverMemoryRetrieve(q, limit: 8);
+    if (!mounted) return;
+    final list = raw?['chunks'];
+    final out = list is List
+        ? list.map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{}).toList()
+        : <Map<String, dynamic>>[];
+    setState(() {
+      _memBusy = false;
+      _chunks = out;
+    });
+  }
+
+  Future<void> _enqueueDiscovery() async {
+    final t = _idea.text.trim();
+    if (t.isEmpty) return;
+    final client = context.read<AppState>().client;
+    if (client == null) return;
+    setState(() => _discBusy = true);
+    await client.serverDiscoveryEnqueue(t, triggerPipeline: false);
+    _idea.clear();
+    if (!mounted) return;
+    final disc = await client.serverDiscoveryList(limit: 30);
+    setState(() {
+      _discBusy = false;
+      _discovery = disc;
     });
   }
 
@@ -69,7 +133,73 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     final client = state.client;
     if (client == null) return;
 
-    await client.serverPipelineRun(id);
+    final r = await client.serverPipelineRun(id);
+    if (!mounted) return;
+    final msg = r == null
+        ? 'Run failed (HTTP)'
+        : (r['ok'] == true)
+            ? 'Started job ${r['jobId'] ?? ''}'
+            : (r['error']?.toString() ?? 'Run failed');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    await _load();
+  }
+
+  Future<void> _createRepoIssuePipeline() async {
+    final name = _repoIssueName.text.trim();
+    final repo = _repoFull.text.trim();
+    if (name.isEmpty || repo.isEmpty) return;
+    final client = context.read<AppState>().client;
+    if (client == null) return;
+    final maxDay = int.tryParse(_repoMaxDay.text.trim()) ?? 0;
+    final maxIssues = int.tryParse(_repoMaxIssues.text.trim()) ?? 3;
+    final row = await client.serverPipelineCreate(
+      name: name,
+      strategy: 'repo-issue-worker',
+      scheduleCron: _repoCron.text.trim().isEmpty ? '0 8 * * *' : _repoCron.text.trim(),
+      maxRunsPerDay: maxDay.clamp(0, 500),
+      configJson: {
+        'repo_full_name': repo,
+        'label': _repoLabel.text.trim().isEmpty ? 'agent' : _repoLabel.text.trim(),
+        'max_issues_per_run': maxIssues.clamp(1, 30),
+      },
+    );
+    if (!mounted) return;
+    if (row != null) {
+      _repoIssueName.clear();
+      _repoFull.clear();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pipeline created')));
+      await _load();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Create failed')));
+    }
+  }
+
+  Future<void> _editPipelineDailyCap(String id, int current) async {
+    final ctrl = TextEditingController(text: current > 0 ? '$current' : '0');
+    if (!mounted) return;
+    final n = await showDialog<int?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Max runs per day (UTC)'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(hintText: '0 = unlimited'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text.trim()) ?? 0),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (n == null || !mounted) return;
+    final client = context.read<AppState>().client;
+    if (client == null) return;
+    await client.serverPipelinePatch(id, maxRunsPerDay: n.clamp(0, 500));
     if (!mounted) return;
     await _load();
   }
@@ -136,6 +266,165 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
             ),
             const SizedBox(height: 16),
           ],
+          if (_metrics != null) ...[
+            Text('Dashboard (period)', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            _buildCard(
+              context,
+              '',
+              [
+                _row('Revenue USD', _dashRevenue(_metrics!)),
+                _row('Health', _metrics!['health']?.toString() ?? '-'),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+          Text('Memory (RAG)', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _memQ,
+                  decoration: const InputDecoration(
+                    hintText: 'Search query',
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (_) => _searchMem(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OpenCodeButton(
+                onPressed: _memBusy ? null : _searchMem,
+                variant: OpenCodeButtonVariant.primary,
+                icon: Icons.search,
+                child: const Text('Search'),
+              ),
+            ],
+          ),
+          if (_chunks != null && _chunks!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ..._chunks!.map(
+              (c) {
+                final tx = c['text']?.toString() ?? '';
+                final short = tx.length > 200 ? '${tx.substring(0, 200)}…' : tx;
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    title: Text(short, style: TextStyle(fontSize: 12, color: palette.textWeak)),
+                    subtitle: Text('score: ${c['score']}  ${c['source'] ?? ''}', style: const TextStyle(fontSize: 11)),
+                  ),
+                );
+              },
+            ),
+          ],
+          const SizedBox(height: 24),
+          Text('Discovery', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _idea,
+                  decoration: const InputDecoration(
+                    hintText: 'Idea text',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OpenCodeButton(
+                onPressed: _discBusy ? null : _enqueueDiscovery,
+                variant: OpenCodeButtonVariant.primary,
+                child: const Text('Enqueue'),
+              ),
+            ],
+          ),
+          if (_discovery != null && _discovery!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildCard(
+              context,
+              '',
+              _discovery!.take(20).map((d) {
+                final idea = d['idea_text']?.toString() ?? '-';
+                final head = idea.length > 48 ? '${idea.substring(0, 48)}…' : idea;
+                return _row(head, d['status'] as String? ?? '-');
+              }).toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+          Text('Repo issue worker (new)', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            'Choose repo, label (e.g. agent), cron windows, and max runs per UTC day.',
+            style: TextStyle(fontSize: 12, color: palette.textWeak),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              SizedBox(
+                width: 160,
+                child: TextField(
+                  controller: _repoIssueName,
+                  decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder()),
+                ),
+              ),
+              SizedBox(
+                width: 200,
+                child: TextField(
+                  controller: _repoFull,
+                  decoration: const InputDecoration(
+                    labelText: 'owner/repo',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: _repoLabel,
+                  decoration: const InputDecoration(labelText: 'Label', border: OutlineInputBorder()),
+                ),
+              ),
+              SizedBox(
+                width: 140,
+                child: TextField(
+                  controller: _repoCron,
+                  decoration: const InputDecoration(labelText: 'Cron', border: OutlineInputBorder()),
+                ),
+              ),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: _repoMaxDay,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Max/day UTC',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 100,
+                child: TextField(
+                  controller: _repoMaxIssues,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Issues/run',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              OpenCodeButton(
+                onPressed: _createRepoIssuePipeline,
+                variant: OpenCodeButtonVariant.primary,
+                child: const Text('Create'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
           if (_pipelines != null && _pipelines!.isNotEmpty) ...[
             Text('Pipelines', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -177,6 +466,8 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     final name = p['name'] as String? ?? '-';
     final strategy = p['strategy'] as String? ?? '-';
     final enabled = (p['enabled'] as int?) == 1;
+    final maxDay = p['maxRunsPerDay'] ?? p['max_runs_per_day'];
+    final cap = maxDay is int ? maxDay : int.tryParse('$maxDay') ?? 0;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
@@ -184,35 +475,41 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
+                SizedBox(
+                  width: 200,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(name, style: Theme.of(context).textTheme.titleSmall),
                       Text(strategy, style: TextStyle(fontSize: 12, color: palette.textWeak)),
+                      if (cap > 0)
+                        Text('Max $cap runs/day (UTC)', style: TextStyle(fontSize: 11, color: palette.textWeak)),
                     ],
                   ),
                 ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    OpenCodeButton(
-                      onPressed: () => _togglePipeline(id, !enabled),
-                      variant: OpenCodeButtonVariant.secondary,
-                      size: OpenCodeButtonSize.small,
-                      child: Text(enabled ? 'Disable' : 'Enable'),
-                    ),
-                    const SizedBox(width: 8),
-                    OpenCodeButton(
-                      onPressed: () => _runPipeline(id),
-                      variant: OpenCodeButtonVariant.primary,
-                      size: OpenCodeButtonSize.small,
-                      icon: Icons.play_arrow,
-                      child: const Text('Run'),
-                    ),
-                  ],
+                OpenCodeButton(
+                  onPressed: () => _editPipelineDailyCap(id, cap),
+                  variant: OpenCodeButtonVariant.secondary,
+                  size: OpenCodeButtonSize.small,
+                  child: const Text('Daily cap'),
+                ),
+                OpenCodeButton(
+                  onPressed: () => _togglePipeline(id, !enabled),
+                  variant: OpenCodeButtonVariant.secondary,
+                  size: OpenCodeButtonSize.small,
+                  child: Text(enabled ? 'Disable' : 'Enable'),
+                ),
+                OpenCodeButton(
+                  onPressed: () => _runPipeline(id),
+                  variant: OpenCodeButtonVariant.primary,
+                  size: OpenCodeButtonSize.small,
+                  icon: Icons.play_arrow,
+                  child: const Text('Run'),
                 ),
               ],
             ),
@@ -230,19 +527,20 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(child: Text(id.substring(0, 8), style: const TextStyle(fontFamily: 'monospace'))),
+            Text(id.substring(0, id.length >= 8 ? 8 : id.length), style: const TextStyle(fontFamily: 'monospace')),
             Text(status, style: TextStyle(color: palette.textWeak)),
             if (status == 'pending') ...[
-              const SizedBox(width: 8),
               OpenCodeButton(
                 onPressed: () => _proposalAction(id, true),
                 variant: OpenCodeButtonVariant.primary,
                 size: OpenCodeButtonSize.small,
                 child: const Text('Approve'),
               ),
-              const SizedBox(width: 8),
               OpenCodeButton(
                 onPressed: () => _proposalAction(id, false),
                 variant: OpenCodeButtonVariant.secondary,
@@ -281,4 +579,12 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
           children: [Text(a), Text(b)],
         ),
       );
+
+  static String _dashRevenue(Map<String, dynamic> m) {
+    final met = m['metrics'];
+    if (met is! Map) return '-';
+    final rev = met['revenue'];
+    if (rev is! Map) return '-';
+    return rev['total_usd']?.toString() ?? '-';
+  }
 }

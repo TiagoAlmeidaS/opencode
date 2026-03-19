@@ -394,6 +394,7 @@ export function getDb(dbPath: string) {
     "ALTER TABLE opp_telegram_reports ADD COLUMN queue_item_id TEXT",
     "ALTER TABLE daemon_queue ADD COLUMN related_opportunity_id TEXT",
     "CREATE INDEX IF NOT EXISTS idx_queue_opp_id ON daemon_queue(related_opportunity_id, activity_type, status)",
+    "ALTER TABLE daemon_pipelines ADD COLUMN max_runs_per_day INTEGER NOT NULL DEFAULT 0",
   ]
   for (const stmt of alterMigrations) {
     try {

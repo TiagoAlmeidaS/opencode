@@ -31,6 +31,7 @@ import { implementCodeActivity } from "./implement-code"
 import { generateDocsActivity } from "./generate-docs"
 import { openPrActivity } from "./open-pr"
 import { notifyPrApprovalActivity } from "./notify-pr-approval"
+import { discoverNichesActivity } from "./discover-niches"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -64,3 +65,4 @@ registerActivity(implementCodeActivity)
 registerActivity(generateDocsActivity)
 registerActivity(openPrActivity)
 registerActivity(notifyPrApprovalActivity)
+registerActivity(discoverNichesActivity)

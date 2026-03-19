@@ -14,6 +14,8 @@ export const daemonPipelines = sqliteTable("daemon_pipelines", {
   enabled: integer("enabled").notNull().default(1),
   maxRetries: integer("max_retries").notNull().default(3),
   retryDelaySec: integer("retry_delay_sec").notNull().default(300),
+  /** 0 = sem limite; >0 = máximo de jobs criados por dia UTC (cron + Run manual). */
+  maxRunsPerDay: integer("max_runs_per_day").notNull().default(0),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })

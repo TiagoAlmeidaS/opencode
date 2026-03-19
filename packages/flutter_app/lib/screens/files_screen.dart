@@ -19,6 +19,10 @@ class _FilesScreenState extends State<FilesScreen> {
   List<FileNode>? _nodes;
   List<String>? _searchResults;
   String? _content;
+  String? _listError;
+  String? _searchError;
+  String? _readError;
+  String _lastSearchQuery = '';
   String _currentPath = '';
   bool _loading = false;
   bool _searchMode = false;
@@ -38,13 +42,15 @@ class _FilesScreenState extends State<FilesScreen> {
       _loading = true;
       _currentPath = path;
       _searchMode = false;
+      _listError = null;
     });
 
-    final list = await client.fileList(widget.directory, path: path);
+    final out = await client.fileList(widget.directory, path: path);
     if (!mounted) return;
 
     setState(() {
-      _nodes = list;
+      _listError = out.error;
+      _nodes = out.error != null ? null : out.nodes;
       _loading = false;
     });
   }
@@ -54,9 +60,11 @@ class _FilesScreenState extends State<FilesScreen> {
       setState(() {
         _searchResults = null;
         _searchMode = false;
+        _searchError = null;
       });
       return;
     }
+    _lastSearchQuery = query;
 
     final state = context.read<AppState>();
     final client = state.client;
@@ -65,13 +73,15 @@ class _FilesScreenState extends State<FilesScreen> {
     setState(() {
       _loading = true;
       _searchMode = true;
+      _searchError = null;
     });
 
-    final list = await client.fileFind(widget.directory, query: query, limit: 50);
+    final out = await client.fileFind(widget.directory, query: query, limit: 50);
     if (!mounted) return;
 
     setState(() {
-      _searchResults = list;
+      _searchError = out.error;
+      _searchResults = out.error != null ? null : (out.paths ?? []);
       _loading = false;
     });
   }
@@ -81,39 +91,62 @@ class _FilesScreenState extends State<FilesScreen> {
     final client = state.client;
     if (client == null) return;
 
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _readError = null;
+    });
 
-    final fc = await client.fileRead(widget.directory, path: path);
+    final out = await client.fileRead(widget.directory, path: path);
     if (!mounted) return;
 
     setState(() {
-      _content = fc?.content;
+      _readError = out.error;
+      _content = out.error != null ? null : out.content?.content;
       _loading = false;
     });
   }
 
+  static const _breakpoint = 600.0;
+
   @override
   Widget build(BuildContext context) {
     final palette = Theme.of(context).brightness == Brightness.dark ? Oc2Colors.dark : Oc2Colors.light;
+    final width = MediaQuery.of(context).size.width;
+    final narrow = width < _breakpoint;
 
     return Column(
       children: [
         _buildToolbar(palette),
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                width: 260,
-                child: _buildList(palette),
-              ),
-              Container(
-                width: 1,
-                color: palette.borderWeak,
-              ),
-              Expanded(child: _buildContent(palette)),
-            ],
-          ),
+          child: narrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Flexible(
+                      flex: 1,
+                      child: _buildList(palette),
+                    ),
+                    Container(height: 1, color: palette.borderWeak),
+                    Flexible(
+                      flex: 2,
+                      child: _buildContent(palette),
+                    ),
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: 260,
+                      child: _buildList(palette),
+                    ),
+                    Container(
+                      width: 1,
+                      color: palette.borderWeak,
+                    ),
+                    Expanded(child: _buildContent(palette)),
+                  ],
+                ),
         ),
       ],
     );
@@ -154,6 +187,28 @@ class _FilesScreenState extends State<FilesScreen> {
     );
   }
 
+  Widget _buildApiError(Oc2Palette palette, String message, VoidCallback onDismiss) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off, size: 48, color: palette.surfaceCriticalStrong),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: palette.textBase, fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            TextButton(onPressed: onDismiss, child: const Text('Retry')),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _parentPath(String p) {
     if (p.isEmpty || p == '.') return '.';
     final parts = p.split(RegExp(r'[/\\]'));
@@ -163,8 +218,16 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 
   Widget _buildList(Oc2Palette palette) {
-    if (_loading && _nodes == null && _searchResults == null) {
+    if (_loading && _nodes == null && _searchResults == null && _listError == null) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_listError != null && !_searchMode) {
+      return _buildApiError(palette, _listError!, () => _loadList(_currentPath));
+    }
+
+    if (_searchMode && _searchError != null) {
+      return _buildApiError(palette, _searchError!, () => _search(_lastSearchQuery));
     }
 
     if (_searchMode && _searchResults != null) {
@@ -224,6 +287,10 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 
   Widget _buildContent(Oc2Palette palette) {
+    if (_readError != null) {
+      return _buildApiError(palette, _readError!, () => setState(() => _readError = null));
+    }
+
     if (_loading && _content == null) {
       return const Center(child: CircularProgressIndicator());
     }

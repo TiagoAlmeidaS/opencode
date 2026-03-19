@@ -68,7 +68,12 @@ void main() {
       final name = faker.company.companyName();
       final sandboxes = [word(), word()];
 
-      final j = {'id': id, 'worktree': worktree, 'name': name, 'sandboxes': sandboxes};
+      final j = {
+        'id': id,
+        'worktree': worktree,
+        'name': name,
+        'sandboxes': sandboxes,
+      };
       final p = Project.fromJson(j);
       expect(p.id, id);
       expect(p.worktree, worktree);
@@ -90,7 +95,11 @@ void main() {
         'directory': directory,
         'title': title,
         'parentID': parentID,
-        'time': {'created': created, 'updated': created + 100, 'archived': null},
+        'time': {
+          'created': created,
+          'updated': created + 100,
+          'archived': null,
+        },
       };
 
       final s = Session.fromJson(j);
@@ -121,6 +130,17 @@ void main() {
       expect(m.role, role);
       expect(m.parts?.length, 1);
       expect(m.parts?.first.text, text);
+    });
+
+    test('fromJson accepts prebuilt Part list (session screen path)', () {
+      final id = uuid();
+      final p = Part(id: uuid(), type: 'text', text: 'hi');
+      final m = Message.fromJson({
+        'id': id,
+        'role': 'assistant',
+        'parts': [p],
+      });
+      expect(m.parts?.single.text, 'hi');
     });
   });
 
@@ -160,7 +180,13 @@ void main() {
       final type = pick(['file', 'directory']);
       final ignored = faker.datatype.boolean();
 
-      final j = {'name': name, 'path': path, 'absolute': absolute, 'type': type, 'ignored': ignored};
+      final j = {
+        'name': name,
+        'path': path,
+        'absolute': absolute,
+        'type': type,
+        'ignored': ignored,
+      };
       final n = FileNode.fromJson(j);
       expect(n.name, name);
       expect(n.path, path);
@@ -190,7 +216,12 @@ void main() {
       final added = num(0, 10);
       final removed = num(0, 5);
 
-      final j = {'path': path, 'status': status, 'added': added, 'removed': removed};
+      final j = {
+        'path': path,
+        'status': status,
+        'added': added,
+        'removed': removed,
+      };
       final e = FileStatusEntry.fromJson(j);
       expect(e.path, path);
       expect(e.status, status);
@@ -219,5 +250,32 @@ void main() {
       expect(s.jobsRunning, running);
       expect(s.proposalsPending, pending);
     });
+  });
+
+  group('LlmModelChoice', () {
+    test(
+      'fromProvidersBody builds provider/model ids with faker-shaped payload',
+      () {
+        final pid = faker.lorem.word();
+        final mid = word();
+        final name = faker.company.companyName();
+        final body = {
+          'providers': [
+            {
+              'id': pid,
+              'models': {
+                mid: {'name': name},
+              },
+            },
+          ],
+          'default': {pid: mid},
+        };
+        final list = LlmModelChoice.fromProvidersBody(body);
+        expect(list.length, 1);
+        expect(list.first.id, '$pid/$mid');
+        expect(list.first.label, contains(name));
+        expect(list.first.label, contains(pid));
+      },
+    );
   });
 }

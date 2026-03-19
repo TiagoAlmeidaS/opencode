@@ -101,11 +101,12 @@ class Message {
 
   factory Message.fromJson(Map<String, dynamic> j) {
     final info = j['info'] as Map<String, dynamic>? ?? j;
+    final raw = j['parts'] as List<dynamic>? ?? info['parts'] as List<dynamic>?;
     return Message(
       id: info['id'] as String? ?? '',
       role: info['role'] as String?,
-      parts: (j['parts'] as List<dynamic>? ?? info['parts'] as List<dynamic>?)
-          ?.map((e) => Part.fromJson(Map<String, dynamic>.from(e as Map)))
+      parts: raw
+          ?.map((e) => e is Part ? e : Part.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList(),
     );
   }
@@ -212,4 +213,34 @@ class ServerStatus {
   final int? pipelinesEnabled;
   final int? jobsRunning;
   final int? proposalsPending;
+}
+
+/// One selectable model from [GET /config/providers] (`id` = `provider/model`).
+class LlmModelChoice {
+  LlmModelChoice({required this.id, required this.label});
+
+  final String id;
+  final String label;
+
+  static List<LlmModelChoice> fromProvidersBody(Map<String, dynamic> body) {
+    final out = <LlmModelChoice>[];
+    final list = body['providers'];
+    if (list is! List<dynamic>) return out;
+    for (final item in list) {
+      if (item is! Map) continue;
+      final pid = item['id']?.toString();
+      if (pid == null || pid.isEmpty) continue;
+      final models = item['models'];
+      if (models is! Map) continue;
+      for (final e in models.entries) {
+        final mid = e.key.toString();
+        var label = mid;
+        final v = e.value;
+        if (v is Map && v['name'] != null) label = v['name'].toString();
+        out.add(LlmModelChoice(id: '$pid/$mid', label: '$label · $pid'));
+      }
+    }
+    out.sort((a, b) => a.label.compareTo(b.label));
+    return out;
+  }
 }

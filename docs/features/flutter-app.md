@@ -15,13 +15,14 @@ Escopo mínimo para primeira versão:
 | Área | Funcionalidade | Prioridade |
 |-----|----------------|------------|
 | **Servidores** | Lista, adicionar, selecionar, configurar baseUrl + credenciais | P0 |
-| **Projetos** | Lista de projetos abertos, abrir novo, navegar | P0 |
+| **Projetos** | Lista, abrir novo; GitHub PAT + listar repos + `POST /project/add-by-url` com token | P0 |
 | **Sessões** | Lista de sessões por projeto, criar nova, navegar | P0 |
 | **Chat** | Timeline de mensagens, prompt input, envio de prompt | P0 |
 | **Sidebar** | Rail 64px (ícones projetos + ações), painel colapsável 244px | P0 |
 | Terminal | WebSocket PTY | P1 |
 | Ficheiros | Tabs, diff, busca | P1 |
-| Providers / OAuth | Configuração, fluxo OAuth | P1 |
+| Modelo LLM (global + projeto) | `LlmSettingsScreen`, sem OAuth no app | P0 |
+| Providers / OAuth | Chaves no servidor; OAuth no app | P1 |
 
 ### Telas MVP
 
@@ -40,6 +41,7 @@ Escopo mínimo para primeira versão:
 
 - **Base URL:** Configurável (ex.: `http://localhost:4096` ou URL pública).
 - **Auth:** Basic Auth quando `OPENCODE_SERVER_PASSWORD` ativo.
+- **GitHub:** No diálogo *Add repository*, PAT opcional: chamadas à API GitHub só no dispositivo para listar repos; ao confirmar *Add to OpenCode*, o URL e o token (se preenchido) vão em `POST /project/add-by-url`. Repositórios **públicos** podem ser adicionados só com URL (clone anónimo no servidor). **Privados** exigem PAT no app ou `GITHUB_TOKEN` no host do servidor.
 - **SSE:** `GET /global/event` para eventos em tempo real (chat, status).
 - **WebSocket:** `GET /pty/:id/connect` para terminal (fase 2).
 
@@ -47,26 +49,49 @@ Escopo mínimo para primeira versão:
 
 O app Flutter (`packages/flutter_app`) inclui:
 
-- **API client** (`lib/api/opencode_client.dart`): REST para path, project, session, pty, file, server
-  - Projetos: list, add-by-url
-  - Sessões: list, create, get, messages, prompt, abort, fork, diff
-  - Ficheiros: find, list, read, status
-  - Server: status, pipelines (enable/disable/run), jobs, goals, proposals (approve/reject)
-- **SSE** (`lib/services/sse_client.dart`): stream `/global/event` para eventos em tempo real
-- **WebSocket PTY** (`lib/services/pty_websocket.dart`): terminal integrado
-- **Telas**:
-  - `ConnectionScreen`: conexão a servidor, URL, password, servidores guardados
-  - `MainLayout`: rail 64px, painel lateral, dialog add project (add-by-url), chat + files + terminal em tabs
-  - `SessionScreen`: timeline de mensagens, prompt input, Abort/Fork, tab Files, tab Terminal
-  - `FilesScreen`: busca, listagem, visualização de conteúdo
-  - `ServerDashboardScreen`: status, pipelines (enable/disable/run), jobs, goals, proposals
+- **API client** (`lib/api/opencode_client.dart`): REST alinhado ao SDK JS v2 (`packages/sdk/js/src/v2/gen/sdk.gen.ts`) onde aplicável.
+- **SSE** (`lib/services/sse_client.dart`): `GET /global/event`; payload `{ directory, payload: { type, properties } }`.
+- **AppState** (`lib/state/app_state.dart`): `chatReload` (stream) recarrega mensagens na sessão ativa em eventos `message.*`, `session.status`, `session.idle`; debounce ~400ms. `sessionAttention` notifica sessão em `permission.asked` / `question.asked`. Lista de sessões em `session.created|updated|deleted` (correção do parsing do tipo aninhado).
+- **Permissões / perguntas** (`lib/widgets/session_pending_dialogs.dart`): `GET /permission`, `POST /permission/:id/reply`; `GET /question`, `POST /question/:id/reply`, `POST /question/:id/reject`. Polling a cada 3s na sessão + após envio de prompt + SSE.
+- **WebSocket PTY** (`lib/services/pty_websocket.dart`): terminal integrado.
+- **Telas**: `ConnectionScreen`, `MainLayout`, `SessionScreen` (chat + Files + Terminal), `FilesScreen`, `ServerDashboardScreen`, `LlmSettingsScreen` (modelo global via `PATCH /global/config`; modelo do projeto via `PATCH /config` + lista `GET /config/providers`). Chaves API/OAuth permanecem no host do servidor.
+
+### Matriz API principal (SDK vs client Flutter)
+
+| Família SDK | Coberto no client | UI |
+|-------------|-------------------|-----|
+| `/global/health`, `/path` | sim | Connection / Main |
+| `/project`, `/project/add-by-url` | sim | MainLayout |
+| `/session` CRUD, messages, prompt, abort, fork, diff | sim (diff só API) | Session |
+| `/pty` + WS connect | sim | Terminal tab |
+| `/find/file`, `/file`, `/file/content`, `/file/status` | sim | Files |
+| `/permission`, `/permission/:id/reply` | sim | Session (dialogs) |
+| `/question`, `/question/:id/reply`, `/question/:id/reject` | sim | Session (dialogs) |
+| `/global/config` GET/PATCH, `/config` GET/PATCH, `/config/providers` | sim (client) | LLM & provider (`LlmSettingsScreen`) |
+| OAuth, MCP, LSP, experimental… | não | — |
+| `/session/prompt_async`, share, summarize, revert, edição mensagens… | não | — |
+| `/find/symbol` | não | — |
+
+### Matriz API `/server/*` (daemon)
+
+| Rota doc | Client | UI dashboard |
+|----------|--------|----------------|
+| `/server/status` | sim | sim |
+| `/server/pipelines` (+ enable/disable/run) | sim | sim |
+| `/server/jobs`, goals, proposals | sim | sim |
+| `/server/dashboard` | sim | sim |
+| `/server/memory/retrieve` | sim | sim |
+| `/server/discovery` GET/POST | sim | sim |
+| logs, reports, learnings, repo-issue-jobs, queue… | não | não |
+
+**Fonte de verdade:** ampliar client consultando `sdk.gen.ts` ou OpenAPI em `{baseUrl}/doc`.
 
 ## Testes
 
 Testes de unidade em `packages/flutter_app/test/`:
 
 - **`api/models_test.dart`** — Modelos (PathInfo, HealthInfo, Project, Session, Message, Part, PtyInfo, FileNode, FileContent, FileStatusEntry, ServerStatus) com dados fake via `faker_dart`
-- **`api/opencode_client_test.dart`** — Cliente REST com `http.MockClient` e respostas fake
+- **`api/opencode_client_test.dart`** — Cliente REST (incl. permission, question, server dashboard/memory/discovery) com `http.MockClient` e respostas fake
 - **`state/app_state_test.dart`** — AppState (addServer, removeServer, setActive)
 - **`widget_test.dart`** — App e ConnectionScreen
 

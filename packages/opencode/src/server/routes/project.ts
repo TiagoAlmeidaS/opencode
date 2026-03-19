@@ -17,7 +17,7 @@ export const ProjectRoutes = lazy(() =>
       describeRoute({
         summary: "Add project by repository URL",
         description:
-          "Clone a GitHub repository and register it as a project. Requires GITHUB_TOKEN. Idempotent if the project already exists.",
+          "Clone a GitHub repository and register it as a project. Public repos clone without auth. Optional token (or GITHUB_TOKEN env) for private repos. Idempotent if the project already exists.",
         operationId: "project.addByUrl",
         requestBody: {
           content: {
@@ -28,6 +28,10 @@ export const ProjectRoutes = lazy(() =>
                 properties: {
                   url: { type: "string", format: "uri", description: "GitHub repository URL (e.g. https://github.com/owner/repo)" },
                   branch: { type: "string", description: "Branch to clone (default: default branch)" },
+                  token: {
+                    type: "string",
+                    description: "GitHub PAT for private clone; not persisted. Overrides GITHUB_TOKEN for this request.",
+                  },
                 },
               } as any,
             },
@@ -45,11 +49,11 @@ export const ProjectRoutes = lazy(() =>
           ...errors(400),
         },
       }),
-      validator("json", z.object({ url: z.string().url(), branch: z.string().optional() })),
+      validator("json", z.object({ url: z.string().url(), branch: z.string().optional(), token: z.string().optional() })),
       async (c) => {
         const body = c.req.valid("json")
         try {
-          const project = await addProjectByUrl({ url: body.url, branch: body.branch })
+          const project = await addProjectByUrl({ url: body.url, branch: body.branch, token: body.token })
           return c.json(project, 200)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)

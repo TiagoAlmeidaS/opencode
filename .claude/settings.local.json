@@ -41,7 +41,15 @@
       "Bash(bun run:*)",
       "Bash(find packages/ui/src -name *.tsx -o -name *.ts)",
       "Bash(bunx tsc:*)",
-      "Bash(find E:projectsiaopencodepackagesserversrcpipelines -type f -name *.ts)"
+      "Bash(find E:projectsiaopencodepackagesserversrcpipelines -type f -name *.ts)",
+      "Bash(find /e/projects/ia/opencode -maxdepth 2 -type f -name README* -o -name package.json -o -name tsconfig* -o -name .env*)",
+      "Bash(ls -d /e/projects/ia/opencode/packages/*/)",
+      "Bash(find /e/projects/ia/opencode/packages/server/src -name types* -o -name schema*)",
+      "Bash(find /e/projects/ia/opencode/packages/server/src -name routes* -o -name index.ts)",
+      "Bash(find /e/projects/ia/opencode/packages/server/src -name \"*.ts\" -exec grep -l \"write\\\\|modify.*file\\\\|fs\\\\.\\\\|exec\\\\|spawn\" {})",
+      "Bash(bun turbo:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node_modules/.bin/tsc --noEmit)"
     ]
   }
 }

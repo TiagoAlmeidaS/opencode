@@ -83,6 +83,7 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     strategy: z.string(),
     config_json: z.record(z.string(), z.unknown()).optional(),
     schedule_cron: z.string().optional(),
+    max_runs_per_day: z.number().int().min(0).max(500).optional(),
   })), async (c) => {
     const body = c.req.valid("json")
     const id = ulid()
@@ -96,6 +97,7 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       enabled: 1,
       maxRetries: 3,
       retryDelaySec: 300,
+      maxRunsPerDay: body.max_runs_per_day ?? 0,
       createdAt: now,
       updatedAt: now,
     })
@@ -112,6 +114,27 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     const [row] = await db.select().from(daemonPipelines).where(eq(daemonPipelines.id, id))
     if (!row) return c.json({ error: "Not found" }, 404)
     return c.json(row)
+  })
+
+  app.patch("/pipelines/:id", zValidator("json", z.object({
+    name: z.string().optional(),
+    schedule_cron: z.string().optional(),
+    max_runs_per_day: z.number().int().min(0).max(500).optional(),
+    config_json: z.record(z.string(), z.unknown()).optional(),
+  })), async (c) => {
+    const id = c.req.param("id")
+    const body = c.req.valid("json")
+    const [existing] = await db.select().from(daemonPipelines).where(eq(daemonPipelines.id, id))
+    if (!existing) return c.json({ error: "Not found" }, 404)
+    const now = Math.floor(Date.now() / 1000)
+    const patch: Partial<typeof existing> = { updatedAt: now }
+    if (body.name !== undefined) patch.name = body.name
+    if (body.schedule_cron !== undefined) patch.scheduleCron = body.schedule_cron
+    if (body.max_runs_per_day !== undefined) patch.maxRunsPerDay = body.max_runs_per_day
+    if (body.config_json !== undefined) patch.configJson = JSON.stringify(body.config_json)
+    await db.update(daemonPipelines).set(patch).where(eq(daemonPipelines.id, id))
+    const [row] = await db.select().from(daemonPipelines).where(eq(daemonPipelines.id, id))
+    return c.json(row ?? { id })
   })
 
   app.post("/pipelines/:id/enable", async (c) => {

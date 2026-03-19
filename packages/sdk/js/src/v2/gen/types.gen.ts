@@ -1042,6 +1042,27 @@ export type ServerConfig = {
    * Enable OpenCode Server (scheduler + pipelines) when running opencode serve
    */
   daemon?: boolean
+  /**
+   * Pull RAG + learnings from OpenCode Server into CLI session context
+   */
+  memory?: {
+    /**
+     * OpenCode Server API base including /server (e.g. http://127.0.0.1:4096/server). Same auth as serve: OPENCODE_SERVER_PASSWORD. Override with OPENCODE_SERVER_MEMORY_URL.
+     */
+    url?: string
+    /**
+     * Inject RAG chunks from the server per user message (default true when url is set)
+     */
+    rag?: boolean
+    /**
+     * Inject agent learnings from the server per user message (default true when url is set)
+     */
+    learnings?: boolean
+    /**
+     * HTTP timeout for server memory requests in ms (default 8000)
+     */
+    timeoutMs?: number
+  }
 }
 
 export type PermissionActionConfig = "ask" | "allow" | "deny"
@@ -2003,6 +2024,7 @@ export type ProjectAddByUrlData = {
   body?: {
     url: string
     branch?: string
+    token?: string
   }
   path?: never
   query?: {
@@ -4715,79 +4737,3 @@ export type TuiControlResponseResponses = {
 }
 
 export type TuiControlResponseResponse = TuiControlResponseResponses[keyof TuiControlResponseResponses]
-
-// ── Legacy types re-added for backwards compatibility with consumer code ──────
-
-export type Path = {
-  state: string
-  config: string
-  worktree: string
-  directory: string
-  home: string
-}
-
-export type VcsInfo = {
-  branch: string
-}
-
-export type Command = {
-  name: string
-  description?: string
-  agent?: string
-  model?: string
-  template: string
-  subtask?: boolean
-  source?: "command" | "mcp" | "skill"
-}
-
-export type Skill = {
-  name: string
-  description?: string
-}
-
-export type Agent = {
-  name: string
-  description?: string
-  mode: "subagent" | "primary" | "all"
-  builtIn: boolean
-  hidden?: boolean
-  native?: boolean
-  variant?: string
-  topP?: number
-  temperature?: number
-  color?: string
-  permission: {
-    edit: "ask" | "allow" | "deny"
-    bash: {
-      [key: string]: "ask" | "allow" | "deny"
-    }
-    webfetch?: "ask" | "allow" | "deny"
-    doom_loop?: "ask" | "allow" | "deny"
-    external_directory?: "ask" | "allow" | "deny"
-  }
-  model?: {
-    modelID: string
-    providerID: string
-  }
-  prompt?: string
-  tools: {
-    [key: string]: boolean
-  }
-  options: {
-    [key: string]: unknown
-  }
-  maxSteps?: number
-}
-
-export type LspStatus = {
-  id: string
-  name: string
-  root: string
-  status: "connected" | "error"
-}
-
-export type FormatterStatus = {
-  name: string
-  extensions: Array<string>
-  enabled: boolean
-}

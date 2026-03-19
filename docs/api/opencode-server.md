@@ -22,8 +22,9 @@ The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /pro
 | GET | `/server/status` | Summary: pipelines (total, enabled), jobs (running), proposals (pending), revenue (30d), goals (active) |
 | GET | `/server/pipelines` | List pipelines (optional query `?enabled=true`) |
 | GET | `/server/pipelines/strategies` | List registered pipeline strategy names |
-| POST | `/server/pipelines` | Create pipeline (body: `name`, `strategy`, `config_json?`, `schedule_cron?`) |
+| POST | `/server/pipelines` | Create pipeline (body: `name`, `strategy`, `config_json?`, `schedule_cron?`, `max_runs_per_day?`) |
 | GET | `/server/pipelines/:id` | Get pipeline by id |
+| PATCH | `/server/pipelines/:id` | Atualizar `name`, `schedule_cron`, `max_runs_per_day`, `config_json` (campos opcionais) |
 | POST | `/server/pipelines/:id/enable` | Enable pipeline |
 | POST | `/server/pipelines/:id/disable` | Disable pipeline |
 | GET | `/server/jobs` | List jobs (optional `?pipeline_id=`, `?status=`) |
@@ -41,7 +42,7 @@ The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /pro
 | GET | `/server/discovery` | List discovery reports (optional `?status=`, `?limit=`, `?offset=`) |
 | POST | `/server/discovery` | Enqueue a discovery idea (body: `idea_text`, `session_id?`, `trigger_pipeline?`). Creates a row with status `pending`. If `trigger_pipeline: true`, runs the first enabled pipeline with strategy `project_discovery` (when the daemon provides run callbacks). |
 | GET | `/server/discovery/:id` | Get a discovery report by id (idea, status, report_md, report_json, etc.). |
-| POST | `/server/pipelines/:id/run` | Run the given pipeline once (synchronous run). Returns `{ jobId, ok }` or 503 if run is not available (e.g. server started without daemon context). |
+| POST | `/server/pipelines/:id/run` | Run the given pipeline once. Returns `202` + `{ jobId, ok }`. **`max_runs_per_day`**: se > 0, conta jobs criados no **dia UTC**; ao atingir o limite, retorna **`400`** com mensagem (cron e Run manual contam). `0` = sem limite. |
 | GET | `/server/repo-issue-jobs` | Lista jobs do ciclo fechado (issues label / opportunities). Query: `?status=`, `?repo=`, `?limit=50`. |
 | GET | `/server/repo-issue-jobs/:id` | Detalhe (spec, testFiles, docs, prUrl, etc.). |
 
@@ -49,6 +50,7 @@ The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /pro
 
 - **Database:** SQLite file at `{dataDir}/opencode-server.db` by default. `dataDir` is the OpenCode data directory (e.g. XDG data).
 - **Tick interval:** Scheduler checks cron every 60 seconds. No config override in this version.
+- **`max_runs_per_day`:** Coluna em `daemon_pipelines` (default `0`). Limite de **execuções por dia civil UTC** (cada disparo cria um registro em `daemon_jobs`). O scheduler **não** inicia run se o limite foi atingido; `POST .../run` também respeita o limite.
 
 ## Pipeline strategies
 
@@ -60,6 +62,7 @@ Built-in strategies are registered by the `@opencode-ai/server` package. The def
 - **`memory_rag_index`** — Indexes MEMORY.md, memory_summary.md, and skills into Qdrant for retrieval. Requires `OPENCODE_QDRANT_URL` and `memoryEmbed`. See [Memory RAG](../features/memory-rag.md).
 - **`project_discovery`** — Processes pending rows in `discovery_reports`: calls the configured LLM with the discovery prompt and idea text, writes `report_md` and sets status to `done` or `failed`. Config: `max_per_run` (default 10). Requires `memoryLlm` to be injected by the host. See [Project Discovery Validator](../features/project-discovery-validator.md).
 - **`repo-issue-worker`** — Busca issues abertas com label no repo configurado; enfileira ciclo spec→PR por issue. Ver [Repo issue dev cycle](../features/repo-issue-dev-cycle.md).
+- **`niche-explorer`** — Enfileira `discover-niches` (LLM sugere novos registros em `opp_niches`, opcionalmente `analyze-niche-relations`). Ver [Niche explorer](../features/niche-explorer-pipeline.md).
 
 ## Cron format
 

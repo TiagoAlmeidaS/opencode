@@ -68,6 +68,7 @@ export async function seedDefaultPipelines(db: ServerDb) {
       enabled: 1,
       maxRetries: 3,
       retryDelaySec: 300,
+      maxRunsPerDay: 0,
       createdAt: now,
       updatedAt: now,
     })

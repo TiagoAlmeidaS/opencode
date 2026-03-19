@@ -31,11 +31,26 @@ Se o App apontar para o standalone na porta 4096 (ou para qualquer processo que 
 
 ## Adicionar repositório por URL
 
-O App e a tool `add_project` (no chat) permitem adicionar projetos por URL de repositório GitHub (clone + registo).
+O App web, o **App Flutter** e a tool `add_project` permitem adicionar projetos por URL GitHub (clone + registo).
 
-- **Requisito:** O OpenCode Server deve ter a variável de ambiente **`GITHUB_TOKEN`** definida (PAT com permissão de leitura/clone de repositórios).
-- **Endpoint:** `POST /project/add-by-url` (body: `{ url: string, branch?: string }`).
-- **Local do clone:** Os repositórios são clonados para `{dataDir}/projects/<owner>-<repo>`. O `dataDir` é o diretório de dados do OpenCode (ex.: XDG data). O utilizador pode limpar projetos antigos nessa pasta manualmente se quiser.
+- **Endpoint:** `POST /project/add-by-url` (body: `{ url, branch?, token? }`).
+- **Repositório público:** Só precisas do `url` (clone anónimo no servidor).
+- **Repositório privado:** Uma destas opções:
+  1. **`GITHUB_TOKEN` no processo do OpenCode Server** — PAT com scope `repo` (ler/clone). Ver abaixo sobre `.env.server`.
+  2. **PAT no App Flutter** — campo opcional no diálogo *Add repository*; o token vai **só nesse pedido** para o servidor fazer o clone (não fica guardado na app).
+
+### O teu `GITHUB_TOKEN` está no `.env.server` — serve?
+
+O ficheiro **`.env.server` na raiz do repo** é usado pelo **Docker Compose / stack de deploy** (ex.: `env_file`), **não** é lido automaticamente pelo `opencode serve` quando corres o CLI à mão no terminal.
+
+Para o clone por URL usar o PAT:
+
+- **Docker / compose:** confirma que o serviço que corre o OpenCode tem `GITHUB_TOKEN` (ou `env_file: .env.server`).
+- **Terminal local (`opencode serve`):** o processo tem de ver a variável — por exemplo, na mesma shell: `export GITHUB_TOKEN=ghp_...` (Linux/macOS) ou `set GITHUB_TOKEN=ghp_...` antes de iniciar (Windows), **ou** carregar o `.env.server` com uma ferramenta que exporte para o ambiente.
+
+Se `GITHUB_TOKEN` estiver **efetivamente** no ambiente do processo `opencode serve`, **não precisas** de colocar PAT no App Flutter para adicionar repos privados (só URL + branch). O campo PAT na app continua útil para **listar “os meus repositórios”** na API GitHub a partir do telemóvel.
+
+- **Local do clone:** `{dataDir}/projects/<owner>-<repo>`.
 
 ## Referências
 

@@ -85,6 +85,7 @@ export interface DaemonPipelineRow {
   enabled: number
   maxRetries: number
   retryDelaySec: number
+  maxRunsPerDay: number
   createdAt: number
   updatedAt: number
 }

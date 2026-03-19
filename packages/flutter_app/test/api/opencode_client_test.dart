@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:flutter_app/api/models.dart';
 import 'package:flutter_app/api/opencode_client.dart';
 
 void main() {
@@ -89,6 +88,16 @@ void main() {
       expect(p.worktree, worktree);
     });
 
+    test('projectAddByUrl sends token when set', () async {
+      final tok = faker.datatype.uuid();
+      final client = clientWithMock(MockClient((req) async {
+        final body = jsonDecode(req.body) as Map<String, dynamic>;
+        expect(body['token'], tok);
+        return http.Response(jsonEncode({'id': '1', 'worktree': '/w'}), 200);
+      }));
+      await client.projectAddByUrl('https://github.com/a/b', token: tok);
+    });
+
     test('sessionList returns list', () async {
       final id = faker.datatype.uuid();
       final dir = '/tmp/${faker.lorem.word()}';
@@ -144,8 +153,20 @@ void main() {
         return http.Response(jsonEncode(paths), 200);
       }));
 
-      final list = await client.fileFind(dir, query: query);
-      expect(list, paths);
+      final out = await client.fileFind(dir, query: query);
+      expect(out.error, isNull);
+      expect(out.paths, paths);
+    });
+
+    test('fileList returns error on HTML body', () async {
+      final client = clientWithMock(MockClient((req) async {
+        expect(req.url.path, '/file');
+        return http.Response('<!doctype html><html></html>', 200);
+      }));
+      final out = await client.fileList('/p', path: '.');
+      expect(out.nodes, isNull);
+      expect(out.error, isNotNull);
+      expect(out.error!, contains('HTML'));
     });
 
     test('fileRead returns FileContent', () async {
@@ -158,9 +179,78 @@ void main() {
         return http.Response(jsonEncode({'type': 'text', 'content': content}), 200);
       }));
 
-      final fc = await client.fileRead(dir, path: path);
-      expect(fc, isNotNull);
-      expect(fc!.content, content);
+      final out = await client.fileRead(dir, path: path);
+      expect(out.error, isNull);
+      expect(out.content, isNotNull);
+      expect(out.content!.content, content);
+    });
+
+    test('permissionList and permissionReply', () async {
+      final dir = '/tmp/p';
+      final rid = faker.datatype.uuid();
+      final client = clientWithMock(MockClient((req) async {
+        if (req.url.path == '/permission' && req.method == 'GET') {
+          expect(req.url.queryParameters['directory'], dir);
+          return http.Response(jsonEncode([
+            {'id': rid, 'sessionID': 's1', 'permission': 'x', 'patterns': [], 'metadata': {}, 'always': []},
+          ]), 200);
+        }
+        if (req.url.path == '/permission/$rid/reply') {
+          expect(req.method, 'POST');
+          final b = jsonDecode(req.body) as Map<String, dynamic>;
+          expect(b['reply'], 'once');
+          return http.Response('', 200);
+        }
+        return http.Response('', 404);
+      }));
+
+      final list = await client.permissionList(dir);
+      expect(list?.length, 1);
+      expect(await client.permissionReply(dir, rid, reply: 'once'), true);
+    });
+
+    test('questionReply and questionReject', () async {
+      final dir = '/tmp/p';
+      final qid = faker.datatype.uuid();
+      final client = clientWithMock(MockClient((req) async {
+        if (req.url.path == '/question/$qid/reply') {
+          final b = jsonDecode(req.body) as Map<String, dynamic>;
+          expect((b['answers'] as List).length, 1);
+          return http.Response('', 200);
+        }
+        if (req.url.path == '/question/$qid/reject') {
+          return http.Response('', 200);
+        }
+        return http.Response('', 404);
+      }));
+
+      expect(await client.questionReply(dir, qid, [
+        [faker.lorem.word()],
+      ]), true);
+      expect(await client.questionReject(dir, qid), true);
+    });
+
+    test('serverDashboard serverMemoryRetrieve serverDiscovery', () async {
+      final client = clientWithMock(MockClient((req) async {
+        if (req.url.path == '/server/dashboard') {
+          return http.Response(jsonEncode({'health': 'HEALTHY', 'metrics': {}}), 200);
+        }
+        if (req.url.path == '/server/memory/retrieve') {
+          return http.Response(jsonEncode({'chunks': []}), 200);
+        }
+        if (req.url.path == '/server/discovery' && req.method == 'GET') {
+          return http.Response(jsonEncode([]), 200);
+        }
+        if (req.url.path == '/server/discovery' && req.method == 'POST') {
+          return http.Response(jsonEncode({'id': 'n1', 'status': 'pending'}), 201);
+        }
+        return http.Response('', 404);
+      }));
+
+      expect((await client.serverDashboard())?['health'], 'HEALTHY');
+      expect((await client.serverMemoryRetrieve('q'))?['chunks'], isList);
+      expect(await client.serverDiscoveryList(), isEmpty);
+      expect((await client.serverDiscoveryEnqueue('idea'))?['id'], 'n1');
     });
   });
 }

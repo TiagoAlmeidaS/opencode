@@ -151,6 +151,7 @@ async function applyProposal(db: ServerDb, row: typeof daemonProposals.$inferSel
         enabled: 1,
         maxRetries: 3,
         retryDelaySec: 300,
+        maxRunsPerDay: 0,
         createdAt: now,
         updatedAt: now,
       })
