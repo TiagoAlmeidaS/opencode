@@ -29,13 +29,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final client = context.read<AppState>().client;
-    if (client == null) {
+    final srv = context.read<AppState>().server;
+    if (srv == null) {
       setState(() => _loading = false);
       return;
     }
-    final reports = await client.serverReports(
-      reportType: _filter == 'all' ? null : _filter,
+    final reports = await srv.reports(
+      type: _filter == 'all' ? null : _filter,
       limit: 50,
     );
     if (!mounted) return;

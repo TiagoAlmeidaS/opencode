@@ -61,17 +61,17 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final client = context.read<AppState>().client;
-    if (client == null) { setState(() => _loading = false); return; }
+    final srv = context.read<AppState>().server;
+    if (srv == null) { setState(() => _loading = false); return; }
 
     final results = await Future.wait([
-      client.serverPipelines(),
-      client.serverJobs(),
-      client.serverGoals(),
-      client.serverProposals(),
-      client.serverDashboard(),
-      client.serverDiscoveryList(limit: 20),
-      client.serverRepoIssueJobs(limit: 8),
+      srv.pipelines(),
+      srv.jobs(),
+      srv.goals(),
+      srv.proposals(),
+      srv.dashboard(),
+      srv.discovery(limit: 20),
+      srv.repoIssueJobs(limit: 8),
     ]);
     if (!mounted) return;
 
@@ -88,11 +88,11 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   }
 
   Future<void> _togglePipeline(String id, bool enable) async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
     final ok = enable
-        ? await client.serverPipelineEnable(id)
-        : await client.serverPipelineDisable(id);
+        ? await srv.pipelineEnable(id)
+        : await srv.pipelineDisable(id);
     if (!mounted) return;
     if (ok) {
       await _load();
@@ -101,9 +101,9 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   }
 
   Future<void> _runPipeline(String id) async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
-    final r = await client.serverPipelineRun(id);
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    final r = await srv.pipelineRun(id);
     if (!mounted) return;
     final msg = r == null
         ? 'Run failed (HTTP)'
@@ -137,26 +137,26 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     );
     ctrl.dispose();
     if (n == null || !mounted) return;
-    await context.read<AppState>().client?.serverPipelinePatch(id, maxRunsPerDay: n.clamp(0, 500));
+    await context.read<AppState>().server?.pipelinePatch(id, maxRuns: n.clamp(0, 500));
     if (mounted) await _load();
   }
 
   Future<void> _proposalAction(String id, bool approve) async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
     final ok = approve
-        ? await client.serverProposalApprove(id)
-        : await client.serverProposalReject(id);
+        ? await srv.proposalApprove(id)
+        : await srv.proposalReject(id);
     if (mounted && ok) await _load();
   }
 
   Future<void> _searchMem() async {
     final q = _memQ.text.trim();
     if (q.isEmpty) return;
-    final client = context.read<AppState>().client;
-    if (client == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
     setState(() => _memBusy = true);
-    final raw = await client.serverMemoryRetrieve(q, limit: 8);
+    final raw = await srv.memory(q, limit: 8);
     if (!mounted) return;
     final list = raw?['chunks'];
     setState(() {
@@ -170,13 +170,13 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   Future<void> _enqueueDiscovery() async {
     final t = _idea.text.trim();
     if (t.isEmpty) return;
-    final client = context.read<AppState>().client;
-    if (client == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
     setState(() => _discBusy = true);
-    await client.serverDiscoveryEnqueue(t, triggerPipeline: false);
+    await srv.discoveryEnqueue(t, trigger: false);
     _idea.clear();
     if (!mounted) return;
-    final disc = await client.serverDiscoveryList(limit: 20);
+    final disc = await srv.discovery(limit: 20);
     setState(() { _discBusy = false; _discovery = disc; });
   }
 
@@ -184,16 +184,16 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     final name = _repoIssueName.text.trim();
     final repo = _repoFull.text.trim();
     if (name.isEmpty || repo.isEmpty) return;
-    final client = context.read<AppState>().client;
-    if (client == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
     final maxDay    = int.tryParse(_repoMaxDay.text.trim()) ?? 0;
     final maxIssues = int.tryParse(_repoMaxIssues.text.trim()) ?? 3;
-    final row = await client.serverPipelineCreate(
+    final row = await srv.pipelineCreate(
       name: name,
       strategy: 'repo-issue-worker',
-      scheduleCron: _repoCron.text.trim().isEmpty ? '0 8 * * *' : _repoCron.text.trim(),
-      maxRunsPerDay: maxDay.clamp(0, 500),
-      configJson: {
+      cron: _repoCron.text.trim().isEmpty ? '0 8 * * *' : _repoCron.text.trim(),
+      maxRuns: maxDay.clamp(0, 500),
+      config: {
         'repo_full_name': repo,
         'label': _repoLabel.text.trim().isEmpty ? 'agent' : _repoLabel.text.trim(),
         'max_issues_per_run': maxIssues.clamp(1, 30),

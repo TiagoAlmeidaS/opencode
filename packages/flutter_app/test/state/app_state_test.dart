@@ -15,12 +15,14 @@ void main() {
       expect(state.servers.first.url, url);
     });
 
-    test('addServer ignores duplicate url', () {
+    test('addServer replaces same url so apiToken updates', () {
       final state = AppState();
       final url = 'http://host:4096';
       state.addServer(ServerConfig(url: url));
-      state.addServer(ServerConfig(url: url));
+      final tok = faker.datatype.uuid();
+      state.addServer(ServerConfig(url: url, apiToken: tok));
       expect(state.servers.length, 1);
+      expect(state.servers.first.apiToken, tok);
     });
 
     test('removeServer removes config', () {

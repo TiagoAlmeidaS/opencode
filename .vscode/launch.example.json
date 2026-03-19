@@ -6,6 +6,13 @@
       "request": "attach",
       "name": "opencode (attach)",
       "url": "ws://localhost:6499/"
+    },
+    {
+      "name": "flutter_app (FVM)",
+      "request": "launch",
+      "type": "dart",
+      "program": "packages/flutter_app/lib/main.dart",
+      "cwd": "${workspaceFolder}/packages/flutter_app"
     }
   ]
 }

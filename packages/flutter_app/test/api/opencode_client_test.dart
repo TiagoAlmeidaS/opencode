@@ -230,27 +230,5 @@ void main() {
       expect(await client.questionReject(dir, qid), true);
     });
 
-    test('serverDashboard serverMemoryRetrieve serverDiscovery', () async {
-      final client = clientWithMock(MockClient((req) async {
-        if (req.url.path == '/server/dashboard') {
-          return http.Response(jsonEncode({'health': 'HEALTHY', 'metrics': {}}), 200);
-        }
-        if (req.url.path == '/server/memory/retrieve') {
-          return http.Response(jsonEncode({'chunks': []}), 200);
-        }
-        if (req.url.path == '/server/discovery' && req.method == 'GET') {
-          return http.Response(jsonEncode([]), 200);
-        }
-        if (req.url.path == '/server/discovery' && req.method == 'POST') {
-          return http.Response(jsonEncode({'id': 'n1', 'status': 'pending'}), 201);
-        }
-        return http.Response('', 404);
-      }));
-
-      expect((await client.serverDashboard())?['health'], 'HEALTHY');
-      expect((await client.serverMemoryRetrieve('q'))?['chunks'], isList);
-      expect(await client.serverDiscoveryList(), isEmpty);
-      expect((await client.serverDiscoveryEnqueue('idea'))?['id'], 'n1');
-    });
   });
 }

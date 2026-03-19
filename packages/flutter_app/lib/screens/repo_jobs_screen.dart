@@ -29,10 +29,10 @@ class _RepoJobsScreenState extends State<RepoJobsScreen> {
   }
 
   Future<void> _load() async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
     setState(() => _loading = true);
-    final jobs = await client.serverRepoIssueJobs(status: _filterStatus, limit: 60);
+    final jobs = await srv.repoIssueJobs(status: _filterStatus, limit: 60);
     if (!mounted) return;
     setState(() {
       _jobs = jobs;

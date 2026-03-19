@@ -76,11 +76,13 @@ class _MainLayoutState extends State<MainLayout> {
 
     final navBar = NavigationBar(
       selectedIndex: _selectedTab,
-      onDestinationSelected: (i) => setState(() {
-        _selectedTab = i;
-        // sair do Home limpa a sessão ativa no content principal
-        if (i != 0) _selectedSession = null;
-      }),
+      onDestinationSelected: (i) {
+        setState(() {
+          _selectedTab = i;
+          if (i != 0) _selectedSession = null;
+        });
+        if (i == 0) context.read<AppState>().refreshServerStatus();
+      },
       destinations: const [
         NavigationDestination(
           icon: Icon(Icons.home_outlined),
@@ -118,7 +120,7 @@ class _MainLayoutState extends State<MainLayout> {
         ),
         drawer: _buildDrawer(context, state, projects, sessions, directory),
         body: state.connected
-            ? _buildContent(context, state, directory)
+            ? _buildContent(context, state, directory, narrow: true)
             : Center(child: Text('Connecting…', style: TextStyle(color: _palette.textWeak))),
         bottomNavigationBar: navBar,
       );
@@ -133,11 +135,11 @@ class _MainLayoutState extends State<MainLayout> {
       body = Row(
         children: [
           _buildPanel(context, state, projects, sessions, directory),
-          Expanded(child: _buildContent(context, state, directory)),
+          Expanded(child: _buildContent(context, state, directory, narrow: false)),
         ],
       );
     } else {
-      body = _buildContent(context, state, directory);
+      body = _buildContent(context, state, directory, narrow: false);
     }
 
     return Scaffold(
@@ -165,7 +167,7 @@ class _MainLayoutState extends State<MainLayout> {
     }
   }
 
-  Widget _buildContent(BuildContext context, AppState state, String? directory) {
+  Widget _buildContent(BuildContext context, AppState state, String? directory, {required bool narrow}) {
     switch (_selectedTab) {
       case 1:
         return const ServerDashboardScreen();
@@ -184,22 +186,84 @@ class _MainLayoutState extends State<MainLayout> {
         if (state.daemonAvailable) {
           return const HomeDashboardScreen(key: ValueKey('home-dashboard'));
         }
-        return Center(
+        return _homeDaemonUnavailable(context, state, narrow: narrow);
+    }
+  }
+
+  /// Home when `/server/status` is unavailable (OpenCode without daemon layer).
+  Widget _homeDaemonUnavailable(BuildContext context, AppState state, {required bool narrow}) {
+    final palette = _palette;
+    return Container(
+      color: palette.backgroundBase,
+      alignment: Alignment.center,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.chat_bubble_outline, size: 64, color: _palette.iconBase),
+              Icon(Icons.dashboard_outlined, size: 56, color: palette.iconBase),
               const SizedBox(height: 16),
-              Text('Select a session', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
               Text(
-                'Create a new session or select one from the list',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: _palette.textWeak),
+                'Server dashboard unavailable',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'OpenCode Server (daemon) is not enabled on this host. '
+                'The Home summary (reports, pipelines, opportunities) needs GET /server/status.\n\n'
+                'Start the server with opencode serve --daemon or set server.daemon: true in config. '
+                'See docs/api/opencode-server.md in the repo.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.textWeak),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'You can still use chat sessions:',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 12),
+              if (narrow)
+                OpenCodeButton(
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  variant: OpenCodeButtonVariant.primary,
+                  size: OpenCodeButtonSize.large,
+                  icon: Icons.menu,
+                  child: const Text('Sessions menu'),
+                ),
+              if (!narrow) ...[
+                Text(
+                  'Pick a session from the list on the left, or start a new one.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.textWeak),
+                ),
+              ],
+              const SizedBox(height: 16),
+              OpenCodeButton(
+                onPressed: () => setState(() {
+                  _selectedTab = 1;
+                  _selectedSession = null;
+                }),
+                variant: OpenCodeButtonVariant.secondary,
+                size: OpenCodeButtonSize.large,
+                icon: Icons.dashboard_outlined,
+                child: const Text('Open Server tab'),
+              ),
+              const SizedBox(height: 10),
+              OpenCodeButton(
+                onPressed: () => state.refreshServerStatus(),
+                variant: OpenCodeButtonVariant.secondary,
+                size: OpenCodeButtonSize.large,
+                icon: Icons.refresh,
+                child: const Text('Check again'),
               ),
             ],
           ),
-        );
-    }
+        ),
+      ),
+    );
   }
 
   Widget _buildDrawer(

@@ -249,7 +249,12 @@ export function SessionHeader() {
   const copyPath = () => {
     const directory = projectDirectory()
     if (!directory) return
-    navigator.clipboard
+    const board = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!board?.writeText) {
+      showRequestError(language, new Error("Clipboard unavailable"))
+      return
+    }
+    board
       .writeText(directory)
       .then(() => {
         showToast({

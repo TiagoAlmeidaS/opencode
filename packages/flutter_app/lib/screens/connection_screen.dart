@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../api/daemon_url.dart';
+import '../api/server_api_client.dart';
+import '../config/local_secrets.dart';
 import '../state/app_state.dart';
 import '../theme/button_style.dart';
 import '../theme/oc2_colors.dart';
@@ -14,14 +17,25 @@ class ConnectionScreen extends StatefulWidget {
 }
 
 class _ConnectionScreenState extends State<ConnectionScreen> {
-  final _urlController = TextEditingController(text: 'http://100.98.213.86:4096');
+  final _urlController = TextEditingController(text: 'http://localhost:4096');
+  final _daemonUrlController = TextEditingController();
+  final _apiTokenController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    final t = defaultStandaloneApiToken();
+    if (t != null && t.isNotEmpty) _apiTokenController.text = t;
+  }
+
+  @override
   void dispose() {
     _urlController.dispose();
+    _daemonUrlController.dispose();
+    _apiTokenController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -42,10 +56,28 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     }
 
     final withProtocol = url.startsWith('http') ? url : 'http://$url';
+    final base = withProtocol.replaceAll(RegExp(r'/+$'), '');
+    final daemonRaw = _daemonUrlController.text.trim();
+    final daemonApiBase = resolveDaemonApiBase(openCodeUrl: base, configuredDaemon: daemonRaw.isEmpty ? null : daemonRaw);
+    var tok = _apiTokenController.text.trim();
+
+    if (tok.isEmpty && daemonApiBase != null && daemonApiBase.isNotEmpty) {
+      final origin = Uri.tryParse(daemonApiBase)?.origin;
+      if (origin != null) {
+        final detected = await detectServerToken(origin);
+        if (detected != null && detected.isNotEmpty) {
+          tok = detected;
+          if (mounted) _apiTokenController.text = tok;
+        }
+      }
+    }
+
     final cfg = ServerConfig(
-      url: withProtocol.replaceAll(RegExp(r'/+$'), ''),
+      url: base,
       username: 'opencode',
       password: _passwordController.text.isEmpty ? null : _passwordController.text,
+      daemonApiBase: daemonApiBase,
+      apiToken: tok.isEmpty ? null : tok,
     );
 
     final state = context.read<AppState>();
@@ -107,10 +139,30 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   TextField(
                     controller: _urlController,
                     decoration: const InputDecoration(
-                      labelText: 'Server URL',
-                      hintText: 'http://100.98.213.86:4096',
+                      labelText: 'OpenCode Server URL',
+                      hintText: 'http://host:4096 (opencode serve)',
                     ),
                     keyboardType: TextInputType.url,
+                    autocorrect: false,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _daemonUrlController,
+                    decoration: const InputDecoration(
+                      labelText: 'Daemon API base (optional)',
+                      hintText: 'Empty = auto http://HOST:3000/api (remote); or http://host:4096/server',
+                    ),
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _apiTokenController,
+                    decoration: const InputDecoration(
+                      labelText: 'API token (optional)',
+                      hintText: 'Bearer for standalone when API_TOKEN is set',
+                    ),
+                    obscureText: true,
                     autocorrect: false,
                   ),
                   const SizedBox(height: 12),
@@ -118,7 +170,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     controller: _passwordController,
                     decoration: const InputDecoration(
                       labelText: 'Password (optional)',
-                      hintText: 'OPENCODE_SERVER_PASSWORD',
+                      hintText: 'OPENCODE_SERVER_PASSWORD (Basic)',
                     ),
                     obscureText: true,
                     autocorrect: false,

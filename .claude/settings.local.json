@@ -57,7 +57,9 @@
       "Bash(xargs ls:*)",
       "Bash(ls:*)",
       "Bash(find /e/projects/ia/opencode/packages/server -name *.ts -path */routes/* -o -name router*.ts)",
-      "Bash(find /e/projects/ia/opencode/packages/server/src -name *.ts)"
+      "Bash(find /e/projects/ia/opencode/packages/server/src -name *.ts)",
+      "Bash(find /e/projects/ia/opencode -maxdepth 2 -name docker-compose*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(list\\(d.keys\\(\\)\\)\\)\")"
     ]
   }
 }

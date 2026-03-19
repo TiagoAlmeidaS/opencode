@@ -30,12 +30,12 @@ class _LearningsScreenState extends State<LearningsScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final client = context.read<AppState>().client;
-    if (client == null) {
+    final srv = context.read<AppState>().server;
+    if (srv == null) {
       setState(() => _loading = false);
       return;
     }
-    final learnings = await client.serverLearnings(
+    final learnings = await srv.learnings(
       category: _filter == 'all' ? null : _filter,
       limit: 100,
     );
@@ -48,9 +48,9 @@ class _LearningsScreenState extends State<LearningsScreen> {
 
   Future<void> _extract() async {
     setState(() => _extracting = true);
-    final client = context.read<AppState>().client;
-    if (client != null) {
-      await client.serverLearningExtract();
+    final srv = context.read<AppState>().server;
+    if (srv != null) {
+      await srv.learningExtract();
       if (mounted) await _load();
     }
     if (!mounted) return;

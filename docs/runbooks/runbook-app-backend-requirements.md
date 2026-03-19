@@ -13,10 +13,25 @@ O App espera que na URL configurada (por padrão `http://localhost:4096`) esteja
 
 Se o App apontar para o standalone na porta 4096 (ou para qualquer processo que não seja o OpenCode Server), ocorrerá **404 em GET /path** e o bootstrap do App pode falhar.
 
+### App Flutter: OpenCode + daemon noutro host/porta (`/api`)
+
+Se o **OpenCode** (`opencode serve`) estiver num URL (ex.: `http://host:4096`) e o **standalone** `packages/server` noutro (ex.: `http://host:3000/api`), na tela de conexão do Flutter:
+
+1. **OpenCode Server URL** — URL do `opencode serve` (sessões, projetos, `/global/health`, `/path`, …).
+2. **Daemon API base (optional)** — URL completa até ao prefixo da API daemon, ex.: `http://host:3000/api` (os pedidos passam a ser `GET …/api/status`, etc.).
+3. **API token (optional)** — se o standalone tiver `API_TOKEN`, usar o mesmo valor aqui (envio como `Authorization: Bearer …` só nos pedidos daemon).
+
+Se o daemon estiver no **mesmo** processo `opencode serve --daemon`, deixe *Daemon API base* vazio (usa `{url}/server/*`).
+
 ## Sintomas
 
 - **Request:** `GET http://localhost:4096/path` → **404 Not Found**
 - **Console:** `TypeError: Cannot read properties of undefined (reading '0')` durante init de providers (por exemplo ao acessar store de diretório ainda não criado).
+- **Console (UI):** `(…command || []).map is not a function` — o cliente assumia que `GET /command` devolvia um array; com `/path` em 404 o estado podia ficar inconsistente ou a API podia devolver um corpo inesperado. O App normaliza a lista de comandos com `Array.isArray`.
+
+### 404 em `/path` com o OpenCode Server “certo”
+
+Em versões afetadas, `Server.createApp` terminava com um `return` antes de registar rotas como `GET /path`, `GET /command` e o fallback `/*`. O resultado era **404 em `/path`** mesmo com `opencode serve` na porta esperada. **Correção:** construir a app com atribuição (`app = app…`) e um único `return` final em `packages/opencode/src/server/server.ts`. Depois de atualizar o servidor, volta a testar `GET /path`.
 
 ## Solução
 

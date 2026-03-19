@@ -238,10 +238,9 @@ void main() {
       final pending = num(0, 10);
 
       final j = {
-        'pipelinesTotal': total,
-        'pipelinesEnabled': enabled,
-        'jobsRunning': running,
-        'proposalsPending': pending,
+        'pipelines': {'total': total, 'enabled': enabled},
+        'jobs': {'running': running},
+        'proposals': {'pending': pending},
       };
 
       final s = ServerStatus.fromJson(j);

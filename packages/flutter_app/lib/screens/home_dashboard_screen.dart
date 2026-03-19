@@ -37,19 +37,19 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final client = context.read<AppState>().client;
-    if (client == null) {
+    final srv = context.read<AppState>().server;
+    if (srv == null) {
       setState(() => _loading = false);
       return;
     }
 
     final results = await Future.wait([
-      client.serverStatus(),
-      client.serverReports(limit: 5),
-      client.serverLearnings(limit: 5),
-      client.serverOpportunitiesStats(),
-      client.serverProposals(),
-      client.serverSubmissions(status: 'pending-approval', limit: 5),
+      srv.status(),
+      srv.reports(limit: 5),
+      srv.learnings(limit: 5),
+      srv.opportunitiesStats(),
+      srv.proposals(),
+      srv.submissions(status: 'pending-approval', limit: 5),
     ]);
 
     if (!mounted) return;
@@ -69,17 +69,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   Future<void> _proposalAction(String id, bool approve) async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
-    final ok = approve ? await client.serverProposalApprove(id) : await client.serverProposalReject(id);
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    final ok = approve ? await srv.proposalApprove(id) : await srv.proposalReject(id);
     if (!mounted) return;
     if (ok) await _load();
   }
 
   Future<void> _submissionAction(String id, bool approve) async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
-    final ok = approve ? await client.serverSubmissionApprove(id) : await client.serverSubmissionReject(id);
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    final ok = approve ? await srv.submissionApprove(id) : await srv.submissionReject(id);
     if (!mounted) return;
     if (ok) await _load();
   }

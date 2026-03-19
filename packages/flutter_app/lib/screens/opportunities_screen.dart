@@ -32,14 +32,14 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final client = context.read<AppState>().client;
-    if (client == null) {
+    final srv = context.read<AppState>().server;
+    if (srv == null) {
       setState(() => _loading = false);
       return;
     }
     final results = await Future.wait([
-      client.serverOpportunitiesStats(),
-      client.serverOpportunities(
+      srv.opportunitiesStats(),
+      srv.opportunities(
         status: _filter == 'all' ? null : _filter,
         limit: 100,
       ),
@@ -53,17 +53,17 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
   }
 
   Future<void> _shortlist(String id) async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
-    final ok = await client.serverOpportunityShortlist(id);
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    final ok = await srv.opportunityShortlist(id);
     if (!mounted) return;
     if (ok) await _load();
   }
 
   Future<void> _ignore(String id) async {
-    final client = context.read<AppState>().client;
-    if (client == null) return;
-    final ok = await client.serverOpportunityIgnore(id);
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    final ok = await srv.opportunityIgnore(id);
     if (!mounted) return;
     if (ok) await _load();
   }

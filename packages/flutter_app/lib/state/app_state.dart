@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../api/daemon_url.dart';
 import '../api/models.dart';
 import '../api/opencode_client.dart';
+import '../api/server_api_client.dart';
 import '../services/sse_client.dart';
 
 class ServerConfig {
@@ -12,12 +14,18 @@ class ServerConfig {
     this.displayName,
     this.username,
     this.password,
+    this.daemonApiBase,
+    this.apiToken,
   });
 
   final String url;
   final String? displayName;
   final String? username;
   final String? password;
+  /// Standalone `packages/server`: e.g. `http://host:3000/api`. Empty = auto `http://host:3000/api` for non-localhost, else `{url}/server/*`.
+  final String? daemonApiBase;
+  /// Bearer for standalone when `API_TOKEN` is set (optional).
+  final String? apiToken;
 
   String get key => url;
 }
@@ -28,6 +36,7 @@ class AppState extends ChangeNotifier {
   List<ServerConfig> _servers = [];
   String? _activeKey;
   OpenCodeClient? _client;
+  ServerApiClient? _server;
   SseClient? _sse;
   StreamSubscription<GlobalEvent>? _sseSub;
 
@@ -42,6 +51,7 @@ class AppState extends ChangeNotifier {
   List<ServerConfig> get servers => List.unmodifiable(_servers);
   String? get activeKey => _activeKey;
   OpenCodeClient? get client => _client;
+  ServerApiClient? get server => _server;
 
   bool _connected = false;
   bool get connected => _connected;
@@ -82,8 +92,10 @@ class AppState extends ChangeNotifier {
   }
 
   void addServer(ServerConfig cfg) {
-    if (_servers.any((s) => s.key == cfg.key)) return;
-    _servers = [..._servers, cfg];
+    _servers = [
+      ..._servers.where((s) => s.key != cfg.key),
+      cfg,
+    ];
     notifyListeners();
   }
 
@@ -96,6 +108,7 @@ class AppState extends ChangeNotifier {
   void setActive(String? key) {
     _activeKey = key;
     _client = null;
+    _server = null;
     _sse = null;
     _connected = false;
     _path = null;
@@ -113,6 +126,10 @@ class AppState extends ChangeNotifier {
         username: cfg.username,
         password: cfg.password,
       );
+      final daemon = resolveDaemonApiBase(openCodeUrl: cfg.url, configuredDaemon: cfg.daemonApiBase);
+      if (daemon != null && daemon.isNotEmpty) {
+        _server = ServerApiClient(baseUrl: daemon, token: cfg.apiToken);
+      }
       _sse = SseClient(
         baseUrl: cfg.url,
         username: cfg.username,
@@ -141,12 +158,39 @@ class AppState extends ChangeNotifier {
     final projs = await c.projectList();
     _projects = projs ?? [];
 
-    try {
-      final status = await c.serverStatus();
-      _daemonAvailable = status != null;
-      _serverStatus = status;
-    } catch (_) {
-      _daemonAvailable = false;
+    if (_server != null) {
+      try {
+        var status = await _server!.status();
+        if (status == null && _server!.hasToken == false) {
+          final cfg = _servers.firstWhere((s) => s.key == _activeKey, orElse: () => ServerConfig(url: _activeKey!));
+          final daemon = resolveDaemonApiBase(openCodeUrl: cfg.url, configuredDaemon: cfg.daemonApiBase);
+          if (daemon != null) {
+            final origin = Uri.tryParse(daemon)?.origin;
+            if (origin != null) {
+              final tok = await detectServerToken(origin);
+              if (tok != null && tok.isNotEmpty) {
+                _server = ServerApiClient(baseUrl: daemon, token: tok);
+                _servers = [
+                  ..._servers.where((s) => s.key != cfg.key),
+                  ServerConfig(
+                    url: cfg.url,
+                    displayName: cfg.displayName,
+                    username: cfg.username,
+                    password: cfg.password,
+                    daemonApiBase: cfg.daemonApiBase,
+                    apiToken: tok,
+                  ),
+                ];
+                status = await _server!.status();
+              }
+            }
+          }
+        }
+        _daemonAvailable = status != null;
+        _serverStatus = status;
+      } catch (_) {
+        _daemonAvailable = false;
+      }
     }
 
     _sseSub?.cancel();
@@ -263,14 +307,24 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> refreshServerStatus() async {
-    final c = _client;
-    if (c == null) return;
+    final s = _server;
+    if (s == null) {
+      _daemonAvailable = false;
+      _serverStatus = null;
+      notifyListeners();
+      return;
+    }
 
     try {
-      final status = await c.serverStatus();
+      final status = await s.status();
+      _daemonAvailable = status != null;
       _serverStatus = status;
       notifyListeners();
-    } catch (_) {}
+    } catch (_) {
+      _daemonAvailable = false;
+      _serverStatus = null;
+      notifyListeners();
+    }
   }
 
   Future<Project?> addProjectByUrl(String url, {String? branch, String? token}) async {

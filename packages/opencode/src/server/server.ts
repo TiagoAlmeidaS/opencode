@@ -65,7 +65,7 @@ export namespace Server {
     serverDbPath?: string
   }): Hono => {
     let app = new Hono()
-    return app
+    app = app
       .onError((err, c) => {
         log.error("failed", {
           error: err,

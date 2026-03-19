@@ -592,7 +592,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "builtin" as const,
       }))
 
-    const custom = (sync.data.command || []).map((cmd) => ({
+    const raw = sync.data.command
+    const custom = (Array.isArray(raw) ? raw : []).map((cmd) => ({
       id: `custom.${cmd.name}`,
       trigger: cmd.name,
       title: cmd.name,

@@ -178,7 +178,7 @@ Other tips and tricks:
 
 #### VSCode Setup
 
-If you use VSCode, you can use our example configurations [.vscode/settings.example.json](.vscode/settings.example.json) and [.vscode/launch.example.json](.vscode/launch.example.json).
+If you use VSCode, you can use our example configurations [.vscode/settings.example.json](.vscode/settings.example.json), [.vscode/launch.example.json](.vscode/launch.example.json), and [.vscode/extensions.example.json](.vscode/extensions.example.json) (copy/rename to `.vscode/settings.json`, `launch.json`, `extensions.json` as needed). For **Flutter** with FVM, run `fvm install` under `packages/flutter_app` so `.fvm/flutter_sdk` exists, or open that package folder (it includes [`.vscode`](packages/flutter_app/.vscode) pointed at FVM).
 
 Some debug methods that can be problematic:
 
