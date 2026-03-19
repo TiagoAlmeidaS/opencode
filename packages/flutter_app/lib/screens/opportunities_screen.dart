@@ -114,11 +114,11 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _statChip('new', stats['new_count'] ?? stats['newCount'] ?? 0, Colors.blue),
-                  _statChip('scored', stats['scored_count'] ?? stats['scoredCount'] ?? 0, Colors.orange),
-                  _statChip('shortlisted', stats['shortlisted_count'] ?? stats['shortlistedCount'] ?? 0, Colors.purple),
-                  _statChip('applied', stats['applied_count'] ?? stats['appliedCount'] ?? 0, Colors.teal),
-                  _statChip('won', stats['won_count'] ?? stats['wonCount'] ?? 0, Colors.green),
+                  _statChip('new', _byStatus(stats, 'new'), Colors.blue),
+                  _statChip('scored', _byStatus(stats, 'scored'), Colors.orange),
+                  _statChip('shortlisted', _byStatus(stats, 'shortlisted'), Colors.purple),
+                  _statChip('applied', _byStatus(stats, 'applied'), Colors.teal),
+                  _statChip('won', _byStatus(stats, 'won'), Colors.green),
                 ],
               ),
             ),
@@ -158,6 +158,12 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
         ],
       ),
     );
+  }
+
+  static int _byStatus(Map<String, dynamic> stats, String status) {
+    final m = stats['by_status'];
+    if (m is Map) return (m[status] as num?)?.toInt() ?? 0;
+    return 0;
   }
 
   Widget _statChip(String label, dynamic count, Color color) {

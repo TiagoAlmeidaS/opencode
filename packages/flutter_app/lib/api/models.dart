@@ -202,12 +202,18 @@ class ServerStatus {
     this.proposalsPending,
   });
 
-  factory ServerStatus.fromJson(Map<String, dynamic> j) => ServerStatus(
-        pipelinesTotal: j['pipelinesTotal'] as int?,
-        pipelinesEnabled: j['pipelinesEnabled'] as int?,
-        jobsRunning: j['jobsRunning'] as int?,
-        proposalsPending: j['proposalsPending'] as int?,
-      );
+  factory ServerStatus.fromJson(Map<String, dynamic> j) {
+    // Server returns nested: {pipelines:{total,enabled}, jobs:{running}, proposals:{pending}}
+    final pip = j['pipelines'] as Map<String, dynamic>? ?? {};
+    final jobs = j['jobs'] as Map<String, dynamic>? ?? {};
+    final props = j['proposals'] as Map<String, dynamic>? ?? {};
+    return ServerStatus(
+      pipelinesTotal: (pip['total'] as num?)?.toInt(),
+      pipelinesEnabled: (pip['enabled'] as num?)?.toInt(),
+      jobsRunning: (jobs['running'] as num?)?.toInt(),
+      proposalsPending: (props['pending'] as num?)?.toInt(),
+    );
+  }
 
   final int? pipelinesTotal;
   final int? pipelinesEnabled;

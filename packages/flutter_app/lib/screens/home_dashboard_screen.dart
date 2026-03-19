@@ -246,7 +246,7 @@ class _PendingActionsSection extends StatelessWidget {
 
   Widget _buildSubmissionRow(BuildContext context, Map<String, dynamic> s) {
     final id = s['id'] as String? ?? '';
-    final title = s['title'] as String? ?? s['pr_url'] as String? ?? id.substring(0, id.length.clamp(0, 8));
+    final title = s['externalUrl'] as String? ?? s['repoUrl'] as String? ?? s['submissionType'] as String? ?? id.substring(0, id.length.clamp(0, 8));
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
       child: ListTile(
@@ -304,18 +304,16 @@ class _ReportsSection extends StatelessWidget {
   }
 
   Widget _buildRow(BuildContext context, Map<String, dynamic> r) {
-    final type = r['report_type'] as String? ?? r['type'] as String? ?? 'report';
-    final createdAt = r['created_at'] ?? r['createdAt'];
+    final type = r['reportType'] as String? ?? 'report';
+    final createdAt = r['createdAt'];
     final digest = r['digest'] as String? ?? '';
-    final oppCount = r['opportunity_count'] ?? r['opportunityCount'];
+    final oppCount = r['oppCount'];
     final preview = digest.length > 120 ? '${digest.substring(0, 120)}…' : digest;
 
     String dateStr = '-';
-    if (createdAt != null) {
-      try {
-        final dt = DateTime.parse(createdAt.toString()).toLocal();
-        dateStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
-      } catch (_) {}
+    if (createdAt is int) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(createdAt * 1000).toLocal();
+      dateStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
     }
 
     return Card(
@@ -387,7 +385,7 @@ class _LearningsSection extends StatelessWidget {
 
   Widget _buildRow(BuildContext context, Map<String, dynamic> l) {
     final category = l['category'] as String? ?? 'learning';
-    final title = l['title'] as String? ?? l['learning'] as String? ?? '';
+    final title = l['title'] as String? ?? l['key'] as String? ?? '';
 
     Color catColor;
     switch (category) {
@@ -453,17 +451,17 @@ class _OpportunityFunnelSection extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _funnelChip('new', stats!['new_count'] ?? stats!['newCount'] ?? 0, Colors.blue),
-                      _funnelChip('scored', stats!['scored_count'] ?? stats!['scoredCount'] ?? 0, Colors.orange),
-                      _funnelChip('shortlisted', stats!['shortlisted_count'] ?? stats!['shortlistedCount'] ?? 0, Colors.purple),
-                      _funnelChip('applied', stats!['applied_count'] ?? stats!['appliedCount'] ?? 0, Colors.teal),
-                      _funnelChip('won', stats!['won_count'] ?? stats!['wonCount'] ?? 0, Colors.green),
+                      _funnelChip('new', _byStatus('new'), Colors.blue),
+                      _funnelChip('scored', _byStatus('scored'), Colors.orange),
+                      _funnelChip('shortlisted', _byStatus('shortlisted'), Colors.purple),
+                      _funnelChip('applied', _byStatus('applied'), Colors.teal),
+                      _funnelChip('won', _byStatus('won'), Colors.green),
                     ],
                   ),
-                  if (stats!['avg_score'] != null || stats!['avgScore'] != null) ...[
+                  if (stats!['avg_score'] != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'avg score: ${((stats!['avg_score'] ?? stats!['avgScore']) as num).toStringAsFixed(1)}',
+                      'avg score: ${stats!['avg_score']}',
                       style: TextStyle(fontSize: 12, color: palette.textWeak),
                     ),
                   ],
@@ -473,6 +471,12 @@ class _OpportunityFunnelSection extends StatelessWidget {
           ),
       ],
     );
+  }
+
+  int _byStatus(String status) {
+    final m = stats!['by_status'];
+    if (m is Map) return (m[status] as num?)?.toInt() ?? 0;
+    return 0;
   }
 
   Widget _funnelChip(String label, dynamic count, Color color) {

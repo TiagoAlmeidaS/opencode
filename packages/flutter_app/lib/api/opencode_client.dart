@@ -598,7 +598,7 @@ class OpenCodeClient {
   // Reports
   Future<List<Map<String, dynamic>>?> serverReports({String? reportType, int limit = 30}) async {
     final q = <String, String>{'limit': '$limit'};
-    if (reportType != null) q['type'] = reportType;
+    if (reportType != null) q['report_type'] = reportType;
     final uri = Uri.parse('$_base/server/reports').replace(queryParameters: q);
     final r = await _http.get(uri, headers: _headers);
     if (r.statusCode != 200) return null;

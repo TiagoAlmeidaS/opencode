@@ -47,11 +47,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   String _formatDate(dynamic raw) {
     if (raw == null) return '-';
+    // Server returns Unix timestamp in seconds (int)
+    if (raw is int) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(raw * 1000).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
     try {
       final dt = DateTime.parse(raw.toString()).toLocal();
       return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) {
-      return raw.toString().substring(0, raw.toString().length.clamp(0, 16));
+      return '-';
     }
   }
 
@@ -128,13 +133,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildCard(Oc2Palette palette, Map<String, dynamic> r) {
-    final type = r['report_type'] as String? ?? r['type'] as String? ?? 'report';
-    final createdAt = r['created_at'] ?? r['createdAt'];
+    final type = r['reportType'] as String? ?? 'report';
+    final createdAt = r['createdAt'];
     final digest = r['digest'] as String? ?? '';
-    final oppCount = r['opportunity_count'] ?? r['opportunityCount'];
-    final activeCount = r['active_market_count'] ?? r['activeMarketCount'];
-    final duration = r['pipeline_duration_s'] ?? r['pipelineDurationS'];
-    final sentTelegram = r['sent_telegram'] as bool? ?? r['sentTelegram'] as bool? ?? false;
+    final oppCount = r['oppCount'];
+    final activeCount = r['marketCount'];
+    final durationMs = r['durationMs'] as int?;
+    final sentAt = r['sentAt'];
+    final sentTelegram = sentAt != null;
     final color = _typeColor(type);
 
     return Card(
@@ -163,7 +169,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
           [
             if (oppCount != null) '$oppCount opps',
             if (activeCount != null) '$activeCount ativos',
-            if (duration != null) 'Duração: ${duration}s',
+            if (durationMs != null) 'Duração: ${(durationMs / 1000).toStringAsFixed(1)}s',
           ].join(' · '),
           style: TextStyle(fontSize: 12, color: palette.textWeak),
         ),

@@ -62,11 +62,15 @@ class _LearningsScreenState extends State<LearningsScreen> {
 
   String _formatDate(dynamic raw) {
     if (raw == null) return '-';
+    if (raw is int) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(raw * 1000).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+    }
     try {
       final dt = DateTime.parse(raw.toString()).toLocal();
       return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
     } catch (_) {
-      return raw.toString().substring(0, raw.toString().length.clamp(0, 10));
+      return '-';
     }
   }
 
@@ -162,15 +166,24 @@ class _LearningsScreenState extends State<LearningsScreen> {
 
   Widget _buildCard(Oc2Palette palette, Map<String, dynamic> l) {
     final category = l['category'] as String? ?? 'learning';
-    final title = l['title'] as String? ?? l['learning'] as String? ?? '';
-    final body = l['body'] as String? ?? l['content'] as String? ?? '';
+    final title = l['title'] as String? ?? l['key'] as String? ?? '';
+    final body = l['body'] as String? ?? '';
     final confidence = (l['confidence'] as num?)?.toDouble() ?? 0.0;
     final source = l['source'] as String?;
-    final updatedAt = l['updated_at'] ?? l['updatedAt'];
-    final upvotes = l['upvotes'] ?? l['positive_count'] ?? 0;
-    final downvotes = l['downvotes'] ?? l['negative_count'] ?? 0;
-    final tags = l['tags'];
-    final tagList = tags is List ? tags.map((t) => t.toString()).toList() : <String>[];
+    final updatedAt = l['updatedAt'];
+    final upvotes = (l['positiveCount'] as num?)?.toInt() ?? 0;
+    final downvotes = (l['negativeCount'] as num?)?.toInt() ?? 0;
+    // tags is stored as JSON text string in the DB
+    final tagsRaw = l['tags'];
+    List<String> tagList = [];
+    if (tagsRaw is String && tagsRaw.isNotEmpty) {
+      try {
+        final parsed = tagsRaw.startsWith('[') ? (tagsRaw.replaceAll(RegExp(r'[\[\]"]'), '').split(',')) : <String>[];
+        tagList = parsed.map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
+      } catch (_) {}
+    } else if (tagsRaw is List) {
+      tagList = tagsRaw.map((t) => t.toString()).toList();
+    }
 
     final catColor = _categoryColor(category);
     final confColor = _confidenceColor(confidence);
