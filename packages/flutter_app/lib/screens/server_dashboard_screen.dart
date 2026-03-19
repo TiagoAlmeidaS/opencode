@@ -7,6 +7,20 @@ import '../theme/oc2_colors.dart';
 import '../widgets/opencode_button.dart';
 import 'repo_jobs_screen.dart';
 
+// Cron presets for the pipeline form — user picks a label, we store the expression.
+const _cronPresets = <({String label, String cron})>[
+  (label: '3×/day (8h, 14h, 20h)', cron: '0 8,14,20 * * *'),
+  (label: '2×/day (9h, 18h)', cron: '0 9,18 * * *'),
+  (label: 'Every 8 hours', cron: '0 */8 * * *'),
+  (label: 'Every 6 hours', cron: '0 */6 * * *'),
+  (label: 'Daily (08:00 UTC)', cron: '0 8 * * *'),
+  (label: 'Weekdays 09:00', cron: '0 9 * * 1-5'),
+  (label: 'Every 12 hours', cron: '0 0,12 * * *'),
+];
+
+const _maxDayOptions = [1, 2, 3, 5, 8, 10, 0];
+const _issuesRunOptions = [1, 2, 3, 5, 8, 10];
+
 class ServerDashboardScreen extends StatefulWidget {
   const ServerDashboardScreen({super.key});
 
@@ -16,23 +30,22 @@ class ServerDashboardScreen extends StatefulWidget {
 
 class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   List<Map<String, dynamic>>? _pipelines;
-  List<Map<String, dynamic>>? _jobs;
-  List<Map<String, dynamic>>? _goals;
-  List<Map<String, dynamic>>? _proposals;
-  Map<String, dynamic>? _metrics;
-  List<Map<String, dynamic>>? _discovery;
   List<Map<String, dynamic>>? _repoJobs;
   List<Map<String, dynamic>>? _chunks;
+  List<Map<String, dynamic>>? _discovery;
 
   final _memQ = TextEditingController();
   final _idea = TextEditingController();
-  final _repoIssueName = TextEditingController();
+
+  // New pipeline form
+  final _repoName = TextEditingController();
   final _repoFull = TextEditingController();
   final _repoLabel = TextEditingController(text: 'agent');
-  final _repoCron = TextEditingController(text: '0 8,14,20 * * *');
-  final _repoMaxDay = TextEditingController(text: '3');
-  final _repoMaxIssues = TextEditingController(text: '3');
-  bool _repoRequirePassTests = true;
+  String _selectedCron = _cronPresets[0].cron;
+  int _maxDay = 3;
+  int _issuesRun = 3;
+  bool _requireTests = true;
+
   bool _loading = true;
   bool _memBusy = false;
   bool _discBusy = false;
@@ -50,49 +63,41 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
   void dispose() {
     _memQ.dispose();
     _idea.dispose();
-    _repoIssueName.dispose();
+    _repoName.dispose();
     _repoFull.dispose();
     _repoLabel.dispose();
-    _repoCron.dispose();
-    _repoMaxDay.dispose();
-    _repoMaxIssues.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     final srv = context.read<AppState>().server;
-    if (srv == null) { setState(() => _loading = false); return; }
+    if (srv == null) {
+      setState(() => _loading = false);
+      return;
+    }
 
-    final results = await Future.wait([
+    final r = await Future.wait([
       srv.pipelines(),
-      srv.jobs(),
-      srv.goals(),
-      srv.proposals(),
-      srv.dashboard(),
-      srv.discovery(limit: 20),
-      srv.repoIssueJobs(limit: 8),
+      srv.repoIssueJobs(limit: 6),
+      srv.discovery(limit: 15),
     ]);
     if (!mounted) return;
 
     setState(() {
-      _pipelines  = results[0] as List<Map<String, dynamic>>?;
-      _jobs       = results[1] as List<Map<String, dynamic>>?;
-      _goals      = results[2] as List<Map<String, dynamic>>?;
-      _proposals  = results[3] as List<Map<String, dynamic>>?;
-      _metrics    = results[4] as Map<String, dynamic>?;
-      _discovery  = results[5] as List<Map<String, dynamic>>?;
-      _repoJobs   = results[6] as List<Map<String, dynamic>>?;
-      _loading    = false;
+      _pipelines = r[0];
+      _repoJobs = r[1];
+      _discovery = r[2];
+      _loading = false;
     });
   }
+
+  // ── Pipeline actions ───────────────────────────────────────────────────────
 
   Future<void> _togglePipeline(String id, bool enable) async {
     final srv = context.read<AppState>().server;
     if (srv == null) return;
-    final ok = enable
-        ? await srv.pipelineEnable(id)
-        : await srv.pipelineDisable(id);
+    final ok = enable ? await srv.pipelineEnable(id) : await srv.pipelineDisable(id);
     if (!mounted) return;
     if (ok) {
       await _load();
@@ -119,7 +124,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     final n = await showDialog<int?>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Max runs per day (UTC)'),
+        title: const Text('Max runs per day'),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
@@ -141,14 +146,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     if (mounted) await _load();
   }
 
-  Future<void> _proposalAction(String id, bool approve) async {
-    final srv = context.read<AppState>().server;
-    if (srv == null) return;
-    final ok = approve
-        ? await srv.proposalApprove(id)
-        : await srv.proposalReject(id);
-    if (mounted && ok) await _load();
-  }
+  // ── Memory / Discovery ─────────────────────────────────────────────────────
 
   Future<void> _searchMem() async {
     final q = _memQ.text.trim();
@@ -176,28 +174,36 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     await srv.discoveryEnqueue(t, trigger: false);
     _idea.clear();
     if (!mounted) return;
-    final disc = await srv.discovery(limit: 20);
-    setState(() { _discBusy = false; _discovery = disc; });
+    final disc = await srv.discovery(limit: 15);
+    setState(() {
+      _discBusy = false;
+      _discovery = disc;
+    });
   }
 
-  Future<void> _createRepoIssuePipeline() async {
-    final name = _repoIssueName.text.trim();
+  // ── Create pipeline ────────────────────────────────────────────────────────
+
+  Future<void> _createPipeline() async {
+    final name = _repoName.text.trim();
     final repo = _repoFull.text.trim();
-    if (name.isEmpty || repo.isEmpty) return;
+    if (name.isEmpty || repo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Name and repository are required')),
+      );
+      return;
+    }
     final srv = context.read<AppState>().server;
     if (srv == null) return;
-    final maxDay    = int.tryParse(_repoMaxDay.text.trim()) ?? 0;
-    final maxIssues = int.tryParse(_repoMaxIssues.text.trim()) ?? 3;
     final row = await srv.pipelineCreate(
       name: name,
       strategy: 'repo-issue-worker',
-      cron: _repoCron.text.trim().isEmpty ? '0 8 * * *' : _repoCron.text.trim(),
-      maxRuns: maxDay.clamp(0, 500),
+      cron: _selectedCron,
+      maxRuns: _maxDay.clamp(0, 500),
       config: {
         'repo_full_name': repo,
         'label': _repoLabel.text.trim().isEmpty ? 'agent' : _repoLabel.text.trim(),
-        'max_issues_per_run': maxIssues.clamp(1, 30),
-        'require_passing_tests': _repoRequirePassTests,
+        'max_issues_per_run': _issuesRun.clamp(1, 30),
+        'require_passing_tests': _requireTests,
       },
     );
     if (!mounted) return;
@@ -205,20 +211,17 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
       SnackBar(content: Text(row != null ? 'Pipeline created' : 'Create failed')),
     );
     if (row != null) {
-      _repoIssueName.clear();
+      _repoName.clear();
       _repoFull.clear();
       await _load();
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Build
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final palette = _palette;
-    final status  = context.watch<AppState>().serverStatus;
 
     if (_loading) {
       return Container(
@@ -234,7 +237,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Header ──────────────────────────────────────────────────────
+            // ── Header ────────────────────────────────────────────────────
             Row(
               children: [
                 Expanded(
@@ -243,7 +246,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
                     children: [
                       Text('Server', style: Theme.of(context).textTheme.headlineMedium),
                       Text(
-                        'Daemon · Pipelines · Proposals',
+                        'Pipelines · Automation · Tools',
                         style: TextStyle(fontSize: 13, color: palette.textWeak),
                       ),
                     ],
@@ -258,29 +261,11 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            // ── Status chips ─────────────────────────────────────────────────
-            if (status != null) ...[
-              _StatusRow(status: status, metrics: _metrics, palette: palette),
-              const SizedBox(height: 20),
-            ],
-
-            // ── Proposals ────────────────────────────────────────────────────
-            if (_proposals != null && _proposals!.isNotEmpty) ...[
-              _sectionHeader(context, 'Proposals', badge: _proposals!.length),
-              const SizedBox(height: 8),
-              ..._proposals!.map((p) => _ProposalCard(
-                    proposal: p,
-                    palette: palette,
-                    onAction: _proposalAction,
-                  )),
-              const SizedBox(height: 20),
-            ],
-
-            // ── Pipelines ────────────────────────────────────────────────────
+            // ── Pipelines ─────────────────────────────────────────────────
             if (_pipelines != null && _pipelines!.isNotEmpty) ...[
-              _sectionHeader(context, 'Pipelines', badge: _pipelines!.length),
+              _sectionHeader('Pipelines', badge: _pipelines!.length),
               const SizedBox(height: 8),
               ..._pipelines!.map((p) => _PipelineCard(
                     pipeline: p,
@@ -289,14 +274,14 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
                     onRun: _runPipeline,
                     onEditCap: _editDailyCap,
                   )),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
             ],
 
-            // ── Repo jobs ────────────────────────────────────────────────────
+            // ── Repo Jobs (preview) ───────────────────────────────────────
             if (_repoJobs != null && _repoJobs!.isNotEmpty) ...[
               Row(
                 children: [
-                  Expanded(child: _sectionHeader(context, 'Repo Jobs')),
+                  Expanded(child: _sectionHeader('Repo Jobs')),
                   TextButton(
                     onPressed: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen()),
@@ -307,70 +292,49 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
               ),
               const SizedBox(height: 8),
               ..._repoJobs!.map((j) => _RepoJobCard(job: j, palette: palette)),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
             ],
 
-            // ── Goals ────────────────────────────────────────────────────────
-            if (_goals != null && _goals!.isNotEmpty) ...[
-              _sectionHeader(context, 'Goals'),
-              const SizedBox(height: 8),
-              Card(
-                child: Column(
-                  children: _goals!.take(10).map((g) {
-                    final st = g['status'] as String? ?? '-';
-                    return ListTile(
-                      dense: true,
-                      title: Text(g['name'] as String? ?? '-', style: const TextStyle(fontSize: 13)),
-                      trailing: _StatusBadge(status: st),
-                    );
-                  }).toList(),
-                ),
+            // ── Tools (collapsible) ───────────────────────────────────────
+            Text('Tools', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Card(
+              child: Column(
+                children: [
+                  _MemoryTile(
+                    palette: palette,
+                    ctrl: _memQ,
+                    busy: _memBusy,
+                    chunks: _chunks,
+                    onSearch: _searchMem,
+                  ),
+                  const Divider(height: 1),
+                  _DiscoveryTile(
+                    palette: palette,
+                    ctrl: _idea,
+                    busy: _discBusy,
+                    items: _discovery,
+                    onEnqueue: _enqueueDiscovery,
+                  ),
+                  const Divider(height: 1),
+                  _NewPipelineTile(
+                    palette: palette,
+                    name: _repoName,
+                    repo: _repoFull,
+                    label: _repoLabel,
+                    cron: _selectedCron,
+                    maxDay: _maxDay,
+                    issuesRun: _issuesRun,
+                    requireTests: _requireTests,
+                    onCronChanged: (v) => setState(() => _selectedCron = v),
+                    onMaxDayChanged: (v) => setState(() => _maxDay = v),
+                    onIssuesRunChanged: (v) => setState(() => _issuesRun = v),
+                    onRequireTestsChanged: (v) => setState(() => _requireTests = v),
+                    onCreate: _createPipeline,
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-            ],
-
-            // ── Recent jobs ──────────────────────────────────────────────────
-            if (_jobs != null && _jobs!.isNotEmpty) ...[
-              _sectionHeader(context, 'Recent Jobs'),
-              const SizedBox(height: 8),
-              Card(
-                child: Column(
-                  children: _jobs!.take(12).map((j) {
-                    final st = j['status'] as String? ?? '-';
-                    final shortId = (j['id']?.toString() ?? '-').substring(0, 8);
-                    return ListTile(
-                      dense: true,
-                      title: Text(shortId, style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: palette.textWeak)),
-                      trailing: _StatusBadge(status: st),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
-
-            // ── Tools (collapsible) ──────────────────────────────────────────
-            _ToolsSection(
-              palette: palette,
-              memQ: _memQ,
-              idea: _idea,
-              chunks: _chunks,
-              discovery: _discovery,
-              memBusy: _memBusy,
-              discBusy: _discBusy,
-              repoIssueName: _repoIssueName,
-              repoFull: _repoFull,
-              repoLabel: _repoLabel,
-              repoCron: _repoCron,
-              repoMaxDay: _repoMaxDay,
-              repoMaxIssues: _repoMaxIssues,
-              repoRequirePassTests: _repoRequirePassTests,
-              onRepoRequirePassTestsChanged: (v) => setState(() => _repoRequirePassTests = v),
-              onSearchMem: _searchMem,
-              onEnqueueDiscovery: _enqueueDiscovery,
-              onCreateRepoIssuePipeline: _createRepoIssuePipeline,
             ),
-
             const SizedBox(height: 16),
           ],
         ),
@@ -378,7 +342,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     );
   }
 
-  Widget _sectionHeader(BuildContext context, String title, {int? badge}) {
+  Widget _sectionHeader(String title, {int? badge}) {
     return Row(
       children: [
         Text(title, style: Theme.of(context).textTheme.titleMedium),
@@ -395,53 +359,6 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
         ],
       ],
     );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Status row
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _StatusRow extends StatelessWidget {
-  const _StatusRow({required this.status, required this.metrics, required this.palette});
-  final dynamic status;
-  final Map<String, dynamic>? metrics;
-  final Oc2Palette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final revenue = _revenue(metrics);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _chip('${status.pipelinesEnabled ?? 0}/${status.pipelinesTotal ?? 0}', 'Pipelines', Colors.green),
-            _chip('${status.jobsRunning ?? 0}', 'Running', Colors.blue),
-            _chip('${status.proposalsPending ?? 0}', 'Proposals', Colors.orange),
-            if (revenue != null) _chip(revenue, 'Revenue', Colors.teal),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _chip(String value, String label, Color color) => Column(
-        children: [
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
-          const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 11, color: palette.textWeak)),
-        ],
-      );
-
-  static String? _revenue(Map<String, dynamic>? m) {
-    final met = m?['metrics'];
-    if (met is! Map) return null;
-    final rev = met['revenue'];
-    if (rev is! Map) return null;
-    final v = rev['total_usd'];
-    return v != null ? '\$$v' : null;
   }
 }
 
@@ -465,12 +382,13 @@ class _PipelineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final id       = pipeline['id'] as String? ?? '';
-    final name     = pipeline['name'] as String? ?? '-';
+    final id = pipeline['id'] as String? ?? '';
+    final name = pipeline['name'] as String? ?? '-';
     final strategy = pipeline['strategy'] as String? ?? '-';
-    final enabled  = (pipeline['enabled'] as int?) == 1;
-    final maxDay   = pipeline['maxRunsPerDay'] ?? pipeline['max_runs_per_day'];
-    final cap      = maxDay is int ? maxDay : int.tryParse('$maxDay') ?? 0;
+    final enabled = (pipeline['enabled'] as int?) == 1;
+    final maxDay = pipeline['maxRunsPerDay'] ?? pipeline['max_runs_per_day'];
+    final cap = maxDay is int ? maxDay : int.tryParse('$maxDay') ?? 0;
+    final cron = pipeline['scheduleCron'] ?? pipeline['schedule_cron'];
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -482,7 +400,8 @@ class _PipelineCard extends StatelessWidget {
             Row(
               children: [
                 Container(
-                  width: 8, height: 8,
+                  width: 8,
+                  height: 8,
                   margin: const EdgeInsets.only(right: 8, top: 2),
                   decoration: BoxDecoration(
                     color: enabled ? Colors.green : palette.textWeak,
@@ -495,7 +414,11 @@ class _PipelineCard extends StatelessWidget {
                     children: [
                       Text(name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                       Text(
-                        strategy + (cap > 0 ? ' · max $cap/day' : ''),
+                        [
+                          strategy,
+                          if (cap > 0) 'max $cap/day',
+                          if (cron != null) _cronLabel(cron.toString()),
+                        ].join(' · '),
                         style: TextStyle(fontSize: 12, color: palette.textWeak),
                       ),
                     ],
@@ -534,117 +457,17 @@ class _PipelineCard extends StatelessWidget {
       ),
     );
   }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Proposal card
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ProposalCard extends StatelessWidget {
-  const _ProposalCard({required this.proposal, required this.palette, required this.onAction});
-  final Map<String, dynamic> proposal;
-  final Oc2Palette palette;
-  final Future<void> Function(String id, bool approve) onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final id          = proposal['id'] as String? ?? '';
-    final title       = proposal['title'] as String? ?? '';
-    final description = proposal['description'] as String? ?? '';
-    final status      = proposal['status'] as String? ?? '-';
-    final riskLevel   = proposal['riskLevel'] as String? ?? '';
-    final confidence  = proposal['confidence'];
-    final confPct     = confidence is num ? '${(confidence * 100).toStringAsFixed(0)}%' : null;
-
-    final riskColor = riskLevel == 'high'
-        ? Colors.red
-        : riskLevel == 'medium'
-            ? Colors.orange
-            : Colors.green;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (title.isNotEmpty)
-                        Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                      Text(
-                        id.substring(0, id.length.clamp(0, 8)),
-                        style: TextStyle(fontSize: 11, color: palette.textWeak, fontFamily: 'monospace'),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Wrap(
-                  spacing: 4,
-                  children: [
-                    if (riskLevel.isNotEmpty)
-                      _badge('risk: $riskLevel', riskColor),
-                    if (confPct != null)
-                      _badge('conf: $confPct', palette.textWeak),
-                    _badge(status, palette.textWeak),
-                  ],
-                ),
-              ],
-            ),
-            if (description.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                description.length > 160 ? '${description.substring(0, 160)}…' : description,
-                style: TextStyle(fontSize: 12, color: palette.textWeak),
-              ),
-            ],
-            if (status == 'pending') ...[
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  OpenCodeButton(
-                    onPressed: () => onAction(id, true),
-                    variant: OpenCodeButtonVariant.primary,
-                    size: OpenCodeButtonSize.small,
-                    icon: Icons.check,
-                    child: const Text('Approve'),
-                  ),
-                  const SizedBox(width: 8),
-                  OpenCodeButton(
-                    onPressed: () => onAction(id, false),
-                    variant: OpenCodeButtonVariant.secondary,
-                    size: OpenCodeButtonSize.small,
-                    child: const Text('Reject'),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+  static String _cronLabel(String cron) {
+    for (final p in _cronPresets) {
+      if (p.cron == cron) return p.label;
+    }
+    return cron;
   }
-
-  Widget _badge(String label, Color color) => Container(
-        margin: const EdgeInsets.only(bottom: 2),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w500)),
-      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Repo job card (mini — summary only, tap goes to full screen)
+// Repo job card (mini)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RepoJobCard extends StatelessWidget {
@@ -652,19 +475,19 @@ class _RepoJobCard extends StatelessWidget {
   final Map<String, dynamic> job;
   final Oc2Palette palette;
 
-  static const _steps  = ['pending', 'spec', 'tests', 'implementing', 'docs', 'pr-open', 'completed'];
+  static const _steps = ['pending', 'spec', 'tests', 'implementing', 'docs', 'pr-open', 'completed'];
   static const _labels = ['Q', 'Spec', 'Tests', 'Code', 'Docs', 'PR', 'Done'];
 
   @override
   Widget build(BuildContext context) {
-    final repo     = job['repoFullName'] as String? ?? job['repo_full_name'] as String? ?? '-';
-    final issueNum = job['issueNumber'] ?? job['issue_number'];
-    final title    = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? '-';
-    final status   = job['status'] as String? ?? 'pending';
-    final failed   = status == 'failed';
-    final idx      = failed ? -1 : _steps.indexOf(status);
+    final repo = job['repoFullName'] as String? ?? job['repo_full_name'] as String? ?? '-';
+    final num = job['issueNumber'] ?? job['issue_number'];
+    final title = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? '-';
+    final status = job['status'] as String? ?? 'pending';
+    final failed = status == 'failed';
+    final idx = failed ? -1 : _steps.indexOf(status);
 
-    final statusColor = failed
+    final color = failed
         ? Colors.red
         : status == 'completed'
             ? Colors.green
@@ -686,26 +509,19 @@ class _RepoJobCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '$repo${issueNum != null ? " #$issueNum" : ""} — $title',
+                      '$repo${num != null ? " #$num" : ""} — $title',
                       style: const TextStyle(fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(status, style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.w600)),
-                  ),
+                  _Badge(label: status, color: color),
                 ],
               ),
               const SizedBox(height: 8),
               Row(
                 children: List.generate(_steps.length, (i) {
-                  final color = failed
+                  final c = failed
                       ? Colors.grey.withOpacity(0.3)
                       : i < idx
                           ? Colors.green
@@ -719,7 +535,7 @@ class _RepoJobCard extends StatelessWidget {
                         message: _labels[i],
                         child: Container(
                           height: 4,
-                          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+                          decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(2)),
                         ),
                       ),
                     ),
@@ -735,223 +551,287 @@ class _RepoJobCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Status badge (small pill)
+// Badge pill
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.status});
-  final String status;
-
-  Color _color() {
-    switch (status) {
-      case 'completed': case 'done': case 'active':
-        return Colors.green;
-      case 'running': case 'implementing': case 'spec': case 'tests':
-        return Colors.blue;
-      case 'failed': case 'error':
-        return Colors.red;
-      case 'pending': case 'queued':
-        return Colors.orange;
-      default:
-        return Colors.grey;
-    }
-  }
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.color});
+  final String label;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final c = _color();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
-      child: Text(status, style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w600)),
+      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+      child: Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tools section (collapsible)
+// Memory (RAG) tile
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ToolsSection extends StatelessWidget {
-  const _ToolsSection({
+class _MemoryTile extends StatelessWidget {
+  const _MemoryTile({
     required this.palette,
-    required this.memQ,
-    required this.idea,
+    required this.ctrl,
+    required this.busy,
     required this.chunks,
-    required this.discovery,
-    required this.memBusy,
-    required this.discBusy,
-    required this.repoIssueName,
-    required this.repoFull,
-    required this.repoLabel,
-    required this.repoCron,
-    required this.repoMaxDay,
-    required this.repoMaxIssues,
-    required this.repoRequirePassTests,
-    required this.onRepoRequirePassTestsChanged,
-    required this.onSearchMem,
-    required this.onEnqueueDiscovery,
-    required this.onCreateRepoIssuePipeline,
+    required this.onSearch,
   });
-
   final Oc2Palette palette;
-  final TextEditingController memQ, idea;
-  final TextEditingController repoIssueName, repoFull, repoLabel, repoCron, repoMaxDay, repoMaxIssues;
+  final TextEditingController ctrl;
+  final bool busy;
   final List<Map<String, dynamic>>? chunks;
-  final List<Map<String, dynamic>>? discovery;
-  final bool memBusy, discBusy, repoRequirePassTests;
-  final ValueChanged<bool> onRepoRequirePassTestsChanged;
-  final VoidCallback onSearchMem, onEnqueueDiscovery, onCreateRepoIssuePipeline;
+  final VoidCallback onSearch;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Column(
-        children: [
-          // Memory RAG
-          ExpansionTile(
-            leading: const Icon(Icons.memory_outlined),
-            title: const Text('Memory (RAG)', style: TextStyle(fontWeight: FontWeight.w600)),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: memQ,
-                      decoration: const InputDecoration(hintText: 'Search query', border: OutlineInputBorder(), isDense: true),
-                      onSubmitted: (_) => onSearchMem(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  OpenCodeButton(
-                    onPressed: memBusy ? null : onSearchMem,
-                    variant: OpenCodeButtonVariant.primary,
-                    size: OpenCodeButtonSize.small,
-                    icon: Icons.search,
-                    child: const Text('Search'),
-                  ),
-                ],
+    return ExpansionTile(
+      leading: const Icon(Icons.memory_outlined),
+      title: const Text('Memory (RAG)', style: TextStyle(fontWeight: FontWeight.w600)),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: ctrl,
+                decoration: const InputDecoration(hintText: 'Search memory…', border: OutlineInputBorder(), isDense: true),
+                onSubmitted: (_) => onSearch(),
               ),
-              if (chunks != null && chunks!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                ...chunks!.map((c) {
-                  final tx = c['text']?.toString() ?? '';
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    color: palette.backgroundWeak,
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            tx.length > 180 ? '${tx.substring(0, 180)}…' : tx,
-                            style: TextStyle(fontSize: 12, color: palette.textWeak),
-                          ),
-                          const SizedBox(height: 4),
-                          Text('score: ${c['score']}  ${c['source'] ?? ''}', style: TextStyle(fontSize: 11, color: palette.textWeak)),
-                        ],
-                      ),
+            ),
+            const SizedBox(width: 8),
+            OpenCodeButton(
+              onPressed: busy ? null : onSearch,
+              variant: OpenCodeButtonVariant.primary,
+              size: OpenCodeButtonSize.small,
+              icon: Icons.search,
+              child: const Text('Search'),
+            ),
+          ],
+        ),
+        if (chunks != null && chunks!.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ...chunks!.map((c) {
+            final tx = c['text']?.toString() ?? '';
+            return Card(
+              margin: const EdgeInsets.only(bottom: 6),
+              color: palette.backgroundWeak,
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tx.length > 180 ? '${tx.substring(0, 180)}…' : tx,
+                      style: TextStyle(fontSize: 12, color: palette.textWeak),
                     ),
-                  );
-                }),
-              ],
-            ],
-          ),
-          const Divider(height: 1),
-
-          // Discovery
-          ExpansionTile(
-            leading: const Icon(Icons.explore_outlined),
-            title: const Text('Discovery', style: TextStyle(fontWeight: FontWeight.w600)),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: idea,
-                      decoration: const InputDecoration(hintText: 'Idea text', border: OutlineInputBorder(), isDense: true),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  OpenCodeButton(
-                    onPressed: discBusy ? null : onEnqueueDiscovery,
-                    variant: OpenCodeButtonVariant.primary,
-                    size: OpenCodeButtonSize.small,
-                    child: const Text('Enqueue'),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text('score: ${c['score']}  ${c['source'] ?? ''}', style: TextStyle(fontSize: 11, color: palette.textWeak)),
+                  ],
+                ),
               ),
-              if (discovery != null && discovery!.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                ...discovery!.take(15).map((d) {
-                  final txt = d['idea_text']?.toString() ?? '-';
-                  final head = txt.length > 52 ? '${txt.substring(0, 52)}…' : txt;
-                  final st   = d['status'] as String? ?? '-';
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        Expanded(child: Text(head, style: TextStyle(fontSize: 12, color: palette.textWeak))),
-                        _StatusBadge(status: st),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ],
-          ),
-          const Divider(height: 1),
-
-          // New repo-issue pipeline
-          ExpansionTile(
-            leading: const Icon(Icons.add_circle_outline),
-            title: const Text('New Repo Pipeline', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text('repo-issue-worker strategy', style: TextStyle(fontSize: 12, color: palette.textWeak)),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _field(repoIssueName, 'Name', 150),
-                  _field(repoFull, 'owner/repo', 190),
-                  _field(repoLabel, 'Label', 90),
-                  _field(repoCron, 'Cron', 160),
-                  _field(repoMaxDay, 'Max/day', 90, numeric: true),
-                  _field(repoMaxIssues, 'Issues/run', 90, numeric: true),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Switch(value: repoRequirePassTests, onChanged: onRepoRequirePassTestsChanged),
-                      Text('Require passing tests', style: TextStyle(fontSize: 12, color: palette.textWeak)),
-                    ],
-                  ),
-                  OpenCodeButton(
-                    onPressed: onCreateRepoIssuePipeline,
-                    variant: OpenCodeButtonVariant.primary,
-                    size: OpenCodeButtonSize.small,
-                    icon: Icons.add,
-                    child: const Text('Create'),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            );
+          }),
         ],
-      ),
+      ],
     );
   }
+}
 
-  Widget _field(TextEditingController ctrl, String label, double w, {bool numeric = false}) =>
-      SizedBox(
-        width: w,
-        child: TextField(
-          controller: ctrl,
-          keyboardType: numeric ? TextInputType.number : TextInputType.text,
-          decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true),
+// ─────────────────────────────────────────────────────────────────────────────
+// Discovery tile
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DiscoveryTile extends StatelessWidget {
+  const _DiscoveryTile({
+    required this.palette,
+    required this.ctrl,
+    required this.busy,
+    required this.items,
+    required this.onEnqueue,
+  });
+  final Oc2Palette palette;
+  final TextEditingController ctrl;
+  final bool busy;
+  final List<Map<String, dynamic>>? items;
+  final VoidCallback onEnqueue;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      leading: const Icon(Icons.explore_outlined),
+      title: const Text('Discovery', style: TextStyle(fontWeight: FontWeight.w600)),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: ctrl,
+                decoration: const InputDecoration(hintText: 'Idea text', border: OutlineInputBorder(), isDense: true),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OpenCodeButton(
+              onPressed: busy ? null : onEnqueue,
+              variant: OpenCodeButtonVariant.primary,
+              size: OpenCodeButtonSize.small,
+              child: const Text('Enqueue'),
+            ),
+          ],
         ),
-      );
+        if (items != null && items!.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ...items!.take(10).map((d) {
+            final txt = d['idea_text']?.toString() ?? '-';
+            final head = txt.length > 52 ? '${txt.substring(0, 52)}…' : txt;
+            final st = d['status'] as String? ?? '-';
+            final color = st == 'completed'
+                ? Colors.green
+                : st == 'pending'
+                    ? Colors.orange
+                    : Colors.grey;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text(head, style: TextStyle(fontSize: 12, color: palette.textWeak))),
+                  _Badge(label: st, color: color),
+                ],
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Pipeline tile — friendly form with dropdowns
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NewPipelineTile extends StatelessWidget {
+  const _NewPipelineTile({
+    required this.palette,
+    required this.name,
+    required this.repo,
+    required this.label,
+    required this.cron,
+    required this.maxDay,
+    required this.issuesRun,
+    required this.requireTests,
+    required this.onCronChanged,
+    required this.onMaxDayChanged,
+    required this.onIssuesRunChanged,
+    required this.onRequireTestsChanged,
+    required this.onCreate,
+  });
+
+  final Oc2Palette palette;
+  final TextEditingController name, repo, label;
+  final String cron;
+  final int maxDay, issuesRun;
+  final bool requireTests;
+  final ValueChanged<String> onCronChanged;
+  final ValueChanged<int> onMaxDayChanged;
+  final ValueChanged<int> onIssuesRunChanged;
+  final ValueChanged<bool> onRequireTestsChanged;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      leading: const Icon(Icons.add_circle_outline),
+      title: const Text('New Repo Pipeline', style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: Text('repo-issue-worker', style: TextStyle(fontSize: 12, color: palette.textWeak)),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: [
+        TextField(
+          controller: name,
+          decoration: const InputDecoration(labelText: 'Pipeline name', hintText: 'e.g. my-project-issues', border: OutlineInputBorder(), isDense: true),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: repo,
+          decoration: const InputDecoration(labelText: 'Repository', hintText: 'owner/repo', border: OutlineInputBorder(), isDense: true),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: label,
+          decoration: const InputDecoration(labelText: 'Issue label filter', hintText: 'agent', border: OutlineInputBorder(), isDense: true),
+        ),
+        const SizedBox(height: 16),
+
+        // Schedule dropdown
+        DropdownButtonFormField<String>(
+          initialValue: _cronPresets.any((p) => p.cron == cron) ? cron : null,
+          decoration: const InputDecoration(labelText: 'Schedule', border: OutlineInputBorder(), isDense: true),
+          isExpanded: true,
+          items: _cronPresets
+              .map((p) => DropdownMenuItem(value: p.cron, child: Text(p.label, style: const TextStyle(fontSize: 13))))
+              .toList(),
+          onChanged: (v) {
+            if (v != null) onCronChanged(v);
+          },
+        ),
+        const SizedBox(height: 12),
+
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                initialValue: _maxDayOptions.contains(maxDay) ? maxDay : 3,
+                decoration: const InputDecoration(labelText: 'Max runs/day', border: OutlineInputBorder(), isDense: true),
+                items: _maxDayOptions
+                    .map((n) => DropdownMenuItem(value: n, child: Text(n == 0 ? 'Unlimited' : '$n', style: const TextStyle(fontSize: 13))))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) onMaxDayChanged(v);
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                initialValue: _issuesRunOptions.contains(issuesRun) ? issuesRun : 3,
+                decoration: const InputDecoration(labelText: 'Issues per run', border: OutlineInputBorder(), isDense: true),
+                items: _issuesRunOptions
+                    .map((n) => DropdownMenuItem(value: n, child: Text('$n', style: const TextStyle(fontSize: 13))))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) onIssuesRunChanged(v);
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        Row(
+          children: [
+            Switch(value: requireTests, onChanged: onRequireTestsChanged),
+            const SizedBox(width: 4),
+            Text('Require passing tests', style: TextStyle(fontSize: 13, color: palette.textBase)),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OpenCodeButton(
+            onPressed: onCreate,
+            variant: OpenCodeButtonVariant.primary,
+            size: OpenCodeButtonSize.small,
+            icon: Icons.add,
+            child: const Text('Create Pipeline'),
+          ),
+        ),
+      ],
+    );
+  }
 }

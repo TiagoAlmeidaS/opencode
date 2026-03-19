@@ -8,6 +8,7 @@ Funcionalidades e capacidades do produto: especificação, configuração, statu
 | [project-discovery-validator.md](project-discovery-validator.md) | Discovery (validação de ideias de projeto) no chat: skill project-discovery, uso e relatório. |
 | [env-vars.md](env-vars.md) | Variáveis de ambiente (OpenCode e migração Jarvis). |
 | [opportunity-content-sources.md](opportunity-content-sources.md) | Fontes de oportunidades de conteúdo (ProBlogger, WWR, RemoteOK) — texto, roteiro, copywriting. |
+| [bounty-delivery.md](bounty-delivery.md) | Fluxo de entrega de bounties: LLM + GitHub context, claim automático, fork-only. |
 | [repo-issue-dev-cycle.md](repo-issue-dev-cycle.md) | Ciclo fechado spec→TDD→PR (issues com label + oportunidades); pipeline `repo-issue-worker`. |
 | [pipeline-max-runs-per-day.md](pipeline-max-runs-per-day.md) | Limite de execuções por dia UTC (`max_runs_per_day`) no daemon. |
 | [server-dashboard-ui.md](server-dashboard-ui.md) | Dashboard do servidor: sidebar, tokens UI, toasts, ordenação de tabelas. |
@@ -15,3 +16,4 @@ Funcionalidades e capacidades do produto: especificação, configuração, statu
 | [cli-server-memory.md](cli-server-memory.md) | CLI: RAG + learnings do OpenCode Server no prompt; comandos `opencode server`. |
 | [flutter-app.md](flutter-app.md) | App Flutter: API matrix, SSE chat reload, permissões/perguntas, dashboard (RAG + discovery). |
 | [flutter-app-ux-layout-audit.md](flutter-app-ux-layout-audit.md) | Auditoria UX/UI do app Flutter: layout responsivo, portrait/landscape, overflow e breakpoints. |
+| [github-integration-strategy.md](github-integration-strategy.md) | Integração GitHub: padrões de mercado (OAuth code vs device flow), estado actual OpenCode, desenho futuro (callback servidor vs deep link). **Spec — implementação posterior.** |

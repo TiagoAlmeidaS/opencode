@@ -116,9 +116,14 @@ class _RepoJobsScreenState extends State<RepoJobsScreen> {
     final title = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? '-';
     final status = job['status'] as String? ?? 'pending';
     final prUrl = job['prUrl'] as String? ?? job['pr_url'];
+    final failed = status == 'failed';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: failed ? BorderSide(color: Colors.red.withOpacity(0.4)) : BorderSide.none,
+      ),
       child: InkWell(
         onTap: () => _showDetail(job),
         borderRadius: BorderRadius.circular(12),
@@ -155,11 +160,18 @@ class _RepoJobsScreenState extends State<RepoJobsScreen> {
               _StepProgress(status: status, steps: _steps, stepLabels: _stepLabels),
               if (prUrl != null) ...[
                 const SizedBox(height: 8),
-                Text(
-                  prUrl,
-                  style: TextStyle(fontSize: 11, color: palette.textWeak),
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(prUrl, style: TextStyle(fontSize: 11, color: palette.textWeak), overflow: TextOverflow.ellipsis),
+              ],
+              if (failed) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  Icon(Icons.error_outline, size: 14, color: Colors.red.withOpacity(0.7)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Tap to inspect error',
+                    style: TextStyle(fontSize: 11, color: Colors.red.withOpacity(0.7), fontStyle: FontStyle.italic),
+                  ),
+                ]),
               ],
             ],
           ),
@@ -262,7 +274,7 @@ class _StepProgress extends StatelessWidget {
   }
 }
 
-class _JobDetailSheet extends StatelessWidget {
+class _JobDetailSheet extends StatefulWidget {
   const _JobDetailSheet({
     required this.job,
     required this.palette,
@@ -274,7 +286,56 @@ class _JobDetailSheet extends StatelessWidget {
   final ScrollController scrollController;
 
   @override
+  State<_JobDetailSheet> createState() => _JobDetailSheetState();
+}
+
+class _JobDetailSheetState extends State<_JobDetailSheet> {
+  List<Map<String, dynamic>>? _errors;
+  bool _loadingErrors = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final status = widget.job['status'] as String? ?? '';
+    if (status == 'failed') _fetchErrors();
+  }
+
+  Future<void> _fetchErrors() async {
+    final id = widget.job['id'] as String?;
+    if (id == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    setState(() => _loadingErrors = true);
+    final errs = await srv.repoIssueJobErrors(id);
+    if (!mounted) return;
+    setState(() {
+      _errors = errs;
+      _loadingErrors = false;
+    });
+  }
+
+  String _ago(dynamic raw) {
+    if (raw is! int) return '-';
+    final dt = DateTime.fromMillisecondsSinceEpoch(raw * 1000).toLocal();
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  String _duration(dynamic ms) {
+    if (ms is! int || ms <= 0) return '-';
+    if (ms < 1000) return '${ms}ms';
+    final sec = ms ~/ 1000;
+    if (sec < 60) return '${sec}s';
+    return '${sec ~/ 60}m ${sec % 60}s';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final job = widget.job;
+    final palette = widget.palette;
     final title = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? '-';
     final repo = job['repoFullName'] as String? ?? job['repo_full_name'] as String? ?? '-';
     final issueNum = job['issueNumber'] ?? job['issue_number'];
@@ -282,24 +343,21 @@ class _JobDetailSheet extends StatelessWidget {
     final prUrl = job['prUrl'] as String? ?? job['pr_url'];
     final prNumber = job['prNumber'] ?? job['pr_number'];
     final isDraft = (job['prDraft'] ?? job['pr_draft']) == 1;
-    final branchName = job['branchName'] as String? ?? job['branch_name'];
-    final specJsonStr = job['specJson'] as String? ?? job['spec_json'];
-    final testFilesStr = job['testFiles'] as String? ?? job['test_files'];
-    final docsMarkdown = job['docsMarkdown'] as String? ?? job['docs_markdown'];
-    final issueBody = job['issueBody'] as String? ?? job['issue_body'];
+    final branch = job['branchName'] as String? ?? job['branch_name'];
+    final specStr = job['specJson'] as String? ?? job['spec_json'];
+    final testStr = job['testFiles'] as String? ?? job['test_files'];
+    final docs = job['docsMarkdown'] as String? ?? job['docs_markdown'];
+    final body = job['issueBody'] as String? ?? job['issue_body'];
+    final failed = status == 'failed';
 
     Map<String, dynamic>? spec;
-    if (specJsonStr != null && specJsonStr.isNotEmpty) {
-      try {
-        spec = jsonDecode(specJsonStr) as Map<String, dynamic>;
-      } catch (_) {}
+    if (specStr != null && specStr.isNotEmpty) {
+      try { spec = jsonDecode(specStr) as Map<String, dynamic>; } catch (_) {}
     }
 
-    List<dynamic>? testFiles;
-    if (testFilesStr != null && testFilesStr.isNotEmpty) {
-      try {
-        testFiles = jsonDecode(testFilesStr) as List<dynamic>;
-      } catch (_) {}
+    List<dynamic>? tests;
+    if (testStr != null && testStr.isNotEmpty) {
+      try { tests = jsonDecode(testStr) as List<dynamic>; } catch (_) {}
     }
 
     return Container(
@@ -308,13 +366,12 @@ class _JobDetailSheet extends StatelessWidget {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: ListView(
-        controller: scrollController,
+        controller: widget.scrollController,
         padding: const EdgeInsets.all(24),
         children: [
           Center(
             child: Container(
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               decoration: BoxDecoration(color: palette.borderWeak, borderRadius: BorderRadius.circular(2)),
             ),
           ),
@@ -323,26 +380,29 @@ class _JobDetailSheet extends StatelessWidget {
           const SizedBox(height: 4),
           Text(title, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              _tag(status, context),
-              if (branchName != null) _tag(branchName, context, icon: Icons.call_split),
-              if (prNumber != null) _tag('PR #$prNumber${isDraft ? " (draft)" : ""}', context, icon: Icons.merge_type),
-            ],
-          ),
+          Wrap(spacing: 8, runSpacing: 4, children: [
+            _tag(status, context, color: failed ? Colors.red : null),
+            if (branch != null) _tag(branch, context, icon: Icons.call_split),
+            if (prNumber != null) _tag('PR #$prNumber${isDraft ? " (draft)" : ""}', context, icon: Icons.merge_type),
+          ]),
           if (prUrl != null) ...[
             const SizedBox(height: 8),
             SelectableText(prUrl, style: TextStyle(fontSize: 12, color: palette.textWeak)),
           ],
+
+          // ── Error section ──
+          if (failed) ...[
+            const SizedBox(height: 16),
+            _buildErrorSection(palette),
+          ],
+
           const SizedBox(height: 16),
           const Divider(),
-          if (issueBody != null && issueBody.isNotEmpty) ...[
+          if (body != null && body.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text('Issue', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text(issueBody, style: const TextStyle(fontSize: 13)),
+            Text(body, style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 16),
             const Divider(),
           ],
@@ -377,43 +437,40 @@ class _JobDetailSheet extends StatelessWidget {
               Text('Files to touch', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: palette.textWeak)),
               const SizedBox(height: 4),
               Wrap(
-                spacing: 8,
-                runSpacing: 4,
+                spacing: 8, runSpacing: 4,
                 children: (spec['files_to_touch'] as List)
-                    .map(
-                      (f) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: palette.backgroundWeak,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: palette.borderWeak),
-                        ),
-                        child: Text(f.toString(), style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                    .map((f) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: palette.backgroundWeak,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: palette.borderWeak),
                       ),
-                    )
+                      child: Text(f.toString(), style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                    ))
                     .toList(),
               ),
               const SizedBox(height: 16),
             ],
             const Divider(),
           ],
-          if (testFiles != null && testFiles.isNotEmpty) ...[
+          if (tests != null && tests.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Text('Test files (${testFiles.length})', style: Theme.of(context).textTheme.titleMedium),
+            Text('Test files (${tests.length})', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            ...testFiles.map((f) {
+            ...tests.map((f) {
               if (f is Map) {
-                final path = f['path']?.toString() ?? f['file']?.toString() ?? '-';
-                final content = f['content']?.toString();
+                final p = f['path']?.toString() ?? f['file']?.toString() ?? '-';
+                final c = f['content']?.toString();
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ExpansionTile(
-                    title: Text(path, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
+                    title: Text(p, style: const TextStyle(fontSize: 12, fontFamily: 'monospace')),
                     children: [
-                      if (content != null)
+                      if (c != null)
                         Padding(
                           padding: const EdgeInsets.all(12),
-                          child: SelectableText(content, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                          child: SelectableText(c, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
                         ),
                     ],
                   ),
@@ -427,11 +484,11 @@ class _JobDetailSheet extends StatelessWidget {
             const SizedBox(height: 16),
             const Divider(),
           ],
-          if (docsMarkdown != null && docsMarkdown.isNotEmpty) ...[
+          if (docs != null && docs.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text('Documentation', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            SelectableText(docsMarkdown, style: const TextStyle(fontSize: 13)),
+            SelectableText(docs, style: const TextStyle(fontSize: 13)),
             const SizedBox(height: 16),
           ],
         ],
@@ -439,21 +496,140 @@ class _JobDetailSheet extends StatelessWidget {
     );
   }
 
-  Widget _tag(String label, BuildContext context, {IconData? icon}) {
+  Widget _buildErrorSection(Oc2Palette palette) {
+    if (_loadingErrors) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withOpacity(0.3)),
+        ),
+        child: const Row(children: [
+          SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red)),
+          SizedBox(width: 12),
+          Text('Loading error details…', style: TextStyle(fontSize: 13, color: Colors.red)),
+        ]),
+      );
+    }
+
+    if (_errors == null || _errors!.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red.withOpacity(0.3)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.error_outline, color: Colors.red, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'This job failed but no detailed error was recorded.',
+              style: TextStyle(fontSize: 13, color: Colors.red.shade700),
+            ),
+          ),
+        ]),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: _errors!.asMap().entries.map((entry) {
+        final i = entry.key;
+        final err = entry.value;
+        final activity = err['activityType'] as String? ?? err['activity_type'] as String? ?? '-';
+        final msg = err['errorMessage'] as String? ?? err['error_message'] as String? ?? 'Unknown error';
+        final completed = err['completedAt'] ?? err['completed_at'];
+        final dur = err['durationMs'] ?? err['duration_ms'];
+        final trigger = err['triggeredBy'] as String? ?? err['triggered_by'];
+
+        return Container(
+          margin: EdgeInsets.only(bottom: i < _errors!.length - 1 ? 8 : 0),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.red.withOpacity(0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _activityLabel(activity),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.red),
+                  ),
+                ),
+                if (completed != null)
+                  Text(_ago(completed), style: TextStyle(fontSize: 11, color: palette.textWeak)),
+              ]),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: palette.backgroundWeak,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: SelectableText(
+                  msg,
+                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace', height: 1.5),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(spacing: 16, runSpacing: 4, children: [
+                if (dur != null) _meta(Icons.timer_outlined, _duration(dur), palette),
+                if (trigger != null) _meta(Icons.play_arrow_outlined, trigger, palette),
+              ]),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _meta(IconData icon, String text, Oc2Palette palette) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: palette.textWeak),
+          const SizedBox(width: 4),
+          Text(text, style: TextStyle(fontSize: 11, color: palette.textWeak)),
+        ],
+      );
+
+  String _activityLabel(String raw) {
+    switch (raw) {
+      case 'generate_spec': return 'Spec Generation';
+      case 'generate_tdd_tests': return 'TDD Tests';
+      case 'implement_code': return 'Code Implementation';
+      case 'generate_docs': return 'Documentation';
+      case 'open_pr': return 'PR Opening';
+      case 'notify_pr_approval': return 'PR Approval';
+      default: return raw.replaceAll('_', ' ');
+    }
+  }
+
+  Widget _tag(String label, BuildContext context, {IconData? icon, Color? color}) {
+    final c = color ?? Theme.of(context).colorScheme.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+        color: c.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 12, color: Theme.of(context).colorScheme.primary),
+            Icon(icon, size: 12, color: c),
             const SizedBox(width: 4),
           ],
-          Text(label, style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.primary)),
+          Text(label, style: TextStyle(fontSize: 11, color: c)),
         ],
       ),
     );

@@ -15,6 +15,7 @@ import { sendTelegramAlertActivity } from "./send-telegram-alert"
 import { dailyReportActivity } from "./daily-report"
 import { executeOpportunityActivity } from "./execute-opportunity"
 import { classifyWorkspaceStrategyActivity } from "./classify-workspace-strategy"
+import { claimBountyIssueActivity } from "./claim-bounty-issue"
 import { createDedicatedRepoActivity } from "./create-dedicated-repo"
 import { submitGithubPrActivity } from "./submit-github-pr"
 import { generateGitcoinProposalActivity } from "./generate-gitcoin-proposal"
@@ -49,6 +50,7 @@ registerActivity(sendTelegramAlertActivity)
 registerActivity(dailyReportActivity)
 registerActivity(executeOpportunityActivity)
 registerActivity(classifyWorkspaceStrategyActivity)
+registerActivity(claimBountyIssueActivity)
 registerActivity(createDedicatedRepoActivity)
 registerActivity(submitGithubPrActivity)
 registerActivity(generateGitcoinProposalActivity)

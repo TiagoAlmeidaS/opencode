@@ -62,7 +62,9 @@ O app Flutter (`packages/flutter_app`) inclui:
 - **AppState** (`lib/state/app_state.dart`): `chatReload` (stream) recarrega mensagens na sessão ativa em eventos `message.*`, `session.status`, `session.idle`; debounce ~400ms. `sessionAttention` notifica sessão em `permission.asked` / `question.asked`. Lista de sessões em `session.created|updated|deleted` (correção do parsing do tipo aninhado).
 - **Permissões / perguntas** (`lib/widgets/session_pending_dialogs.dart`): `GET /permission`, `POST /permission/:id/reply`; `GET /question`, `POST /question/:id/reply`, `POST /question/:id/reject`. Polling a cada 3s na sessão + após envio de prompt + SSE.
 - **WebSocket PTY** (`lib/services/pty_websocket.dart`): terminal integrado.
-- **Telas**: `ConnectionScreen`, `MainLayout`, `HomeDashboardScreen` (resumo `/server/*` quando daemon ativo), `SessionScreen` (chat + Files + Terminal), `FilesScreen`, `ServerDashboardScreen`, `RepoJobsScreen`, `ReportsScreen`, `LearningsScreen`, `OpportunitiesScreen`, `LlmSettingsScreen` (modelo global via `PATCH /global/config`; modelo do projeto via `PATCH /config` + lista `GET /config/providers`). Chaves API/OAuth permanecem no host do servidor.
+- **Telas**: `ConnectionScreen`, `MainLayout`, `HomeDashboardScreen` (resumo `/server/*` quando daemon ativo), `SessionScreen` (chat + Files + Terminal), `FilesScreen`, `ServerDashboardScreen` (foco operacional: pipelines, repo jobs, tools — sem duplicar métricas/proposals do Home), `RepoJobsScreen`, `ReportsScreen`, `LearningsScreen`, `OpportunitiesScreen`, `LlmSettingsScreen` (modelo global via `PATCH /global/config`; modelo do projeto via `PATCH /config` + lista `GET /config/providers`). Chaves API/OAuth permanecem no host do servidor.
+  - **ServerDashboardScreen UX (v2):** Secções removidas (já no Home): status metrics, proposals, goals, recent jobs. "New Repo Pipeline" usa dropdowns para Schedule (presets cron), Max runs/day e Issues/run em vez de campos de texto livre. Formulário vertical com labels claros.
+  - **RepoJobsScreen — Error Inspection:** Jobs com status `failed` têm borda vermelha e hint "Tap to inspect error". Ao abrir o detalhe, a app busca `GET /server/repo-issue-jobs/:id/errors` (join `daemon_queue` por `json_extract(input_json, '$.repo_issue_job_id')`), mostrando: activity que falhou, mensagem de erro (monospace, seleccionável), duração e timestamp relativo. Múltiplos erros (e.g. retry chain) são listados cronologicamente.
 
 ### Matriz API principal (SDK vs client Flutter)
 
@@ -90,7 +92,7 @@ O app Flutter (`packages/flutter_app`) inclui:
 | `/server/dashboard` | sim | `ServerDashboardScreen` |
 | `/server/memory/retrieve` | sim | `ServerDashboardScreen` |
 | `/server/discovery` GET/POST | sim | `ServerDashboardScreen` |
-| `/server/repo-issue-jobs` (+ detalhe por id) | sim | `ServerDashboardScreen`, `RepoJobsScreen` |
+| `/server/repo-issue-jobs` (+ detalhe por id, **+ errors por id**) | sim | `ServerDashboardScreen`, `RepoJobsScreen` |
 | `/server/reports`, `/server/reports/:id` | sim | `HomeDashboardScreen`, `ReportsScreen` |
 | `/server/learnings`, `POST …/learnings/extract` | sim | `HomeDashboardScreen`, `LearningsScreen` |
 | `/server/opportunities/stats`, `/server/opportunities` (+ shortlist/ignore) | sim | `HomeDashboardScreen`, `OpportunitiesScreen` |

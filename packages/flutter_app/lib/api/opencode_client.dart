@@ -392,7 +392,7 @@ class OpenCodeClient {
     }
   }
 
-  /// Poll for token. Returns {status: pending|done|expired|denied|error, token?}.
+  /// Poll for token. Returns {status: pending|slow_down|done|expired|denied|error, token?, interval?}.
   Future<Map<String, dynamic>?> githubAuthPoll(String deviceCode) async {
     final r = await _http.post(
       Uri.parse('$_base/github/auth/poll'),

@@ -161,15 +161,21 @@ class _DialogAddProjectState extends State<DialogAddProject> {
       return;
     }
 
+    final sec = data['interval'];
     setState(() {
       _authState = 'code';
       _deviceCode = data['deviceCode'] as String?;
       _userCode = data['userCode'] as String?;
       _verificationUri = data['verificationUri'] as String?;
-      _pollInterval = (data['interval'] as int?) ?? 5;
+      _pollInterval = sec is num ? sec.toInt().clamp(1, 3600) : 5;
     });
 
+    _scheduleGithubPoll();
+  }
+
+  void _scheduleGithubPoll() {
     _pollTimer?.cancel();
+    if (_deviceCode == null || _authState != 'code') return;
     _pollTimer = Timer.periodic(
       Duration(seconds: _pollInterval),
       (_) => _pollGithubAuth(),
@@ -216,6 +222,14 @@ class _DialogAddProjectState extends State<DialogAddProject> {
         _pollTimer?.cancel();
         _pollTimer = null;
         setState(() { _authState = 'none'; _repoErr = 'Access denied by GitHub.'; });
+      } else if (status == 'slow_down') {
+        final raw = result?['interval'];
+        final next = raw is num
+            ? raw.toInt().clamp(1, 3600)
+            : _pollInterval + 5;
+        if (!mounted || _authState != 'code') return;
+        setState(() => _pollInterval = next);
+        _scheduleGithubPoll();
       } else if (status == 'error') {
         _pollTimer?.cancel();
         _pollTimer = null;

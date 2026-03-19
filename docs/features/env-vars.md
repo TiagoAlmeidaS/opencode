@@ -47,6 +47,15 @@ OpenCode plugin currently only supports **sending**; receiving webhooks may be a
 | DB path | Default: `{dataDir}/opencode-server.db` | Overridable when creating server in code |
 | Server auth | `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SERVER_USERNAME` | Same as main OpenCode serve |
 
+## GitHub OAuth (app Flutter — add project)
+
+| Purpose | Env | Notes |
+|--------|-----|-------|
+| Device flow proxy | `GITHUB_OAUTH_CLIENT_ID` | **OAuth App:** em [Developer settings](https://github.com/settings/developers); ativa device flow na app. Ver [github-oauth-proxy](../api/github-oauth-proxy.md). |
+| Sem scope (só GitHub App) | `GITHUB_OAUTH_SKIP_SCOPE=1` | **Não uses** em OAuth App. |
+| Scopes (OAuth App) | `GITHUB_OAUTH_SCOPES` | Omitir → `repo read:user`. Custom: espaços entre scopes. |
+| Secret (opcional) | `GITHUB_OAUTH_CLIENT_SECRET` | Se definido, o servidor envia-o no poll do token. |
+
 ## Example `.env`
 
 Create a `.env` in the project root (or set these in your shell / deployment):

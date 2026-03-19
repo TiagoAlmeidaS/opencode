@@ -448,6 +448,22 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     return c.json(row)
   })
 
+  app.get("/repo-issue-jobs/:id/errors", async (c) => {
+    const id = c.req.param("id")
+    const rows = await db
+      .select()
+      .from(daemonQueue)
+      .where(
+        and(
+          eq(daemonQueue.status, "failed"),
+          sql`json_extract(${daemonQueue.inputJson}, '$.repo_issue_job_id') = ${id}`,
+        ),
+      )
+      .orderBy(desc(daemonQueue.completedAt))
+      .limit(20)
+    return c.json(rows)
+  })
+
   app.post("/opportunities/:id/shortlist", async (c) => {
     const id = c.req.param("id")
     const now = Math.floor(Date.now() / 1000)
