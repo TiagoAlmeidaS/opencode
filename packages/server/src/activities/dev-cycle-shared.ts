@@ -1,5 +1,10 @@
 import path from "path"
 import { tmpdir } from "os"
+import { which } from "bun"
+
+function hasBin(name: string): boolean {
+  try { return which(name) != null } catch { return false }
+}
 
 export function workDirForJob(jobId: string): string {
   return path.join(tmpdir(), "opencode-rj", jobId, "repo")
@@ -59,8 +64,9 @@ export async function detectTestCommand(cwd: string): Promise<string | null> {
     const pkg = JSON.parse(await Bun.file(path.join(cwd, "package.json")).text()) as {
       scripts?: Record<string, string>
     }
-    if (pkg.scripts?.["test:ci"]) return "npm run test:ci"
-    if (pkg.scripts?.test && !pkg.scripts.test.includes("no test")) return "npm test"
+    const runner = hasBin("npm") ? "npm" : "bun"
+    if (pkg.scripts?.["test:ci"]) return `${runner} run test:ci`
+    if (pkg.scripts?.test && !pkg.scripts.test.includes("no test")) return `${runner} test`
   } catch { /* empty */ }
   if (await Bun.file(path.join(cwd, "go.mod")).exists()) return "go test ./..."
   if (await Bun.file(path.join(cwd, "Cargo.toml")).exists()) return "cargo test"

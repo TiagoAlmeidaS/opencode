@@ -23,10 +23,11 @@ COPY --from=deps /app/packages/opencode ./packages/opencode
 COPY --from=deps /app/packages/util ./packages/util
 COPY --from=deps /app/packages/sdk/js ./packages/sdk/js
 COPY --from=deps /app/packages/plugin ./packages/plugin
+COPY --from=deps /app/.opencode/skills ./.opencode/skills
 COPY package.json bunfig.toml ./
 
-# Instala git (necessário para fork+clone em submit-github-pr)
-RUN apk add --no-cache git openssh-client
+# git: fork+clone; nodejs+npm: projetos Node detectados por detectTestCommand
+RUN apk add --no-cache git openssh-client nodejs npm
 
 # Wrapper para opencode CLI (executa via bun; bin/opencode exige binário nativo)
 RUN mkdir -p /app/bin && printf '%s\n' '#!/bin/sh' 'exec bun /app/packages/opencode/src/index.ts "$@"' > /app/bin/opencode-wrap && chmod +x /app/bin/opencode-wrap

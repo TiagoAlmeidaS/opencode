@@ -4,6 +4,7 @@ import { Octokit } from "@octokit/rest"
 import { tmpdir } from "os"
 import { rm } from "fs/promises"
 import path from "path"
+import { which } from "bun"
 import { oppOpportunities, oppSubmissions } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 import { getBountyWalletSnippet } from "../financial-config"
@@ -60,13 +61,14 @@ async function runCommand(cmd: string, cwd: string): Promise<{ success: boolean;
 
 /** Detecta o comando de teste do projeto pelo tipo de linguagem/ferramentas */
 async function detectTestCommand(cwd: string): Promise<string | null> {
-  // Node / Bun — package.json scripts
+  // Node / Bun — package.json scripts (prefer npm if available, fall back to bun)
   try {
     const pkg = JSON.parse(await Bun.file(path.join(cwd, "package.json")).text()) as {
       scripts?: Record<string, string>
     }
-    if (pkg.scripts?.["test:ci"])  return "npm run test:ci"
-    if (pkg.scripts?.["test"] && !pkg.scripts.test.includes("no test")) return "npm test"
+    const runner = which("npm") ? "npm" : "bun"
+    if (pkg.scripts?.["test:ci"])  return `${runner} run test:ci`
+    if (pkg.scripts?.["test"] && !pkg.scripts.test.includes("no test")) return `${runner} test`
   } catch {}
 
   // Go

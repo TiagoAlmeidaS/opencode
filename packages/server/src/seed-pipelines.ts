@@ -59,6 +59,18 @@ const DEFAULTS: Array<{
     scheduleCron: "0 4 * * *", // daily 04:00 (after memory_extract + learning)
     configJson: { retention_days: 7 },
   },
+  {
+    strategy: "self_improvement",
+    name: "Self-Improvement Pipeline",
+    scheduleCron: "0 6 * * 1", // Monday 06:00 (weekly)
+    configJson: {
+      target_repo: "TiagoAlmeidaS/opencode",
+      since_days: 7,
+      max_proposals: 3,
+      issue_label: "self-improvement",
+      approved_label: "approved",
+    },
+  },
 ]
 
 export async function seedDefaultPipelines(db: ServerDb) {

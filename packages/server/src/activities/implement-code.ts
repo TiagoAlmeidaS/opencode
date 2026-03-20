@@ -1,15 +1,13 @@
 import { eq } from "drizzle-orm"
 import { Octokit } from "@octokit/rest"
 import path from "path"
-import { mkdir, rm } from "fs/promises"
+import { mkdir, rm, cp } from "fs/promises"
 import { repoIssueJobs } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
-import {
-  workDirForJob,
-  runGit,
-  runCommand,
-  detectTestCommand,
-} from "./dev-cycle-shared"
+import { workDirForJob, runGit } from "./dev-cycle-shared"
+import { checkExistingPR } from "../github-utils"
+
+const SKILLS_SRC = path.resolve(import.meta.dir, "../../../../.opencode/skills")
 
 interface Input {
   repo_issue_job_id: string
@@ -38,18 +36,34 @@ export const implementCodeActivity: Activity = {
     const token = process.env.GITHUB_TOKEN
     if (!token) throw new Error("GITHUB_TOKEN não configurado")
 
-    const [job] = await ctx.db
+    const [row] = await ctx.db
       .select()
       .from(repoIssueJobs)
       .where(eq(repoIssueJobs.id, input.repo_issue_job_id))
       .limit(1)
-    if (!job) throw new Error(`repo_issue_job não encontrado: ${input.repo_issue_job_id}`)
+    if (!row) throw new Error(`repo_issue_job não encontrado: ${input.repo_issue_job_id}`)
+    let job = row
 
     const octokit = new Octokit({ auth: token })
     const { data: user } = await octokit.users.getAuthenticated()
     const forkOwner = user.login
     const [owner, repo] = job.repoFullName.split("/")
     if (!owner || !repo) throw new Error(`repo_full_name inválido: ${job.repoFullName}`)
+
+    if (job.issueNumber != null) {
+      const pr = await checkExistingPR(token, job.repoFullName, job.issueNumber, forkOwner)
+      if (pr.exists && !pr.isOwn) {
+        const now = Math.floor(Date.now() / 1000)
+        await ctx.db
+          .update(repoIssueJobs)
+          .set({ status: "skipped", updatedAt: now })
+          .where(eq(repoIssueJobs.id, job.id))
+        return {
+          summary: `Skipped — PR already exists by @${pr.author}: ${pr.url}`,
+          extra: { skipped: true, existingPR: pr.url },
+        }
+      }
+    }
 
     const base = job.baseBranch || "main"
     let cloneUrl: string
@@ -105,31 +119,33 @@ export const implementCodeActivity: Activity = {
         : `agent/opp-${job.id.slice(-8)}-${Date.now()}`
     await runGit(["checkout", "-b", branch], workDir)
 
-    const task = buildTask(job)
+    await injectSkills(workDir)
+
     const MAX_OUTPUT = 10_000
 
-    let lastOut = ""
     let sessionId: string | null = null
     let cliOutput = ""
     for (let n = 1; n <= MAX_TRIES; n++) {
       await ctx.updateProgress?.(`OpenCode tentativa ${n}/${MAX_TRIES}`)
-      const result = await ctx.spawnOpenCode(
-        n === 1 ? task : `${task}\n\nPREVIOUS FAILURE:\n${lastOut.slice(0, 2000)}`,
-        workDir,
-      )
-      sessionId = result.sessionId ?? sessionId
-      cliOutput = result.output.slice(-MAX_OUTPUT)
-
-      const testCmd = await detectTestCommand(workDir)
-      if (!testCmd) break
-      const r = await runCommand(testCmd, workDir)
-      if (r.ok) break
-      lastOut = r.out
-      if (n === MAX_TRIES) {
-        if (job.requirePassingTests !== 0) {
-          throw new Error(`Testes ainda falhando após ${MAX_TRIES} tentativas: ${lastOut.slice(0, 500)}`)
+      if (n > 1) {
+        const spec = await readSpec(workDir)
+        if (spec) job = { ...job, specJson: spec }
+      }
+      const task = buildTask(job, n, n > 1 ? cliOutput : undefined)
+      try {
+        const result = await ctx.spawnOpenCode(task, workDir)
+        sessionId = result.sessionId ?? sessionId
+        cliOutput = result.output.slice(-MAX_OUTPUT)
+        break
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        cliOutput = msg.slice(-MAX_OUTPUT)
+        if (n === MAX_TRIES) {
+          if (job.requirePassingTests !== 0) {
+            throw new Error(`CLI falhou após ${MAX_TRIES} tentativas: ${msg.slice(0, 500)}`)
+          }
+          await ctx.updateProgress?.("CLI falhou mas require_passing_tests=false — prosseguindo")
         }
-        await ctx.updateProgress?.("Testes falhando mas require_passing_tests=false — abrindo PR como draft")
       }
     }
 
@@ -156,24 +172,64 @@ export const implementCodeActivity: Activity = {
   },
 }
 
-function buildTask(job: typeof repoIssueJobs.$inferSelect): string {
-  const issue = job.issueBody ? job.issueBody.slice(0, 6000) : "(sem descrição)"
-  return `Implement code to satisfy this GitHub issue.
+function buildTask(
+  job: typeof repoIssueJobs.$inferSelect,
+  attempt: number,
+  prev?: string,
+): string {
+  const body = job.issueBody ? job.issueBody.slice(0, 10_000) : "(sem descrição)"
+  const num = job.issueNumber != null ? ` #${job.issueNumber}` : ""
+  const base = job.baseBranch || "main"
+  const strict = job.requirePassingTests !== 0
 
-ISSUE TITLE: ${job.issueTitle}
-ISSUE BODY:
-${issue}
+  const parts: string[] = [
+    `Implement code to satisfy this GitHub issue.`,
+    ``,
+    `ISSUE TITLE: ${job.issueTitle}`,
+    `ISSUE${num}: ${job.repoFullName}`,
+    `BASE BRANCH: ${base}`,
+    `PASSING TESTS REQUIRED: ${strict ? "yes" : "no — open draft PR if tests fail"}`,
+    ``,
+    `ISSUE BODY:`,
+    body,
+  ]
 
-REPO: ${job.repoFullName}
+  if (job.specJson && attempt > 1) {
+    parts.push(``, `PREVIOUS SPEC (from attempt ${attempt - 1} — reuse or improve):`, job.specJson.slice(0, 4000))
+  }
 
-Instructions:
-1. Read the codebase to understand the existing architecture and conventions.
-2. Write a spec file at ${SPEC_PATH} as JSON with: title, goal, scope, acceptance_criteria, technical_approach, files_to_touch, test_scenarios.
-3. Write tests following the project's existing test patterns and conventions.
-4. Implement the code to pass all tests.
-5. Install any missing dependencies as needed (npm install, pip install, cargo add, etc.).
-6. Run tests and ensure they pass.
-7. Make minimal, focused changes. Do not commit or push.`
+  if (prev) {
+    parts.push(``, `PREVIOUS ATTEMPT (${attempt - 1}) FAILED. Output:`, prev.slice(0, 3000), ``, `Fix the issues above and try again.`)
+  }
+
+  parts.push(
+    ``,
+    `Instructions:`,
+    ``,
+    `PHASE 1 — DISCOVERY`,
+    `Check if .opencode/skills/pm-discover/SKILL.md exists and follow it. Otherwise:`,
+    `1. Map the project directory structure. Detect monorepo vs single-app.`,
+    `2. Read the main manifest (package.json, Cargo.toml, go.mod, *.csproj, etc.) to identify language, framework, package manager, and scripts.`,
+    `3. Read AGENTS.md, CLAUDE.md, CONTRIBUTING.md, or any conventions file present.`,
+    `4. Identify the test framework, test directory, and read 1-2 existing test files to learn patterns.`,
+    `5. Identify architecture layers (API, services, models, UI).`,
+    ``,
+    `PHASE 2 — PLAN`,
+    `6. Write a spec file at ${SPEC_PATH} as JSON with: title, goal, scope, acceptance_criteria, technical_approach, files_to_touch, test_scenarios.`,
+    `7. Extract acceptance criteria from the issue body. For each criterion, plan: (a) code task, (b) unit test, (c) integration test if applicable.`,
+    ``,
+    `PHASE 3 — BUILD`,
+    `8. Install ALL dependencies required to build and test the project. Use whatever tools are available (bun, npm, npx, pip, cargo, dotnet, go, etc.).`,
+    `9. Write tests following the project's existing patterns (Given/When/Then where appropriate).`,
+    `10. Implement the code to pass all tests.`,
+    `11. Run the project's full test suite and ensure ALL tests pass. If a test runner is not installed, install it first. Adapt to the runtime available.`,
+    ``,
+    `PHASE 4 — FINALIZE`,
+    `12. Make minimal, focused changes. Do not commit or push.`,
+    `13. If any step fails, diagnose the error, fix it, and retry until tests pass.`,
+  )
+
+  return parts.join("\n")
 }
 
 async function readSpec(cwd: string): Promise<string | null> {
@@ -184,4 +240,14 @@ async function readSpec(cwd: string): Promise<string | null> {
   } catch {
     return null
   }
+}
+
+async function injectSkills(cwd: string): Promise<void> {
+  try {
+    const exists = await Bun.file(path.join(SKILLS_SRC, "pm-discover", "SKILL.md")).exists()
+    if (!exists) return
+    const dst = path.join(cwd, ".opencode", "skills")
+    await mkdir(dst, { recursive: true })
+    await cp(SKILLS_SRC, dst, { recursive: true })
+  } catch { /* skills injection is best-effort */ }
 }

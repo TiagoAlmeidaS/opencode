@@ -91,9 +91,15 @@ registerPipeline({
     const eligible = deferIfBlocked(list).slice(0, maxN * 2)
     const now = Math.floor(Date.now() / 1000)
     let enq = 0
+    let skippedSI = 0
     const repoFull = `${parsed.owner}/${parsed.repo}`
 
     for (const issue of eligible) {
+      const names = issue.labels.map((l) => l.name)
+      if (names.includes("self-improvement") && !names.includes("approved")) {
+        skippedSI++
+        continue
+      }
       if (enq >= maxN) break
 
       const [existing] = await ctx.db
@@ -171,6 +177,6 @@ registerPipeline({
       if (!skipped) enq++
     }
 
-    return { extra: { issues_scanned: list.length, chains_enqueued: enq } }
+    return { extra: { issues_scanned: list.length, chains_enqueued: enq, self_improvement_pending_approval: skippedSI } }
   },
 })

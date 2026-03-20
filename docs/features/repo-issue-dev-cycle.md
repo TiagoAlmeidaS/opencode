@@ -13,15 +13,28 @@ Ciclo fechado **implementação (OpenCode CLI) → docs → PR draft → Telegra
 implement-code → generate-docs → open-pr → notify-pr-approval
 ```
 
-O `implement-code` delega o ciclo completo para a CLI OpenCode:
+O `implement-code` delega o ciclo completo para a CLI OpenCode, com prompt estruturado em 4 fases:
 
+**PHASE 1 — DISCOVERY**
 1. Clone/fork do repo
-2. CLI lê o codebase e entende a arquitetura
-3. CLI gera spec em `.opencode/spec.json` (persistido no banco para rastreabilidade)
-4. CLI escreve testes seguindo padrões do projeto
-5. CLI implementa o código
-6. CLI instala dependências e roda testes
-7. Validação pós-agent: server verifica se testes passam (com fallback graceful se runtime não estiver disponível)
+2. Injeta `.opencode/skills/` (pm-discover, pm-implement) no repo target para a CLI encontrar via SkillTool
+3. CLI executa discovery: mapeia estrutura, detecta linguagem, framework, package manager, lê AGENTS.md/CONTRIBUTING.md, identifica padrões de teste e arquitetura
+
+**PHASE 2 — PLAN**
+4. CLI gera spec em `.opencode/spec.json` (persistido no banco para rastreabilidade)
+5. CLI extrai critérios de aceite da issue e planeja: (a) tarefa de código, (b) teste unitário, (c) teste de integração
+
+**PHASE 3 — BUILD**
+6. CLI instala dependências (npm, bun, pip, cargo, dotnet, etc.)
+7. CLI escreve testes seguindo padrões do projeto (Given/When/Then)
+8. CLI implementa o código para passar os testes
+9. CLI roda suite de testes completa e auto-diagnostica falhas
+
+**PHASE 4 — FINALIZE**
+10. Mudanças mínimas e focadas. Não faz commit nem push.
+11. Se qualquer step falha, diagnostica, corrige e retenta.
+
+O prompt inclui todo o contexto disponível do job: `issueNumber`, `baseBranch`, `requirePassingTests`, `specJson` (de tentativas anteriores), e `cli_output` (para self-correction em retries).
 
 ## Config / env
 

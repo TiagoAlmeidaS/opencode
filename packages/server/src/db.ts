@@ -396,6 +396,25 @@ export function getDb(dbPath: string) {
     "CREATE INDEX IF NOT EXISTS idx_queue_opp_id ON daemon_queue(related_opportunity_id, activity_type, status)",
     "ALTER TABLE daemon_pipelines ADD COLUMN max_runs_per_day INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE repo_issue_jobs ADD COLUMN require_passing_tests INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN session_id TEXT",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN cli_output TEXT",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN learning_extracted_at INTEGER",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN pr_outcome TEXT",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN pr_outcome_at INTEGER",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN pr_review_comments TEXT",
+    `CREATE TABLE IF NOT EXISTS self_improvement_proposals (
+  id TEXT PRIMARY KEY,
+  pipeline_run_id TEXT,
+  issue_number INTEGER,
+  repo TEXT NOT NULL,
+  title TEXT NOT NULL,
+  category TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'proposed',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+)`,
+    "CREATE INDEX IF NOT EXISTS idx_si_proposals_status ON self_improvement_proposals(status)",
+    "CREATE INDEX IF NOT EXISTS idx_si_proposals_repo ON self_improvement_proposals(repo)",
   ]
   for (const stmt of alterMigrations) {
     try {

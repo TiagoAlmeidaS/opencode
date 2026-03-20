@@ -34,6 +34,21 @@ Se o daemon estiver no **mesmo** processo `opencode serve --daemon`, deixe *Daem
 
 Em versões afetadas, `Server.createApp` terminava com um `return` antes de registar rotas como `GET /path`, `GET /command` e o fallback `/*`. O resultado era **404 em `/path`** mesmo com `opencode serve` na porta esperada. **Correção:** construir a app com atribuição (`app = app…`) e um único `return` final em `packages/opencode/src/server/server.ts`. Depois de atualizar o servidor, volta a testar `GET /path`.
 
+### O stack ainda mostra `index-JGfWFo5u.js` (ou o mesmo hash de sempre)?
+
+Os nomes em `/assets/index-<hash>.js` vêm do **Vite**: o `<hash>` muda quando o **conteúdo** do bundle muda. Se o erro `(L.data ?? []).map` continuar e o nome do ficheiro no stack for **idêntico** ao de antes, o servidor em `:4096` está a servir um **build antigo** da UI — não é um bug novo no TypeScript do repo; é **deploy/cache de imagem Docker** ou processo que não foi reiniciado com `OPENCODE_APP_DIST` atualizado.
+
+**Atualizar a UI no Docker** (`Dockerfile.opencode-backend` já corre `bun run --filter @opencode-ai/app build`):
+
+```bash
+docker compose -f docker-compose.opencode-server.yml build --no-cache opencode-backend
+docker compose -f docker-compose.opencode-server.yml up -d --force-recreate opencode-backend
+```
+
+**Atualizar em desenvolvimento:** na raiz do monorepo, `bun run --filter @opencode-ai/app build`, aponta `OPENCODE_APP_DIST` para o caminho absoluto de `packages/app/dist`, reinicia `opencode serve`.
+
+Depois, no browser: hard refresh ou janela anónima e confirma que **`/assets/index-*.js`** tem **outro** hash.
+
 ## Solução
 
 1. **Garantir que o backend na porta 4096 é o OpenCode Server:**

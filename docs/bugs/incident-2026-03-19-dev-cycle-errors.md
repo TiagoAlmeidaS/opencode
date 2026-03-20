@@ -67,11 +67,59 @@ A CLI salva `.opencode/spec.json` no repo para rastreabilidade, que o server le 
 | `packages/server/src/standalone.ts` | `withRetry` com backoff exponencial para todos os LLM providers |
 | `.env.server` | Unico `MEMORY_LLM_PROVIDER=openai` |
 
+## Follow-up 2026-03-20: eliminacao da verificacao hardcoded
+
+Analise dos erros pos-fix mostrou que os 3 jobs do repo `atendimento_atacado` continuaram falhando por:
+
+- `Testes ainda falhando apos 3 tentativas: Runtime not available: Error: Executable not found in $PATH: "npm"` — o `detectTestCommand()` retornava `"npm test"` e `runCommand()` falhava ao executar npm diretamente no shell, **apos** a CLI com LLM ter rodado.
+
+### Causa raiz real
+
+O `implement-code.ts` tinha um fluxo em duas fases:
+1. `spawnOpenCode(task)` — CLI com LLM roda (funciona, sabe adaptar-se)
+2. `detectTestCommand()` + `runCommand("npm test")` — verificacao **hardcoded** de testes, sem LLM, dependente de runtimes pre-instalados
+
+O passo 2 era fragil: se amanha o projeto for C#, Rust ou Go, precisaria de `dotnet`, `cargo`, `go` no container.
+
+### Fix definitivo
+
+- **`implement-code.ts`**: removido `detectTestCommand` + `runCommand`. O loop agora delega TUDO para a CLI com LLM: install deps, run tests, diagnose errors. Se a CLI falha (exit code != 0), retenta com o output de erro no prompt. Nunca mais depende de runtimes hardcoded.
+- **`submit-github-pr.ts`** e **`dev-cycle-shared.ts`**: `detectTestCommand` agora usa `Bun.which("npm")` para fallback para `bun` quando `npm` nao esta disponivel.
+- **Dockerfile**: adicionado `nodejs npm` ao `apk add` para projetos que legitimamente precisam de npm.
+- **Task prompt**: melhorado para instruir a CLI a detectar linguagem, package manager, instalar deps, adaptar ao runtime disponivel, e auto-diagnosticar falhas.
+
+## Follow-up 2026-03-20 (2): prompt enriquecido e skills
+
+Apos o fix definitivo da verificacao hardcoded, o prompt do `buildTask` foi reestruturado para incluir todo o contexto disponivel do job e instruir a CLI com um fluxo em 4 fases:
+
+### Contexto enriquecido no prompt
+
+Campos adicionados: `issueNumber` (para `Closes #N`), `baseBranch`, `requirePassingTests` (para decidir se abre draft PR), `specJson` (de tentativas anteriores), e `cli_output` expandido para 3000 chars.
+
+### Prompt em 4 fases
+
+1. **DISCOVERY** — mapear estrutura, detectar stack, ler convenções, identificar padrões de teste
+2. **PLAN** — gerar spec, extrair critérios de aceite, planejar tarefas + testes
+3. **BUILD** — instalar deps, escrever testes, implementar, rodar suite
+4. **FINALIZE** — mudanças mínimas, auto-diagnóstico de falhas
+
+### Skills injetadas
+
+Criadas duas skills em `.opencode/skills/`:
+- **pm-discover** — fluxo estruturado de discovery/indexação do projeto (similar a `claude init`)
+- **pm-implement** — implementação estruturada com critérios de aceite, testes unitários/integração
+
+O `implement-code` agora copia estas skills para o repo target após clone, permitindo que a CLI as encontre via `SkillTool`.
+
+### Dockerfile atualizado
+
+Adicionado `COPY --from=deps /app/.opencode/skills ./.opencode/skills` para disponibilizar as skills no container.
+
 ## Acoes pendentes
 
 1. Deploy manual na VPS (CI/CD de deploy com secrets faltando)
 2. Atualizar `.env.server` na VPS
-3. Re-enqueue dos 20 jobs falhados via API:
+3. Re-enqueue dos jobs falhados via API:
 
 ```bash
 # Para cada job_id falhado, enfileirar implement-code:
