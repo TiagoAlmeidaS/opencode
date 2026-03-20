@@ -18,6 +18,7 @@ interface Cfg {
 }
 
 const ACTIVE = ["pending", "spec", "tests", "implementing", "docs", "pr-open"]
+const MAX_AUTO_RETRIES = 3
 
 function prio(labels: { name?: string }[], prefix: string): number {
   for (const l of labels) {
@@ -117,10 +118,13 @@ registerPipeline({
       if (existing) {
         if (existing.status === "completed") continue
         if (existing.status === "failed") {
+          const retries = existing.retry_count ?? 0
+          if (retries >= MAX_AUTO_RETRIES) continue
           await ctx.db
             .update(repoIssueJobs)
             .set({
               status: "pending",
+              retry_count: retries + 1,
               specJson: null,
               testFiles: null,
               docsMarkdown: null,

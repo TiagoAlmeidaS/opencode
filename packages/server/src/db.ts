@@ -415,6 +415,7 @@ export function getDb(dbPath: string) {
 )`,
     "CREATE INDEX IF NOT EXISTS idx_si_proposals_status ON self_improvement_proposals(status)",
     "CREATE INDEX IF NOT EXISTS idx_si_proposals_repo ON self_improvement_proposals(repo)",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
   ]
   for (const stmt of alterMigrations) {
     try {

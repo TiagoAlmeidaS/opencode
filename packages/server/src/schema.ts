@@ -347,6 +347,8 @@ export const repoIssueJobs = sqliteTable("repo_issue_jobs", {
   pr_outcome_at: integer("pr_outcome_at"),
   /** Concatenated review comments from the PR (for feeding into learning). */
   pr_review_comments: text("pr_review_comments"),
+  /** Number of times the pipeline has auto-retried this job after failure. */
+  retry_count: integer("retry_count").notNull().default(0),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })

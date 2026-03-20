@@ -142,6 +142,11 @@ export const implementCodeActivity: Activity = {
         cliOutput = msg.slice(-MAX_OUTPUT)
         if (n === MAX_TRIES) {
           if (job.requirePassingTests !== 0) {
+            // Persist the error output before throwing so it's visible in the job detail
+            await ctx.db
+              .update(repoIssueJobs)
+              .set({ cli_output: cliOutput, updatedAt: Math.floor(Date.now() / 1000) })
+              .where(eq(repoIssueJobs.id, job.id))
             throw new Error(`CLI falhou após ${MAX_TRIES} tentativas: ${msg.slice(0, 500)}`)
           }
           await ctx.updateProgress?.("CLI falhou mas require_passing_tests=false — prosseguindo")
