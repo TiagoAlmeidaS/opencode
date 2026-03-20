@@ -292,12 +292,26 @@ class _JobDetailSheet extends StatefulWidget {
 class _JobDetailSheetState extends State<_JobDetailSheet> {
   List<Map<String, dynamic>>? _errors;
   bool _loadingErrors = false;
+  List<Map<String, dynamic>>? _steps;
+  bool _loadingSteps = false;
 
   @override
   void initState() {
     super.initState();
     final status = widget.job['status'] as String? ?? '';
     if (status == 'failed') _fetchErrors();
+    _fetchSteps();
+  }
+
+  Future<void> _fetchSteps() async {
+    final id = widget.job['id'] as String?;
+    if (id == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    setState(() => _loadingSteps = true);
+    final steps = await srv.repoIssueJobSteps(id);
+    if (!mounted) return;
+    setState(() { _steps = steps; _loadingSteps = false; });
   }
 
   Future<void> _fetchErrors() async {
@@ -395,6 +409,13 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
             const SizedBox(height: 16),
             _buildErrorSection(palette),
           ],
+
+          // ── Execution Chain ──
+          const SizedBox(height: 16),
+          _buildExecutionChainSection(palette),
+
+          // ── CLI Output ──
+          ..._buildCliOutputSection(job, palette),
 
           const SizedBox(height: 16),
           const Divider(),
@@ -494,6 +515,188 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
         ],
       ),
     );
+  }
+
+  static const _activityHumanLabels = <String, String>{
+    'implement-code': 'Implement Code',
+    'generate-docs': 'Generate Docs',
+    'open-pr': 'Open PR',
+    'notify-pr-approval': 'PR Approval',
+  };
+
+  Color _stepColor(String status) {
+    switch (status) {
+      case 'completed': return Colors.green;
+      case 'failed': return Colors.red;
+      case 'running': return Colors.blue;
+      default: return Colors.grey;
+    }
+  }
+
+  IconData _stepIcon(String status) {
+    switch (status) {
+      case 'completed': return Icons.check_circle_outline;
+      case 'failed': return Icons.error_outline;
+      case 'running': return Icons.sync;
+      default: return Icons.radio_button_unchecked;
+    }
+  }
+
+  Widget _buildExecutionChainSection(Oc2Palette palette) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Execution Chain', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: palette.textWeak)),
+        const SizedBox(height: 8),
+        if (_loadingSteps)
+          const Center(child: CircularProgressIndicator())
+        else if (_steps == null || _steps!.isEmpty)
+          Text('No execution steps recorded.', style: TextStyle(fontSize: 12, color: palette.textWeak))
+        else
+          ..._steps!.map((step) {
+            final activity = step['activityType'] as String? ?? step['activity_type'] as String? ?? '-';
+            final stepStatus = step['status'] as String? ?? 'pending';
+            final createdAt = step['createdAt'] ?? step['created_at'];
+            final completedAt = step['completedAt'] ?? step['completed_at'];
+            final dur = step['durationMs'] ?? step['duration_ms'];
+            final errorMsg = step['errorMessage'] as String? ?? step['error_message'];
+            final outputRaw = step['outputJson'] as String? ?? step['output_json'];
+            final inputRaw = step['inputJson'] as String? ?? step['input_json'];
+            final label = _activityHumanLabels[activity] ?? activity.replaceAll('-', ' ').replaceAll('_', ' ');
+            final color = _stepColor(stepStatus);
+
+            Map<String, dynamic>? outputMap;
+            if (outputRaw != null && outputRaw.isNotEmpty) {
+              try { outputMap = jsonDecode(outputRaw) as Map<String, dynamic>; } catch (_) {}
+            }
+            final summary = outputMap?['summary'] as String?;
+
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(color: color.withOpacity(0.3)),
+              ),
+              child: ExpansionTile(
+                leading: Icon(_stepIcon(stepStatus), color: color, size: 20),
+                title: Row(
+                  children: [
+                    Expanded(child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: color.withOpacity(0.4)),
+                      ),
+                      child: Text(stepStatus, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+                    ),
+                    if (dur != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: palette.backgroundWeak,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(_duration(dur), style: TextStyle(fontSize: 10, color: palette.textWeak)),
+                      ),
+                    ],
+                  ],
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (createdAt != null)
+                          Text(
+                            'Started: ${_ago(createdAt)}${completedAt != null ? " · Duration: ${_duration(dur)}" : ""}',
+                            style: TextStyle(fontSize: 11, color: palette.textWeak),
+                          ),
+                        if (summary != null) ...[
+                          const SizedBox(height: 8),
+                          Text('Progress note', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: palette.textWeak)),
+                          const SizedBox(height: 4),
+                          Text(summary, style: const TextStyle(fontSize: 12)),
+                        ],
+                        if (errorMsg != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.withOpacity(0.3)),
+                            ),
+                            child: SelectableText(
+                              errorMsg,
+                              style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Colors.red, height: 1.4),
+                            ),
+                          ),
+                        ],
+                        if (inputRaw != null && inputRaw.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            title: Text('Raw input', style: TextStyle(fontSize: 11, color: palette.textWeak)),
+                            children: [
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: palette.backgroundWeak,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: SelectableText(
+                                  inputRaw,
+                                  style: const TextStyle(fontSize: 10, fontFamily: 'monospace', height: 1.4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  List<Widget> _buildCliOutputSection(Map<String, dynamic> job, Oc2Palette palette) {
+    final cliOutput = job['cliOutput'] as String? ?? job['cli_output'] as String?;
+    if (cliOutput == null || cliOutput.isEmpty) return [];
+    return [
+      const SizedBox(height: 8),
+      Text('CLI Output', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: palette.textWeak)),
+      const SizedBox(height: 8),
+      Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: ExpansionTile(
+          title: Text('Show output (${cliOutput.length} chars)', style: const TextStyle(fontSize: 12)),
+          children: [
+            Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 300),
+              padding: const EdgeInsets.all(12),
+              child: SingleChildScrollView(
+                child: SelectableText(
+                  cliOutput,
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace', height: 1.4),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   Widget _buildErrorSection(Oc2Palette palette) {
