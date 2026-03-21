@@ -276,8 +276,9 @@ function buildBackendForType(
   const baseURL = cfg.baseURL
 
   // openai-compatible quando BASE_URL presente
+  // Fallback de key: específica > OPENAI_API_KEY > OPENROUTER_API_KEY (centraliza via OpenRouter)
   if (baseURL && model) {
-    const key = apiKey ?? OPENAI_API_KEY ?? ""
+    const key = apiKey ?? OPENAI_API_KEY ?? OPENROUTER_API_KEY ?? ""
     if (!key) {
       console.warn(`[llm-router] LLM_${taskKey.toUpperCase()}_BASE_URL definida mas nenhuma API key encontrada; usando default.`)
       return { fn: defaultFn }
