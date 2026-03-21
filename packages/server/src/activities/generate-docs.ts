@@ -23,6 +23,7 @@ export const generateDocsActivity: Activity = {
       .from(repoIssueJobs)
       .where(eq(repoIssueJobs.id, input.repo_issue_job_id))
       .limit(1)
+    if (row.status === "skipped") return { summary: "Skipped — implement-code foi pulado", extra: { skipped: true } }
     if (!row?.specJson) throw new Error("spec ausente")
 
     const prompt = `Com base na spec e título abaixo, gere documentação Markdown com seções:

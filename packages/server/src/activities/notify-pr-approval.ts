@@ -48,6 +48,7 @@ export const notifyPrApprovalActivity: Activity = {
       .from(repoIssueJobs)
       .where(eq(repoIssueJobs.id, input.repo_issue_job_id))
       .limit(1)
+    if (job.status === "skipped") return { summary: "Skipped — implement-code foi pulado", extra: { skipped: true } }
     if (!job?.prUrl) throw new Error("pr_url ausente")
 
     let criteria = ""

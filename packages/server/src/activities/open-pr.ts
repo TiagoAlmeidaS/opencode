@@ -27,6 +27,7 @@ export const openPrActivity: Activity = {
       .from(repoIssueJobs)
       .where(eq(repoIssueJobs.id, input.repo_issue_job_id))
       .limit(1)
+    if (job.status === "skipped") return { summary: "Skipped — implement-code foi pulado", extra: { skipped: true } }
     if (!job?.branchName || !job.localWorkPath) throw new Error("branch ou workspace ausente — implement-code antes")
     if (!job.docsMarkdown) throw new Error("docs ausentes")
     if (job.prUrl) {
