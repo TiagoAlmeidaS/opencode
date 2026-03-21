@@ -9,6 +9,8 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
+    "test": "bun test ./src",
+    "test:watch": "bun test --watch ./src",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
