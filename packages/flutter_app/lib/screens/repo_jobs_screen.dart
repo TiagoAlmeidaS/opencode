@@ -294,6 +294,7 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
   bool _loadingErrors = false;
   List<Map<String, dynamic>>? _steps;
   bool _loadingSteps = false;
+  bool _retrying = false;
 
   @override
   void initState() {
@@ -326,6 +327,27 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
       _errors = errs;
       _loadingErrors = false;
     });
+  }
+
+  Future<void> _retryJob() async {
+    final id = widget.job['id'] as String?;
+    if (id == null) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    setState(() => _retrying = true);
+    final result = await srv.repoIssueJobRetry(id);
+    if (!mounted) return;
+    setState(() => _retrying = false);
+    if (result != null) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Job restarted — check queue for progress'), duration: Duration(seconds: 3)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to restart job'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   String _ago(dynamic raw) {
@@ -402,6 +424,26 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
           if (prUrl != null) ...[
             const SizedBox(height: 8),
             SelectableText(prUrl, style: TextStyle(fontSize: 12, color: palette.textWeak)),
+          ],
+
+          // ── Retry button (failed jobs only) ──
+          if (failed) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _retrying ? null : _retryJob,
+                icon: _retrying
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.restart_alt, size: 18),
+                label: Text(_retrying ? 'Restarting…' : 'Restart Job'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.orange.shade700,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
           ],
 
           // ── Error section ──

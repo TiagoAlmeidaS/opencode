@@ -272,6 +272,12 @@ class ServerApiClient {
     return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  Future<Map<String, dynamic>?> repoIssueJobRetry(String id) async {
+    final r = await _http.post(_uri('repo-issue-jobs/$id/retry'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
   // ---------------------------------------------------------------------------
   // Reports
   // ---------------------------------------------------------------------------

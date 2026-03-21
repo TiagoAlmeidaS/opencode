@@ -6,6 +6,7 @@ import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenu
 import { eq, desc, sql, gte, and, asc, inArray } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
+import { enqueueDevCycleChain } from "./repo-job-chain"
 import { listActivities } from "./activity"
 import { setRagConfig, search } from "./memory/rag"
 import { compileSpecToPrompt } from "./spec-compiler"
@@ -472,6 +473,36 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       .where(sql`json_extract(${daemonQueue.inputJson}, '$.repo_issue_job_id') = ${id}`)
       .orderBy(asc(daemonQueue.createdAt))
     return c.json(rows)
+  })
+
+  app.post("/repo-issue-jobs/:id/retry", async (c) => {
+    const id = c.req.param("id")
+    const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
+    if (!job) return c.json({ error: "Not found" }, 404)
+    if (job.status !== "failed") return c.json({ error: `Job is '${job.status}', only 'failed' jobs can be retried` }, 400)
+    const now = Math.floor(Date.now() / 1000)
+    await db.update(repoIssueJobs).set({
+      status: "pending",
+      retry_count: 0,
+      specJson: null,
+      testFiles: null,
+      docsMarkdown: null,
+      branchName: null,
+      forkRepoFullName: null,
+      localWorkPath: null,
+      prUrl: null,
+      prNumber: null,
+      session_id: null,
+      cli_output: null,
+      updatedAt: now,
+    }).where(eq(repoIssueJobs.id, id))
+    await enqueueDevCycleChain(db, {
+      jobId: id,
+      dedupKey: `repo-job:${id}`,
+      triggeredBy: "manual-retry",
+    })
+    const [updated] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
+    return c.json(updated)
   })
 
   app.post("/opportunities/:id/shortlist", async (c) => {
