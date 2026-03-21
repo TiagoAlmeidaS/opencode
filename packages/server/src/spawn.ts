@@ -36,7 +36,7 @@ export async function spawnOpenCode(
 ): Promise<SpawnResult> {
   const before = Math.floor(Date.now() / 1000) - 2
 
-  const proc = Bun.spawn([CLI, "run", "--task", task], {
+  const proc = Bun.spawn([CLI, "run", task], {
     cwd,
     stdout: "pipe",
     stderr: "pipe",
