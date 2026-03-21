@@ -475,6 +475,28 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     return c.json(rows)
   })
 
+  app.post("/repo-issue-jobs/:id/cancel", async (c) => {
+    const id = c.req.param("id")
+    const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
+    if (!job) return c.json({ error: "Not found" }, 404)
+    const terminal = ["completed", "cancelled"]
+    if (terminal.includes(job.status)) return c.json({ error: `Job is already '${job.status}'` }, 400)
+    const now = Math.floor(Date.now() / 1000)
+    // Mark the job as cancelled
+    await db.update(repoIssueJobs)
+      .set({ status: "cancelled", retry_count: 3, updatedAt: now })
+      .where(eq(repoIssueJobs.id, id))
+    // Cancel all pending/running queue items associated with this job
+    await db.update(daemonQueue)
+      .set({ status: "cancelled", completedAt: now })
+      .where(and(
+        sql`json_extract(${daemonQueue.inputJson}, '$.repo_issue_job_id') = ${id}`,
+        inArray(daemonQueue.status, ["pending", "running"]),
+      ))
+    const [updated] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
+    return c.json(updated)
+  })
+
   app.post("/repo-issue-jobs/:id/retry", async (c) => {
     const id = c.req.param("id")
     const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))

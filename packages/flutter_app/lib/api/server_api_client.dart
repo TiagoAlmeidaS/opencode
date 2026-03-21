@@ -278,6 +278,12 @@ class ServerApiClient {
     return jsonDecode(r.body) as Map<String, dynamic>?;
   }
 
+  Future<Map<String, dynamic>?> repoIssueJobCancel(String id) async {
+    final r = await _http.post(_uri('repo-issue-jobs/$id/cancel'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
   // ---------------------------------------------------------------------------
   // Reports
   // ---------------------------------------------------------------------------

@@ -295,6 +295,7 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
   List<Map<String, dynamic>>? _steps;
   bool _loadingSteps = false;
   bool _retrying = false;
+  bool _cancelling = false;
 
   @override
   void initState() {
@@ -327,6 +328,43 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
       _errors = errs;
       _loadingErrors = false;
     });
+  }
+
+  Future<void> _cancelJob() async {
+    final id = widget.job['id'] as String?;
+    if (id == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel job?'),
+        content: const Text('This will stop execution and cancel all pending steps. The job can be restarted later.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Cancel job'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    setState(() => _cancelling = true);
+    final result = await srv.repoIssueJobCancel(id);
+    if (!mounted) return;
+    setState(() => _cancelling = false);
+    if (result != null) {
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Job cancelled'), duration: Duration(seconds: 3)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to cancel job'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Future<void> _retryJob() async {
@@ -426,24 +464,45 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
             SelectableText(prUrl, style: TextStyle(fontSize: 12, color: palette.textWeak)),
           ],
 
-          // ── Retry button (failed jobs only) ──
-          if (failed) ...[
+          // ── Job actions ──
+          if (!['completed', 'cancelled'].contains(status)) ...[
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _retrying ? null : _retryJob,
-                icon: _retrying
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.restart_alt, size: 18),
-                label: Text(_retrying ? 'Restarting…' : 'Restart Job'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.orange.shade700,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            Row(children: [
+              // Restart — only for failed jobs
+              if (failed) ...[
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: (_retrying || _cancelling) ? null : _retryJob,
+                    icon: _retrying
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.restart_alt, size: 18),
+                    label: Text(_retrying ? 'Restarting…' : 'Restart'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.orange.shade700,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
+              // Cancel — visible for all non-terminal statuses
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: (_retrying || _cancelling) ? null : _cancelJob,
+                  icon: _cancelling
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red))
+                      : const Icon(Icons.cancel_outlined, size: 18, color: Colors.red),
+                  label: Text(_cancelling ? 'Cancelling…' : 'Cancel Job',
+                      style: const TextStyle(color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
               ),
-            ),
+            ]),
           ],
 
           // ── Error section ──
