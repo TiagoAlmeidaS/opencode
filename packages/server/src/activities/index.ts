@@ -34,6 +34,7 @@ import { openPrActivity } from "./open-pr"
 import { notifyPrApprovalActivity } from "./notify-pr-approval"
 import { prOutcomeCheckActivity } from "./pr-outcome-check"
 import { discoverNichesActivity } from "./discover-niches"
+import { devCycleLearningTriggerActivity } from "./dev-cycle-learning-trigger"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -70,3 +71,4 @@ registerActivity(openPrActivity)
 registerActivity(notifyPrApprovalActivity)
 registerActivity(prOutcomeCheckActivity)
 registerActivity(discoverNichesActivity)
+registerActivity(devCycleLearningTriggerActivity)

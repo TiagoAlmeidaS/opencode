@@ -50,7 +50,7 @@ const DEFAULTS: Array<{
   {
     strategy: "dev_cycle_learning",
     name: "Dev Cycle Learning",
-    scheduleCron: "30 3 * * *", // daily 03:30
+    scheduleCron: "0 * * * *", // hourly — catch all completed/failed jobs
     configJson: { since_days: 7, max_jobs: 20 },
   },
   {
@@ -59,10 +59,40 @@ const DEFAULTS: Array<{
     scheduleCron: "0 4 * * *", // daily 04:00 (after memory_extract + learning)
     configJson: { retention_days: 7 },
   },
+  // Memory pipeline chain (weekly, Sunday)
+  {
+    strategy: "memory_extract",
+    name: "Memory Extract (Phase 1)",
+    scheduleCron: "0 2 * * *", // daily 02:00
+    configJson: {},
+  },
+  {
+    strategy: "memory_consolidation",
+    name: "Memory Consolidation (Phase 2)",
+    scheduleCron: "0 3 * * 0", // Sunday 03:00
+    configJson: {},
+  },
+  {
+    strategy: "memory_rag_index",
+    name: "Memory RAG Index (Phase 3)",
+    scheduleCron: "0 4 * * 0", // Sunday 04:00 (after consolidation)
+    configJson: {},
+  },
+  // Strategy analyzer (weekly, Monday)
+  {
+    strategy: "strategy_analyzer",
+    name: "Strategy Analyzer",
+    scheduleCron: "0 6 * * 1", // Monday 06:00 (after memory pipelines)
+    configJson: {
+      analysis_window_days: 30,
+      min_confidence_for_auto_approve: 0.85,
+      max_auto_approve_risk: "low",
+    },
+  },
   {
     strategy: "self_improvement",
     name: "Self-Improvement Pipeline",
-    scheduleCron: "0 6 * * 1", // Monday 06:00 (weekly)
+    scheduleCron: "0 7 * * 1", // Monday 07:00 (after strategy_analyzer)
     configJson: {
       target_repo: "TiagoAlmeidaS/opencode",
       since_days: 7,

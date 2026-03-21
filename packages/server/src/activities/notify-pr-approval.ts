@@ -40,6 +40,7 @@ export const notifyPrApprovalActivity: Activity = {
         .update(repoIssueJobs)
         .set({ status: "completed", updatedAt: now })
         .where(eq(repoIssueJobs.id, input.repo_issue_job_id))
+      await ctx.enqueue("dev-cycle-learning", { repo_issue_job_id: input.repo_issue_job_id }, { priority: 8 })
       return { summary: "Telegram não configurado — job marcado completed", extra: { skipped: true } }
     }
 
@@ -79,6 +80,8 @@ export const notifyPrApprovalActivity: Activity = {
       .update(repoIssueJobs)
       .set({ status: "completed", updatedAt: now })
       .where(eq(repoIssueJobs.id, job.id))
+
+    await ctx.enqueue("dev-cycle-learning", { repo_issue_job_id: job.id }, { priority: 8 })
 
     return { summary: "Telegram enviado; status completed (aguardando merge humano)", extra: {} }
   },

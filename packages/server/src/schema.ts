@@ -281,7 +281,7 @@ export const discoveryReports = sqliteTable("discovery_reports", {
 /** Agent learnings: RAG knowledge base built from submission outcomes and execution patterns. */
 export const agentLearnings = sqliteTable("agent_learnings", {
   id: text("id").primaryKey(),
-  category: text("category").notNull(), // 'skill' | 'niche' | 'platform' | 'pattern'
+  category: text("category").notNull(), // 'skill' | 'niche' | 'platform' | 'pattern' | 'error_pattern' | 'dev-cycle' | 'repo'
   key: text("key").notNull(),           // unique slug identifier
   title: text("title").notNull(),
   body: text("body").notNull(),         // the learning content
@@ -291,6 +291,10 @@ export const agentLearnings = sqliteTable("agent_learnings", {
   positiveCount: integer("positive_count").notNull().default(0),
   negativeCount: integer("negative_count").notNull().default(0),
   tags: text("tags"),                   // JSON string[]
+  /** How many times this learning was injected as context for a job. */
+  usedCount: integer("used_count").notNull().default(0),
+  /** How many jobs that used this learning completed successfully. */
+  helpedCount: integer("helped_count").notNull().default(0),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })
@@ -349,6 +353,8 @@ export const repoIssueJobs = sqliteTable("repo_issue_jobs", {
   pr_review_comments: text("pr_review_comments"),
   /** Number of times the pipeline has auto-retried this job after failure. */
   retry_count: integer("retry_count").notNull().default(0),
+  /** JSON array of agentLearning IDs that were injected as context for this job (for helpedCount tracking). */
+  used_learning_ids: text("used_learning_ids"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })

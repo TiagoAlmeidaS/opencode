@@ -53,11 +53,12 @@ Extract learnings in categories:
 - "dev-cycle": execution patterns (retry behavior, dependency install, test strategy)
 - "repo": repo-specific conventions (framework, test runner, package manager, branch naming)
 - "pattern": general success/failure patterns
+- "error_pattern": specific errors with root cause and fix (include error_type, root_cause, fix_applied in the body as JSON context)
 
 Return JSON array:
 [
   {
-    "category": "dev-cycle" | "repo" | "pattern",
+    "category": "dev-cycle" | "repo" | "pattern" | "error_pattern",
     "key": "kebab-case-id",
     "title": "Short title (max 60 chars)",
     "body": "Actionable insight in 1-3 sentences.",
@@ -192,6 +193,8 @@ const devCycleLearning: Pipeline = {
             source: "dev-cycle-learning",
             positiveCount: l.signal === "positive" ? 1 : 0,
             negativeCount: l.signal === "negative" ? 1 : 0,
+            usedCount: 0,
+            helpedCount: 0,
             tags: JSON.stringify(l.tags),
             createdAt: now,
             updatedAt: now,

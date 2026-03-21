@@ -835,20 +835,28 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
   // ── Agent Learnings (RAG Brain) ──────────────────────────────────────────
   app.get("/learnings", async (c) => {
     const category = c.req.query("category")?.trim()
+    const tag = c.req.query("tag")?.trim()
     const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "100", 10)))
-    const rows = category
-      ? await db
-          .select()
-          .from(agentLearnings)
-          .where(eq(agentLearnings.category, category))
-          .orderBy(desc(agentLearnings.confidence), desc(agentLearnings.updatedAt))
-          .limit(limit)
-      : await db
-          .select()
-          .from(agentLearnings)
-          .orderBy(desc(agentLearnings.confidence), desc(agentLearnings.updatedAt))
-          .limit(limit)
+
+    const conditions = []
+    if (category) conditions.push(eq(agentLearnings.category, category))
+    if (tag) conditions.push(sql`${agentLearnings.tags} LIKE ${"%" + JSON.stringify(tag).slice(1, -1) + "%"}`)
+
+    const rows = await db
+      .select()
+      .from(agentLearnings)
+      .where(conditions.length > 0 ? (conditions.length === 1 ? conditions[0] : and(...conditions)) : undefined)
+      .orderBy(desc(agentLearnings.confidence), desc(agentLearnings.updatedAt))
+      .limit(limit)
     return c.json(rows)
+  })
+
+  app.post("/learnings/:id/used", async (c) => {
+    const id = c.req.param("id")
+    const [row] = await db.select({ usedCount: agentLearnings.usedCount }).from(agentLearnings).where(eq(agentLearnings.id, id)).limit(1)
+    if (!row) return c.json({ error: "Not found" }, 404)
+    await db.update(agentLearnings).set({ usedCount: row.usedCount + 1 }).where(eq(agentLearnings.id, id))
+    return c.json({ ok: true })
   })
 
   app.post("/learnings", zValidator("json", z.object({
@@ -893,6 +901,8 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       updatedAt: now,
       positiveCount: 0,
       negativeCount: 0,
+      usedCount: 0,
+      helpedCount: 0,
     })
     const [row] = await db.select().from(agentLearnings).where(eq(agentLearnings.id, id))
     return c.json(row, 201)

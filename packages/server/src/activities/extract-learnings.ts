@@ -18,7 +18,7 @@ interface ExtractLearningsInput {
 }
 
 interface LearningResult {
-  category: "skill" | "niche" | "platform" | "pattern"
+  category: "skill" | "niche" | "platform" | "pattern" | "error_pattern"
   key: string
   title: string
   body: string
@@ -70,13 +70,14 @@ Extract learnings in these categories:
 - "niche": insights about specific niches (which are profitable, competitive, well-suited for AI)
 - "platform": platform-specific patterns (what works on GitHub vs HackerOne vs Gitcoin, etc.)
 - "pattern": general execution patterns (proposal length, approach, timing, etc.)
+- "error_pattern": specific error types with root cause and fix (error_type, root_cause, fix_applied)
 
 For each learning, assess whether it's a positive signal (do more of this) or negative (avoid this).
 
 Return JSON array:
 [
   {
-    "category": "skill" | "niche" | "platform" | "pattern",
+    "category": "skill" | "niche" | "platform" | "pattern" | "error_pattern",
     "key": "kebab-case-unique-identifier",
     "title": "Short title (max 60 chars)",
     "body": "Actionable insight in 1-3 sentences. Be specific.",

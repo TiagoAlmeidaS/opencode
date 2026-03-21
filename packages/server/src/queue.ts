@@ -214,6 +214,14 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
           .update(repoIssueJobs)
           .set({ status: "failed", updatedAt: completedAt })
           .where(eq(repoIssueJobs.id, inp.repo_issue_job_id))
+        // Auto-trigger learning extraction immediately after failure
+        await enqueueDeduped(db, {
+          activityType: "dev-cycle-learning",
+          input: { repo_issue_job_id: inp.repo_issue_job_id },
+          priority: 8,
+          triggeredBy: id,
+          relatedOpportunityId: `dcl:${inp.repo_issue_job_id}`,
+        })
       }
     }
   }

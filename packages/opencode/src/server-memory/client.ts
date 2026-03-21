@@ -17,6 +17,8 @@ export type LearningRow = {
   tags: string | null
   positiveCount: number
   negativeCount: number
+  usedCount: number
+  helpedCount: number
   createdAt: number
   updatedAt: number
 }
@@ -66,22 +68,49 @@ export async function retrieveRag(root: string, q: string, limit: number): Promi
 
 export async function fetchLearnings(
   root: string,
-  opts: { category?: string; limit?: number },
+  opts: { category?: string; categories?: string[]; tags?: string[]; limit?: number },
 ): Promise<LearningRow[]> {
-  const u = new URL(`${root}/learnings`)
-  u.searchParams.set("limit", String(Math.min(200, Math.max(1, opts.limit ?? 25))))
-  if (opts.category) u.searchParams.set("category", opts.category)
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), await timeoutMs())
-  const res = await fetch(u.href, { headers: { ...authHeader() }, signal: ctrl.signal }).finally(() =>
-    clearTimeout(t),
-  )
-  if (!res.ok) {
-    log.warn("learnings list failed", { status: res.status })
-    return []
+  // If multiple categories, fetch each and merge (server only supports single category filter)
+  const cats = opts.categories ?? (opts.category ? [opts.category] : [undefined])
+  const perCat = opts.limit ? Math.ceil(opts.limit / cats.length) : 25
+  const all: LearningRow[] = []
+
+  for (const cat of cats) {
+    const u = new URL(`${root}/learnings`)
+    u.searchParams.set("limit", String(Math.min(200, Math.max(1, perCat))))
+    if (cat) u.searchParams.set("category", cat)
+    if (opts.tags?.[0]) u.searchParams.set("tag", opts.tags[0])
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), await timeoutMs())
+    const res = await fetch(u.href, { headers: { ...authHeader() }, signal: ctrl.signal }).finally(() =>
+      clearTimeout(t),
+    )
+    if (!res.ok) {
+      log.warn("learnings list failed", { status: res.status })
+      continue
+    }
+    const rows = (await res.json()) as LearningRow[]
+    if (Array.isArray(rows)) all.push(...rows)
   }
-  const rows = (await res.json()) as LearningRow[]
-  return Array.isArray(rows) ? rows : []
+
+  // Deduplicate by id, sort by confidence desc
+  const seen = new Set<string>()
+  return all
+    .filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, opts.limit ?? 25)
+}
+
+/** Fire-and-forget: notifies server that learning was used (increments used_count). */
+export function trackLearningsUsed(root: string, ids: string[]): void {
+  if (!ids.length) return
+  const headers = { ...authHeader() }
+  for (const id of ids) {
+    fetch(`${root}/learnings/${encodeURIComponent(id)}/used`, {
+      method: "POST",
+      headers,
+    }).catch(() => { /* best-effort */ })
+  }
 }
 
 export function fmtRag(chunks: RagChunk[]): string {
@@ -126,7 +155,10 @@ export async function putLearning(
   return (await res.json()) as LearningRow
 }
 
-export async function contextForUserMessage(text: string): Promise<string[]> {
+export async function contextForUserMessage(
+  text: string,
+  opts?: { repoTag?: string },
+): Promise<string[]> {
   const root = await base()
   if (!root) return []
   const cfg = await Config.get()
@@ -141,9 +173,16 @@ export async function contextForUserMessage(text: string): Promise<string[]> {
     if (s) out.push(s)
   }
   if (learnOn) {
-    const rows = await fetchLearnings(root, { limit: 20 })
+    const rows = await fetchLearnings(root, {
+      categories: ["error_pattern", "dev-cycle", "repo", "pattern"],
+      tags: opts?.repoTag ? [opts.repoTag] : undefined,
+      limit: 20,
+    })
     const s = fmtLearnings(rows)
     if (s) out.push(s)
+    // Notify server which learnings were injected (used_count tracking)
+    const ids = rows.map((r) => r.id)
+    if (ids.length) trackLearningsUsed(root, ids)
   }
   return out
 }
@@ -152,6 +191,7 @@ export const ServerMemory = {
   base,
   retrieveRag,
   fetchLearnings,
+  trackLearningsUsed,
   putLearning,
   contextForUserMessage,
   fmtRag,

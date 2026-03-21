@@ -4,8 +4,8 @@
  */
 import type { Pipeline } from "../types"
 import { registerPipeline } from "../registry"
-import { memoryExtractions } from "../schema"
-import { desc } from "drizzle-orm"
+import { memoryExtractions, agentLearnings } from "../schema"
+import { desc, gte } from "drizzle-orm"
 import { mkdirSync, writeFileSync } from "fs"
 import path from "path"
 
@@ -47,12 +47,25 @@ Output exactly and only in this order, with these delimiters (no other text):
 <optional skill 2>
 ---end---`
 
-function buildConsolidationPrompt(extractions: { sessionId: string; rawMemory: string; sessionSummary: string }[]): string {
+function buildConsolidationPrompt(
+  extractions: { sessionId: string; rawMemory: string; sessionSummary: string }[],
+  learnings: { category: string; key: string; title: string; body: string; confidence: number; usedCount: number; helpedCount: number }[],
+): string {
   const parts = extractions.map(
     (e, i) =>
       `## Session ${i + 1} (id: ${e.sessionId})\nSummary: ${e.sessionSummary}\n\nRaw memory:\n${e.rawMemory}`
   )
-  return `Consolidate these extractions into MEMORY.md, memory_summary.md, and optional skills.\n\n${parts.join("\n\n---\n\n")}`
+
+  const learningsSection = learnings.length > 0
+    ? `\n\n## Agent Learnings (from dev cycles — incorporate into MEMORY.md)\n${learnings
+        .map((l) => {
+          const eff = l.usedCount > 0 ? ` | effectiveness: ${Math.round((l.helpedCount / l.usedCount) * 100)}%` : ""
+          return `- [${l.category}] **${l.title}** (conf=${l.confidence.toFixed(2)}${eff})\n  ${l.body.slice(0, 300)}`
+        })
+        .join("\n")}`
+    : ""
+
+  return `Consolidate these extractions into MEMORY.md, memory_summary.md, and optional skills.\n\n${parts.join("\n\n---\n\n")}${learningsSection}`
 }
 
 function parseConsolidationOutput(text: string): {
@@ -102,7 +115,24 @@ const memoryConsolidation: Pipeline = {
       .orderBy(desc(memoryExtractions.sourceUpdatedAt))
       .limit(maxExtractions)
 
-    if (rows.length === 0) {
+    // Fetch high-signal learnings from agent_learnings to enrich the consolidation
+    const since90d = Math.floor(Date.now() / 1000) - 90 * 86400
+    const topLearnings = await db
+      .select({
+        category: agentLearnings.category,
+        key: agentLearnings.key,
+        title: agentLearnings.title,
+        body: agentLearnings.body,
+        confidence: agentLearnings.confidence,
+        usedCount: agentLearnings.usedCount,
+        helpedCount: agentLearnings.helpedCount,
+      })
+      .from(agentLearnings)
+      .where(gte(agentLearnings.updatedAt, since90d))
+      .orderBy(desc(agentLearnings.confidence))
+      .limit(40)
+
+    if (rows.length === 0 && topLearnings.length === 0) {
       mkdirSync(outputDir, { recursive: true })
       writeFileSync(path.join(outputDir, "MEMORY.md"), "# Memory\n\nNo extractions yet. Run memory_extract first.\n", "utf-8")
       writeFileSync(
@@ -126,7 +156,7 @@ const memoryConsolidation: Pipeline = {
       ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("memory", opts)
       : ctx.memoryLlm
     if (memLlm) {
-      const prompt = buildConsolidationPrompt(rows)
+      const prompt = buildConsolidationPrompt(rows, topLearnings)
       try {
         const out = await memLlm({
           prompt,

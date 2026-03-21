@@ -15,6 +15,7 @@ import {
   daemonProposals,
   daemonPipelines,
   daemonQueue,
+  repoIssueJobs,
 } from "../schema"
 import { registerPipeline } from "../registry"
 import { executePendingProposals } from "../executor"
@@ -50,10 +51,11 @@ function buildMetricsPrompt(metrics: {
   winByPlatform: Array<{ platform: string; total: number; won: number }>
   revenue30d: number
   goals: Array<{ name: string; target: number; current: number; unit: string }>
-  topLearnings: Array<{ title: string; confidence: number; signal: string; category: string }>
+  topLearnings: Array<{ title: string; confidence: number; signal: string; category: string; usedCount: number; helpedCount: number }>
   activityFailures: Array<{ type: string; failed: number; total: number }>
   queueBacklog: number
   activePipelines: Array<{ strategy: string; enabled: number; configJson: string }>
+  devCycleStats: { total: number; completed: number; failed: number; avgRetries: number }
 }): string {
   const nicheStats = metrics.winByNiche.length > 0
     ? metrics.winByNiche
@@ -86,6 +88,10 @@ function buildMetricsPrompt(metrics: {
         .join("\n")
     : "  No failures detected"
 
+  const devSuccessRate = metrics.devCycleStats.total > 0
+    ? Math.round((metrics.devCycleStats.completed / metrics.devCycleStats.total) * 100)
+    : 0
+
   return `Analyze the following performance data for an autonomous AI agent (last ${metrics.windowDays} days):
 
 REVENUE:
@@ -97,6 +103,12 @@ ${nicheStats}
 WIN RATES BY PLATFORM:
 ${platformStats}
 
+DEV CYCLE JOB METRICS:
+  Total jobs: ${metrics.devCycleStats.total}
+  Completed: ${metrics.devCycleStats.completed} (${devSuccessRate}% success rate)
+  Failed: ${metrics.devCycleStats.failed}
+  Avg retries per job: ${metrics.devCycleStats.avgRetries.toFixed(1)}
+
 ACTIVE GOALS:
 ${goalStats}
 
@@ -105,8 +117,13 @@ ${failureStats}
 
 QUEUE BACKLOG: ${metrics.queueBacklog} pending items
 
-TOP LEARNINGS (high confidence):
-${metrics.topLearnings.length > 0 ? metrics.topLearnings.map((l) => `  [${l.category}/${l.signal}] ${l.title} (${l.confidence})`).join("\n") : "  None yet"}
+TOP LEARNINGS (high confidence, with effectiveness):
+${metrics.topLearnings.length > 0
+  ? metrics.topLearnings.map((l) => {
+      const effectiveness = l.usedCount > 0 ? Math.round((l.helpedCount / l.usedCount) * 100) : null
+      return `  [${l.category}/${l.signal}] ${l.title} (conf=${l.confidence}, used=${l.usedCount}${effectiveness != null ? `, helped=${effectiveness}%` : ""})`
+    }).join("\n")
+  : "  None yet"}
 
 CURRENT PIPELINE CONFIG:
 ${metrics.activePipelines.map((p) => `  ${p.strategy} (enabled=${p.enabled}): ${p.configJson.slice(0, 150)}`).join("\n")}
@@ -249,6 +266,8 @@ registerPipeline({
         category: agentLearnings.category,
         positiveCount: agentLearnings.positiveCount,
         negativeCount: agentLearnings.negativeCount,
+        usedCount: agentLearnings.usedCount,
+        helpedCount: agentLearnings.helpedCount,
       })
       .from(agentLearnings)
       .orderBy(desc(agentLearnings.confidence))
@@ -259,7 +278,27 @@ registerPipeline({
       confidence: l.confidence,
       category: l.category,
       signal: l.positiveCount > l.negativeCount ? "positive" : l.negativeCount > l.positiveCount ? "negative" : "neutral",
+      usedCount: l.usedCount ?? 0,
+      helpedCount: l.helpedCount ?? 0,
     }))
+
+    // ── 5b. Dev cycle job metrics ─────────────────────────────────────────────
+    const devCycleRaw = await ctx.db
+      .select({
+        total: sql<number>`count(*)`,
+        completed: sql<number>`sum(case when ${repoIssueJobs.status} = 'completed' then 1 else 0 end)`,
+        failed: sql<number>`sum(case when ${repoIssueJobs.status} = 'failed' then 1 else 0 end)`,
+        avgRetries: sql<number>`coalesce(avg(${repoIssueJobs.retry_count}), 0)`,
+      })
+      .from(repoIssueJobs)
+      .where(gte(repoIssueJobs.updatedAt, cutoff))
+
+    const devCycleStats = {
+      total: Number(devCycleRaw[0]?.total ?? 0),
+      completed: Number(devCycleRaw[0]?.completed ?? 0),
+      failed: Number(devCycleRaw[0]?.failed ?? 0),
+      avgRetries: Number(devCycleRaw[0]?.avgRetries ?? 0),
+    }
 
     // ── 6. Activity failure rates ─────────────────────────────────────────────
     const failureRaw = await ctx.db
@@ -292,7 +331,11 @@ registerPipeline({
       .limit(15)
 
     // ── 9. Call LLM ───────────────────────────────────────────────────────────
-    if (!ctx.memoryLlm) {
+    const analysisLlm = ctx.llmRouter
+      ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("analysis", opts)
+      : ctx.memoryLlm
+
+    if (!analysisLlm) {
       return {
         extra: {
           skipped: true,
@@ -304,9 +347,9 @@ registerPipeline({
 
     const strategySystemPrompt = (config.strategy_system_prompt as string | undefined) || STRATEGY_SYSTEM
 
-    const rawOutput = await ctx.memoryLlm({
+    const rawOutput = await analysisLlm({
       system: strategySystemPrompt,
-      prompt: buildMetricsPrompt({ windowDays, winByNiche, winByPlatform, revenue30d, goals, topLearnings, activityFailures, queueBacklog, activePipelines }),
+      prompt: buildMetricsPrompt({ windowDays, winByNiche, winByPlatform, revenue30d, goals, topLearnings, activityFailures, queueBacklog, activePipelines, devCycleStats }),
       maxTokens: 2000,
     })
 
@@ -327,7 +370,7 @@ registerPipeline({
       for (const n of poorNiches.slice(0, 2)) {
         if (proposals.length >= maxProposals) break
         const winRate = Math.round((n.won / n.total) * 100)
-        const improvedRaw = await ctx.memoryLlm({
+        const improvedRaw = await analysisLlm({
           system: strategySystemPrompt,
           prompt: buildImprovePromptRequest(n.niche!, winRate, SCORE_SYSTEM),
           maxTokens: 600,
@@ -383,6 +426,31 @@ registerPipeline({
     // Execute auto-approved proposals immediately
     if (autoApproved > 0) {
       await executePendingProposals(ctx.db)
+    }
+
+    // Telegram notifications
+    const tgToken = process.env.TELEGRAM_BOT_TOKEN
+    const tgChat = process.env.TELEGRAM_CHAT_ID
+    if (tgToken && tgChat && stored > 0) {
+      const pending = stored - autoApproved
+      const lines = [
+        `<b>Strategy Analyzer — ${new Date().toISOString().slice(0, 10)}</b>`,
+        ``,
+        autoApproved > 0 ? `✅ <b>${autoApproved} proposal(s) auto-approved and applied</b>` : null,
+        pending > 0 ? `🤔 <b>${pending} proposal(s) pending human review</b>` : null,
+        ``,
+        ...proposals.slice(0, 5).map((p) => {
+          const icon = (riskRanks[p.riskLevel] ?? 2) <= maxRiskRank && p.confidence >= minConfidenceAutoApprove ? "✅" : "🔍"
+          return `${icon} [${p.actionType}/${p.riskLevel}] ${p.title} (conf=${(p.confidence * 100).toFixed(0)}%)`
+        }),
+      ].filter((l): l is string => l !== null)
+      try {
+        await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: tgChat, text: lines.join("\n"), parse_mode: "HTML", disable_web_page_preview: true }),
+        })
+      } catch { /* Telegram failure is non-fatal */ }
     }
 
     return {

@@ -1,6 +1,6 @@
 import { eq, and, isNull, isNotNull, inArray } from "drizzle-orm"
 import { Octokit } from "@octokit/rest"
-import { repoIssueJobs } from "../schema"
+import { repoIssueJobs, selfImprovementProposals, agentLearnings } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 
 const BATCH = 20
@@ -83,8 +83,28 @@ export const prOutcomeCheckActivity: Activity = {
           })
           .where(eq(repoIssueJobs.id, job.id))
 
-        if (outcome === "merged") merged++
-        else rejected++
+        if (outcome === "merged") {
+          merged++
+          // Mark any matching self-improvement proposal as completed
+          const repoFull = `${parsed.owner}/${parsed.repo}`
+          await ctx.db
+            .update(selfImprovementProposals)
+            .set({ status: "completed", updated_at: now })
+            .where(and(eq(selfImprovementProposals.repo, repoFull), eq(selfImprovementProposals.issue_number, parsed.number), eq(selfImprovementProposals.status, "implementing")))
+
+          // Credit learnings that were used in this job
+          if (job.used_learning_ids) {
+            try {
+              const ids = JSON.parse(job.used_learning_ids) as string[]
+              for (const lid of ids) {
+                const [lr] = await ctx.db.select({ helpedCount: agentLearnings.helpedCount }).from(agentLearnings).where(eq(agentLearnings.id, lid)).limit(1)
+                if (lr) await ctx.db.update(agentLearnings).set({ helpedCount: lr.helpedCount + 1 }).where(eq(agentLearnings.id, lid))
+              }
+            } catch { /* malformed JSON — skip */ }
+          }
+        } else {
+          rejected++
+        }
       } catch { /* skip individual PR errors */ }
     }
 

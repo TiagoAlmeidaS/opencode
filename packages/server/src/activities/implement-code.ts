@@ -1,11 +1,12 @@
-import { eq } from "drizzle-orm"
+import { eq, desc } from "drizzle-orm"
 import { Octokit } from "@octokit/rest"
 import path from "path"
 import { mkdir, rm, cp } from "fs/promises"
-import { repoIssueJobs } from "../schema"
+import { repoIssueJobs, agentLearnings } from "../schema"
 import type { Activity, ActivityContext, ActivityOutput } from "../types"
 import { workDirForJob, runGit } from "./dev-cycle-shared"
 import { checkExistingPR } from "../github-utils"
+import { search } from "../memory/rag"
 
 const SKILLS_SRC = path.resolve(import.meta.dir, "../../../../.opencode/skills")
 
@@ -121,6 +122,14 @@ export const implementCodeActivity: Activity = {
 
     await injectSkills(workDir)
 
+    // ── RAG Enrichment: fetch relevant learnings before first attempt ─────────
+    const ragContext = await fetchRagContext(ctx, job)
+    // Track used learning IDs for effectiveness metrics
+    for (const lid of ragContext.learningIds) {
+      const [row] = await ctx.db.select({ usedCount: agentLearnings.usedCount }).from(agentLearnings).where(eq(agentLearnings.id, lid)).limit(1)
+      if (row) await ctx.db.update(agentLearnings).set({ usedCount: row.usedCount + 1 }).where(eq(agentLearnings.id, lid))
+    }
+
     const MAX_OUTPUT = 10_000
 
     let sessionId: string | null = null
@@ -130,8 +139,10 @@ export const implementCodeActivity: Activity = {
       if (n > 1) {
         const spec = await readSpec(workDir)
         if (spec) job = { ...job, specJson: spec }
+        // In-job retry: extract and store error pattern from previous failure
+        await extractInJobRetryLearning(ctx, job, cliOutput, n - 1)
       }
-      const task = buildTask(job, n, n > 1 ? cliOutput : undefined)
+      const task = buildTask(job, n, n > 1 ? cliOutput : undefined, ragContext.context)
       const codingModel = ctx.llmRouter?.modelFor("coding")
       try {
         const result = await ctx.spawnOpenCode(task, workDir, { model: codingModel })
@@ -166,6 +177,7 @@ export const implementCodeActivity: Activity = {
         specJson: spec,
         session_id: sessionId,
         cli_output: cliOutput,
+        used_learning_ids: ragContext.learningIds.length > 0 ? JSON.stringify(ragContext.learningIds) : null,
         status: "implementing",
         updatedAt: now,
       })
@@ -178,10 +190,129 @@ export const implementCodeActivity: Activity = {
   },
 }
 
+/** Extracts and stores an error_pattern learning from a failed CLI attempt (in-job retry). */
+async function extractInJobRetryLearning(
+  ctx: ActivityContext,
+  job: typeof repoIssueJobs.$inferSelect,
+  errorOutput: string,
+  attempt: number,
+): Promise<void> {
+  const memLlm = ctx.llmRouter
+    ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("memory", opts)
+    : ctx.memoryLlm
+  if (!memLlm || !errorOutput) return
+
+  try {
+    const raw = await memLlm({
+      system: "You are an error pattern extractor. Extract a single structured error pattern from a failed coding agent attempt. Respond with JSON only.",
+      prompt: `A coding agent failed on attempt ${attempt} for repo "${job.repoFullName}" issue "${job.issueTitle}".
+
+Failed output (tail):
+${errorOutput.slice(-2000)}
+
+Extract a single error_pattern learning as JSON:
+{
+  "key": "error-pattern-<slug>",
+  "title": "<short error description, max 60 chars>",
+  "body": "<root cause and fix in 2 sentences>",
+  "confidence": <0.0-1.0>,
+  "tags": ["<repo>", "<language-or-framework>"]
+}`,
+      maxTokens: 400,
+    })
+
+    const clean = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+    const parsed = JSON.parse(clean) as { key?: string; title?: string; body?: string; confidence?: number; tags?: string[] }
+    if (!parsed.key || !parsed.title || !parsed.body) return
+
+    const now = Math.floor(Date.now() / 1000)
+    const key = `${parsed.key}-${job.repoFullName.replace(/\//g, "-")}`.slice(0, 100)
+    const [existing] = await ctx.db.select().from(agentLearnings).where(eq(agentLearnings.key, key)).limit(1)
+
+    if (existing) {
+      const conf = Math.round((existing.confidence * 0.7 + (parsed.confidence ?? 0.5) * 0.3) * 100) / 100
+      await ctx.db.update(agentLearnings).set({ body: parsed.body, confidence: conf, negativeCount: existing.negativeCount + 1, updatedAt: now }).where(eq(agentLearnings.id, existing.id))
+    } else {
+      const { ulid } = await import("ulid")
+      await ctx.db.insert(agentLearnings).values({
+        id: ulid(),
+        category: "error_pattern",
+        key,
+        title: parsed.title.slice(0, 60),
+        body: parsed.body,
+        confidence: parsed.confidence ?? 0.5,
+        source: "in-job-retry",
+        positiveCount: 0,
+        negativeCount: 1,
+        tags: JSON.stringify([job.repoFullName, ...(parsed.tags ?? [])]),
+        usedCount: 0,
+        helpedCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+  } catch { /* LLM or parse failure — skip silently */ }
+}
+
+async function fetchRagContext(
+  ctx: ActivityContext,
+  job: typeof repoIssueJobs.$inferSelect,
+): Promise<{ context: string; learningIds: string[] }> {
+  const parts: string[] = []
+  const learningIds: string[] = []
+
+  // 1. Qdrant semantic search for relevant past learnings
+  if (ctx.embed) {
+    try {
+      const query = `${job.repoFullName} ${job.issueTitle}`
+      const results = await search(query, 5)
+      if (results.length > 0) {
+        parts.push("### Learnings from similar past executions:")
+        for (const r of results) {
+          if (r.score >= 0.6) parts.push(`- ${r.text.slice(0, 300)}`)
+        }
+      }
+    } catch { /* RAG unavailable — skip */ }
+  }
+
+  // 2. Fetch top error_pattern learnings for this repo from DB
+  try {
+    const repoTag = job.repoFullName
+    const rows = await ctx.db
+      .select()
+      .from(agentLearnings)
+      .where(eq(agentLearnings.category, "error_pattern"))
+      .orderBy(desc(agentLearnings.confidence))
+      .limit(6)
+
+    // Filter by repo tag if possible
+    const repoRows = rows.filter((r) => {
+      try { return (JSON.parse(r.tags ?? "[]") as string[]).includes(repoTag) } catch { return false }
+    })
+    const relevant = repoRows.length > 0 ? repoRows : rows.slice(0, 4)
+
+    if (relevant.length > 0) {
+      parts.push("### Known error patterns (avoid repeating these):")
+      for (const r of relevant) {
+        parts.push(`- [${r.key}] ${r.title}: ${r.body.slice(0, 200)}`)
+        learningIds.push(r.id)
+      }
+    }
+  } catch { /* DB query failed — skip */ }
+
+  if (parts.length === 0) return { context: "", learningIds }
+
+  return {
+    context: ["## Context from Previous Executions", ...parts].join("\n"),
+    learningIds,
+  }
+}
+
 function buildTask(
   job: typeof repoIssueJobs.$inferSelect,
   attempt: number,
   prev?: string,
+  ragContext?: string,
 ): string {
   const body = job.issueBody ? job.issueBody.slice(0, 10_000) : "(sem descrição)"
   const num = job.issueNumber != null ? ` #${job.issueNumber}` : ""
@@ -199,6 +330,10 @@ function buildTask(
     `ISSUE BODY:`,
     body,
   ]
+
+  if (ragContext) {
+    parts.push(``, ragContext)
+  }
 
   if (job.specJson && attempt > 1) {
     parts.push(``, `PREVIOUS SPEC (from attempt ${attempt - 1} — reuse or improve):`, job.specJson.slice(0, 4000))
