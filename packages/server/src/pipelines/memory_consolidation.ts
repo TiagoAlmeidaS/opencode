@@ -122,10 +122,13 @@ const memoryConsolidation: Pipeline = {
     let memorySummaryMd: string
     let skills: { name: string; body: string }[] = []
 
-    if (ctx.memoryLlm) {
+    const memLlm = ctx.llmRouter
+      ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("memory", opts)
+      : ctx.memoryLlm
+    if (memLlm) {
       const prompt = buildConsolidationPrompt(rows)
       try {
-        const out = await ctx.memoryLlm({
+        const out = await memLlm({
           prompt,
           system: CONSOLIDATION_SYSTEM,
           maxTokens: 8000,

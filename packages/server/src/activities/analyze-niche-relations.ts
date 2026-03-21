@@ -82,7 +82,10 @@ export const analyzeNicheRelationsActivity: Activity = {
     if (!target) throw new Error(`Niche não encontrado: ${input.niche_name}`)
 
     // Sem LLM: não há como inferir relações semanticamente
-    if (!ctx.memoryLlm) {
+    const llm = ctx.llmRouter
+      ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("analysis", opts)
+      : ctx.memoryLlm
+    if (!llm) {
       return { summary: `LLM não disponível — relações de "${input.niche_name}" não analisadas` }
     }
 
@@ -94,7 +97,7 @@ export const analyzeNicheRelationsActivity: Activity = {
     const prompt = buildRelationsPrompt(target, allNiches)
     const now = Math.floor(Date.now() / 1000)
 
-    const raw = await ctx.memoryLlm({ system: RELATIONS_SYSTEM, prompt, maxTokens: 800 })
+    const raw = await llm({ system: RELATIONS_SYSTEM, prompt, maxTokens: 800 })
     const result = parseRelations(raw)
 
     if (!result) throw new Error(`LLM retornou JSON inválido: ${raw.slice(0, 200)}`)

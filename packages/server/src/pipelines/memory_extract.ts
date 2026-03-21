@@ -95,9 +95,12 @@ const memoryExtract: Pipeline = {
       const prompt = buildExtractPrompt(s.transcript, s.title, s.directory)
       let rawMemory: string
       let sessionSummary: string
-      if (ctx.memoryLlm) {
+      const memLlm = ctx.llmRouter
+        ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("memory", opts)
+        : ctx.memoryLlm
+      if (memLlm) {
         try {
-          const out = await ctx.memoryLlm({
+          const out = await memLlm({
             prompt,
             system: EXTRACT_SYSTEM,
             maxTokens: 2000,

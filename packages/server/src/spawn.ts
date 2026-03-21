@@ -32,11 +32,15 @@ function findSession(cwd: string, before: number): string | null {
 export async function spawnOpenCode(
   task: string,
   cwd: string,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  opts?: { model?: string; timeoutMs?: number },
 ): Promise<SpawnResult> {
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const before = Math.floor(Date.now() / 1000) - 2
 
-  const proc = Bun.spawn([CLI, "run", "--task", task], {
+  const args = [CLI, "run", "--task", task]
+  if (opts?.model) args.push("--model", opts.model)
+
+  const proc = Bun.spawn(args, {
     cwd,
     stdout: "pipe",
     stderr: "pipe",

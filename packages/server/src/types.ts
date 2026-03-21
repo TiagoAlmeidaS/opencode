@@ -21,6 +21,8 @@ export interface PipelineContext {
   opencodeDbPath?: string
   /** Optional LLM for memory extraction/consolidation (injected by host). */
   memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
+  /** Router de LLM por tipo de tarefa (v2.0.0+). Substitui memoryLlm com roteamento granular. */
+  llmRouter?: LlmRouter
   /** Optional embedding function for RAG (injected by host). */
   embed?: (text: string) => Promise<number[]>
 }
@@ -50,16 +52,32 @@ export interface Pipeline {
 
 export type JobStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
 
+/** Tipos de operação para roteamento de LLM. */
+export type TaskType = "coding" | "spec" | "analysis" | "memory" | "docs" | "default"
+
+/**
+ * Router que seleciona o LLM adequado por tipo de tarefa.
+ * Injetado pelo host em ActivityContext e PipelineContext.
+ */
+export interface LlmRouter {
+  /** Chama o LLM correspondente ao tipo de tarefa. */
+  call(taskType: TaskType, opts: MemoryLlmOptions): Promise<string>
+  /** Retorna "provider/model" para uso como flag --model no CLI. Undefined = usar default. */
+  modelFor(taskType: TaskType): string | undefined
+}
+
 export interface ActivityContext {
   queueItemId: string
   input: Record<string, unknown>
   db: import("./db").ServerDb
-  spawnOpenCode: (task: string, cwd: string) => Promise<import("./spawn").SpawnResult>
+  spawnOpenCode: (task: string, cwd: string, opts?: { model?: string }) => Promise<import("./spawn").SpawnResult>
   enqueue: (type: string, input: unknown, opts?: { priority?: number; dependsOn?: string; relatedOpportunityId?: string }) => Promise<string>
   /** Atualiza o passo atual visível no card "Running" do Activity Queue. */
   updateProgress?: (step: string) => Promise<void>
   /** LLM injetado pelo host (ex: OpenCode provider). Disponível quando daemon é iniciado com memoryLlm. */
   memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
+  /** Router de LLM por tipo de tarefa (v2.0.0+). Substitui memoryLlm com roteamento granular. */
+  llmRouter?: LlmRouter
   /** Embedding function para RAG. */
   embed?: (text: string) => Promise<number[]>
 }

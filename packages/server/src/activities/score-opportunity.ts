@@ -245,7 +245,11 @@ export const scoreOpportunityActivity: Activity = {
     const learningsContext = await buildLearningsContext(ctx, opp.sourcePlatform)
     const system = specPrefix + baseSystem + learningsContext
 
-    const rawOutput = await ctx.memoryLlm({
+    const llm = ctx.llmRouter
+      ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("analysis", opts)
+      : ctx.memoryLlm
+    if (!llm) throw new Error("Nenhum LLM configurado para score-opportunity")
+    const rawOutput = await llm({
       system,
       prompt,
       maxTokens: 512,

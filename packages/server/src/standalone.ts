@@ -30,7 +30,8 @@ import { cors } from "hono/cors"
 import { bearerAuth } from "hono/bearer-auth"
 import path from "path"
 import { createOpenCodeServer } from "./index"
-import type { MemoryLlmOptions } from "./types"
+import { createAnthropicBackend, createOpenAIBackend, createOpenAICompatibleBackend, createLlmRouter, type LlmFn } from "./llm-router"
+import type { MemoryLlmOptions, LlmRouter, TaskType } from "./types"
 
 const PORT = parseInt(process.env.PORT ?? "3000")
 const DB_PATH = process.env.DB_PATH ?? "/data/server.db"
@@ -49,6 +50,27 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openrouter/free"
 const QDRANT_URL = process.env.QDRANT_URL
 const API_TOKEN = process.env.API_TOKEN
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*"
+
+// ── LLM Routing (v2.0.0) ─────────────────────────────────────────────────────
+// Cada TaskType pode ter seu próprio backend via env vars opcionais.
+// Se não configurado, cai no memoryLlm padrão (zero degradação).
+//
+//   LLM_<TYPE>_PROVIDER   anthropic | openai | openai-compatible (auto quando BASE_URL presente)
+//   LLM_<TYPE>_MODEL      model id (ex: claude-sonnet-4-5)
+//   LLM_<TYPE>_API_KEY    opcional; herda a key do provider se omitido
+//   LLM_<TYPE>_BASE_URL   ativa openai-compatible automaticamente (ex: KIMI, DeepSeek)
+//
+// Types: CODING | SPEC | ANALYSIS | MEMORY | DOCS
+const LLM_ROUTING: Record<string, { provider?: string; model?: string; apiKey?: string; baseURL?: string }> = {}
+for (const t of ["CODING", "SPEC", "ANALYSIS", "MEMORY", "DOCS"] as const) {
+  const provider = process.env[`LLM_${t}_PROVIDER`]
+  const model = process.env[`LLM_${t}_MODEL`]
+  const apiKey = process.env[`LLM_${t}_API_KEY`]
+  const baseURL = process.env[`LLM_${t}_BASE_URL`]
+  if (provider || model || baseURL) {
+    LLM_ROUTING[t.toLowerCase()] = { provider, model, apiKey, baseURL }
+  }
+}
 
 const RETRY_CODES = new Set([429, 502, 503, 529])
 const MAX_RETRIES = 3
@@ -241,12 +263,83 @@ function resolveMemoryLlm(): { memoryLlm: MemoryLlmFn | undefined; label: string
 
 const { memoryLlm, label: memoryLlmLabel } = resolveMemoryLlm()
 
+// ── Constrói LlmRouter com backends por TaskType ──────────────────────────────
+function buildBackendForType(
+  taskKey: string,
+  defaultFn: LlmFn,
+): { fn: LlmFn; modelStr?: string } {
+  const cfg = LLM_ROUTING[taskKey]
+  if (!cfg) return { fn: defaultFn }
+
+  const apiKey = cfg.apiKey
+  const model = cfg.model
+  const baseURL = cfg.baseURL
+
+  // openai-compatible quando BASE_URL presente
+  if (baseURL && model) {
+    const key = apiKey ?? OPENAI_API_KEY ?? ""
+    if (!key) {
+      console.warn(`[llm-router] LLM_${taskKey.toUpperCase()}_BASE_URL definida mas nenhuma API key encontrada; usando default.`)
+      return { fn: defaultFn }
+    }
+    return {
+      fn: createOpenAICompatibleBackend({ apiKey: key, model, baseURL, withRetry }),
+      modelStr: `openai-compatible/${model}`,
+    }
+  }
+
+  const provider = cfg.provider ?? (ANTHROPIC_API_KEY ? "anthropic" : OPENAI_API_KEY ? "openai" : undefined)
+
+  if (provider === "anthropic" && model) {
+    const key = apiKey ?? ANTHROPIC_API_KEY
+    if (!key) { console.warn(`[llm-router] anthropic key ausente para ${taskKey}; usando default.`); return { fn: defaultFn } }
+    return {
+      fn: createAnthropicBackend({ apiKey: key, model, withRetry }),
+      modelStr: `anthropic/${model}`,
+    }
+  }
+
+  if (provider === "openai" && model) {
+    const key = apiKey ?? OPENAI_API_KEY
+    if (!key) { console.warn(`[llm-router] openai key ausente para ${taskKey}; usando default.`); return { fn: defaultFn } }
+    return {
+      fn: createOpenAIBackend({ apiKey: key, model, withRetry }),
+      modelStr: `openai/${model}`,
+    }
+  }
+
+  return { fn: defaultFn }
+}
+
+function buildLlmRouter(defaultFn: LlmFn | undefined): { router: LlmRouter | undefined; routingLog: string[] } {
+  if (!defaultFn) return { router: undefined, routingLog: [] }
+
+  const taskTypes: TaskType[] = ["coding", "spec", "analysis", "memory", "docs"]
+  const backends: Partial<Record<TaskType, LlmFn>> & { default: LlmFn } = { default: defaultFn }
+  const modelMap: Partial<Record<TaskType, string>> = {}
+  const routingLog: string[] = []
+
+  for (const t of taskTypes) {
+    const { fn, modelStr } = buildBackendForType(t, defaultFn)
+    if (fn !== defaultFn) {
+      backends[t] = fn
+      if (modelStr) modelMap[t] = modelStr
+      routingLog.push(`${t} → ${modelStr}`)
+    }
+  }
+
+  return { router: createLlmRouter(backends, modelMap), routingLog }
+}
+
+const { router: llmRouter, routingLog } = buildLlmRouter(memoryLlm)
+
 // ── Inicializa servidor ───────────────────────────────────────────────────────
 const instance = createOpenCodeServer({
   dbPath: DB_PATH,
   daemon: true,
   opencodeDbPath: OPENCODE_DB_PATH,
   memoryLlm,
+  llmRouter,
   qdrantUrl: QDRANT_URL,
 })
 
@@ -293,6 +386,10 @@ console.log(`   API:        ${base}/api/`)
 if (!publicUrl) console.log(`   (Para ver a URL pública no log, defina PUBLIC_URL no .env.server, ex: http://76.13.96.99:3000)`)
 console.log(`   DB:         ${DB_PATH}`)
 console.log(`   LLM:        ${memoryLlmLabel}`)
+if (routingLog.length > 0) {
+  console.log(`   LLM Routing:`)
+  for (const entry of routingLog) console.log(`     • ${entry}`)
+}
 console.log(`   Auth:       ${API_TOKEN ? "Bearer token enabled" : "disabled"}`)
 if (injectToken) console.log(`   Token:      injetado no dashboard`)
 console.log(`   Qdrant:     ${QDRANT_URL ?? "disabled"}`)

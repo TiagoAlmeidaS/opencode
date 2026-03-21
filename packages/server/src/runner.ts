@@ -1,6 +1,6 @@
 import type { ServerDb } from "./db"
 import { getPipeline } from "./registry"
-import type { PipelineContext, ContentOutput } from "./types"
+import type { PipelineContext, ContentOutput, LlmRouter } from "./types"
 import { daemonJobs, daemonContent, daemonLogs } from "./schema"
 import { eq } from "drizzle-orm"
 import { ulid } from "ulid"
@@ -8,6 +8,7 @@ import { ulid } from "ulid"
 export interface RunJobExtra {
   opencodeDbPath?: string
   memoryLlm?: PipelineContext["memoryLlm"]
+  llmRouter?: LlmRouter
   embed?: PipelineContext["embed"]
 }
 
@@ -42,6 +43,7 @@ export async function runJob(
     db,
     opencodeDbPath: extra?.opencodeDbPath,
     memoryLlm: extra?.memoryLlm,
+    llmRouter: extra?.llmRouter,
     embed: extra?.embed,
   }
 

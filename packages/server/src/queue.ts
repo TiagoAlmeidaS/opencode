@@ -4,7 +4,7 @@ import type { ServerDb } from "./db"
 import { daemonQueue, repoIssueJobs } from "./schema"
 import { getActivity } from "./activity"
 import { spawnOpenCode } from "./spawn"
-import type { ActivityContext, MemoryLlmOptions } from "./types"
+import type { ActivityContext, MemoryLlmOptions, LlmRouter } from "./types"
 
 /**
  * Enfileira uma activity com dedup por relatedOpportunityId.
@@ -62,12 +62,14 @@ export interface QueueProcessorOpts {
   maxConcurrent?: number
   /** LLM injetado pelo host para Activities que precisam de análise. */
   memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
+  /** Router de LLM por tipo de tarefa (v2.0.0+). */
+  llmRouter?: LlmRouter
   /** Embedding function para Activities de RAG. */
   embed?: (text: string) => Promise<number[]>
 }
 
 export function createQueueProcessor(opts: QueueProcessorOpts) {
-  const { db, tickIntervalMs = TICK_MS, maxConcurrent = MAX_CONCURRENT, memoryLlm, embed } = opts
+  const { db, tickIntervalMs = TICK_MS, maxConcurrent = MAX_CONCURRENT, memoryLlm, llmRouter, embed } = opts
   const workerId = ulid()
   let intervalId: ReturnType<typeof setInterval> | null = null
 
@@ -151,8 +153,9 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
       queueItemId: id,
       input: JSON.parse(item.inputJson ?? "{}"),
       db,
-      spawnOpenCode,
+      spawnOpenCode: (task, cwd, spawnOpts) => spawnOpenCode(task, cwd, spawnOpts),
       memoryLlm,
+      llmRouter,
       embed,
       async enqueue(type, input, opts) {
         const result = await enqueueDeduped(db, {

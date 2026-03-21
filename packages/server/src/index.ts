@@ -14,7 +14,7 @@ import { daemonPipelines } from "./schema"
 import { seedDefaultPipelines } from "./seed-pipelines"
 import "./pipelines"
 import "./activities"
-import type { MemoryLlmOptions } from "./types"
+import type { MemoryLlmOptions, LlmRouter } from "./types"
 
 export { getDb, closeDb, getDefaultDbPath }
 export type { ServerDb } from "./db"
@@ -23,7 +23,7 @@ export { registerActivity, getActivity, listActivityTypes } from "./activity"
 export { ServerRoutes }
 export { createScheduler } from "./scheduler"
 export { createQueueProcessor } from "./queue"
-export type { Pipeline, PipelineContext, ContentOutput, MemoryLlmOptions, Activity, ActivityContext, ActivityOutput } from "./types"
+export type { Pipeline, PipelineContext, ContentOutput, MemoryLlmOptions, Activity, ActivityContext, ActivityOutput, LlmRouter, TaskType } from "./types"
 export * from "./schema"
 
 export interface OpenCodeServerOpts {
@@ -34,6 +34,8 @@ export interface OpenCodeServerOpts {
   opencodeDbPath?: string
   /** Optional LLM for memory extraction/consolidation (e.g. injected by host using OpenCode provider). */
   memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
+  /** Router de LLM por tipo de tarefa (v2.0.0+). Se presente, activities/pipelines usam roteamento granular. */
+  llmRouter?: LlmRouter
   /** Optional embedding function for RAG (memory retrieval). */
   memoryEmbed?: (text: string) => Promise<number[]>
   /** Optional Qdrant URL for RAG (e.g. OPENCODE_QDRANT_URL). */
@@ -56,6 +58,7 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
   const runJobExtra: RunJobExtra = {
     opencodeDbPath,
     memoryLlm: opts.memoryLlm,
+    llmRouter: opts.llmRouter,
     embed: opts.memoryEmbed,
   }
   const scheduler = createScheduler({
@@ -66,6 +69,7 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
   const queue = createQueueProcessor({
     db,
     memoryLlm: opts.memoryLlm,
+    llmRouter: opts.llmRouter,
     embed: opts.memoryEmbed,
   })
 

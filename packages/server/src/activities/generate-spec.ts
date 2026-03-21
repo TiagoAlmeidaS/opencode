@@ -45,7 +45,11 @@ Gere JSON com:
   ]
 }`
 
-    const raw = await ctx.memoryLlm({ system: SYS, prompt, maxTokens: 2048 })
+    const llm = ctx.llmRouter
+      ? (opts: import("../types").MemoryLlmOptions) => ctx.llmRouter!.call("spec", opts)
+      : ctx.memoryLlm
+    if (!llm) throw new Error("Nenhum LLM configurado para generate-spec")
+    const raw = await llm({ system: SYS, prompt, maxTokens: 2048 })
     const clean = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
     let spec: string
     try {

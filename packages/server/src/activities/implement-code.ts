@@ -132,8 +132,9 @@ export const implementCodeActivity: Activity = {
         if (spec) job = { ...job, specJson: spec }
       }
       const task = buildTask(job, n, n > 1 ? cliOutput : undefined)
+      const codingModel = ctx.llmRouter?.modelFor("coding")
       try {
-        const result = await ctx.spawnOpenCode(task, workDir)
+        const result = await ctx.spawnOpenCode(task, workDir, { model: codingModel })
         sessionId = result.sessionId ?? sessionId
         cliOutput = result.output.slice(-MAX_OUTPUT)
         break
