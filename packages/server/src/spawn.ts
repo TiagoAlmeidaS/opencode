@@ -67,5 +67,17 @@ export async function spawnOpenCode(
   }
 
   const sessionId = findSession(cwd, before)
+
+  // If the CLI exited with code 0 but never created a session and produced
+  // minimal output (only the DB migration banner), it means the CLI failed
+  // to start a real session — typically due to an LLM config error or API
+  // rate limit that the CLI swallows silently.
+  const MIGRATION_ONLY = /^(Performing one time database migration[\s\S]*?Database migration complete\.?\s*)$/
+  if (!sessionId && MIGRATION_ONLY.test(output)) {
+    throw new Error(
+      `OpenCode CLI exited without starting a session (LLM config error or API rate-limit). Output: ${output.slice(0, 500)}`,
+    )
+  }
+
   return { output, sessionId }
 }
