@@ -6,6 +6,47 @@ const CLI = process.env.OPENCODE_CLI_PATH ?? "opencode"
 const OPENCODE_DB = process.env.OPENCODE_DB_PATH
   ?? path.join(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : "/data", "opencode.db")
 
+/**
+ * Build OPENCODE_CONFIG_CONTENT and any extra env vars needed by the CLI
+ * based on MEMORY_LLM_PROVIDER and the provider-specific env vars already
+ * configured in the server. This avoids having to maintain a separate
+ * OPENCODE_CONFIG_CONTENT in .env.server.
+ *
+ * Priority: explicit OPENCODE_CONFIG_CONTENT > dynamic build from provider vars.
+ */
+function buildCliEnv(): Record<string, string> {
+  // If the caller already set a config, respect it as-is
+  if (process.env.OPENCODE_CONFIG_CONTENT) {
+    return {}
+  }
+
+  const provider = process.env.MEMORY_LLM_PROVIDER ?? "openrouter"
+
+  if (provider === "azure") {
+    const baseUrl = process.env.AZURE_OPENAI_BASE_URL ?? ""
+    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-4o-mini"
+    const apiKey = process.env.AZURE_OPENAI_API_KEY ?? ""
+    // Extract resource name from URL: https://my-resource.openai.azure.com → my-resource
+    const resourceName = baseUrl ? new URL(baseUrl).hostname.split(".")[0] : ""
+    const config = JSON.stringify({
+      model: `azure/${deployment}`,
+      provider: { azure: { options: { resourceName } } },
+    })
+    return {
+      OPENCODE_CONFIG_CONTENT: config,
+      AZURE_API_KEY: apiKey, // @ai-sdk/azure reads AZURE_API_KEY
+    }
+  }
+
+  if (provider === "openrouter") {
+    const model = process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini"
+    const config = JSON.stringify({ model: `openrouter/${model}` })
+    return { OPENCODE_CONFIG_CONTENT: config }
+  }
+
+  return {}
+}
+
 export interface SpawnResult {
   output: string
   sessionId: string | null
@@ -40,6 +81,7 @@ export async function spawnOpenCode(
     cwd,
     stdout: "pipe",
     stderr: "pipe",
+    env: { ...process.env, ...buildCliEnv() },
   })
 
   let timedOut = false
