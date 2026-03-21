@@ -9,7 +9,8 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/__tests__"
   },
   "dependencies": {
     "@hono/zod-validator": "catalog:",
