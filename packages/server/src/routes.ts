@@ -501,7 +501,7 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     const id = c.req.param("id")
     const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
     if (!job) return c.json({ error: "Not found" }, 404)
-    if (job.status !== "failed") return c.json({ error: `Job is '${job.status}', only 'failed' jobs can be retried` }, 400)
+    if (job.status !== "failed" && job.status !== "cancelled") return c.json({ error: `Job is '${job.status}', only 'failed' or 'cancelled' jobs can be retried` }, 400)
     const now = Math.floor(Date.now() / 1000)
     await db.update(repoIssueJobs).set({
       status: "pending",

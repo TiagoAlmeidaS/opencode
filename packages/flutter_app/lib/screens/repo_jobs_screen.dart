@@ -465,11 +465,11 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
           ],
 
           // ── Job actions ──
-          if (!['completed', 'cancelled'].contains(status)) ...[
+          if (status != 'completed') ...[
             const SizedBox(height: 16),
             Row(children: [
-              // Restart — only for failed jobs
-              if (failed) ...[
+              // Restart — for failed or cancelled jobs
+              if (failed || status == 'cancelled') ...[
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: (_retrying || _cancelling) ? null : _retryJob,
@@ -484,10 +484,10 @@ class _JobDetailSheetState extends State<_JobDetailSheet> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                if (status != 'cancelled') const SizedBox(width: 10),
               ],
-              // Cancel — visible for all non-terminal statuses
-              Expanded(
+              // Cancel — visible for all non-terminal, non-cancelled statuses
+              if (status != 'cancelled') Expanded(
                 child: OutlinedButton.icon(
                   onPressed: (_retrying || _cancelling) ? null : _cancelJob,
                   icon: _cancelling
