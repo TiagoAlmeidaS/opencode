@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -146,6 +148,17 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
     if (mounted) await _load();
   }
 
+  Future<void> _editPipeline(Map<String, dynamic> pipeline) async {
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _EditPipelineSheet(pipeline: pipeline, srv: srv, palette: _palette),
+    );
+    if (saved == true && mounted) await _load();
+  }
+
   // ── Memory / Discovery ─────────────────────────────────────────────────────
 
   Future<void> _searchMem() async {
@@ -273,6 +286,7 @@ class _ServerDashboardScreenState extends State<ServerDashboardScreen> {
                     onToggle: _togglePipeline,
                     onRun: _runPipeline,
                     onEditCap: _editDailyCap,
+                    onEdit: _editPipeline,
                   )),
               const SizedBox(height: 24),
             ],
@@ -373,12 +387,14 @@ class _PipelineCard extends StatelessWidget {
     required this.onToggle,
     required this.onRun,
     required this.onEditCap,
+    required this.onEdit,
   });
   final Map<String, dynamic> pipeline;
   final Oc2Palette palette;
   final Future<void> Function(String id, bool enable) onToggle;
   final Future<void> Function(String id) onRun;
   final Future<void> Function(String id, int current) onEditCap;
+  final Future<void> Function(Map<String, dynamic> pipeline) onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -445,13 +461,15 @@ class _PipelineCard extends StatelessWidget {
                   child: Text(enabled ? 'Disable' : 'Enable'),
                 ),
                 OpenCodeButton(
-                  onPressed: () => onEditCap(id, cap),
+                  onPressed: () => onEdit(pipeline),
                   variant: OpenCodeButtonVariant.secondary,
                   size: OpenCodeButtonSize.small,
-                  child: const Text('Cap'),
+                  icon: Icons.edit_outlined,
+                  child: const Text('Edit'),
                 ),
               ],
             ),
+
           ],
         ),
       ),
@@ -463,6 +481,273 @@ class _PipelineCard extends StatelessWidget {
       if (p.cron == cron) return p.label;
     }
     return cron;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Edit pipeline sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _EditPipelineSheet extends StatefulWidget {
+  const _EditPipelineSheet({
+    required this.pipeline,
+    required this.srv,
+    required this.palette,
+  });
+  final Map<String, dynamic> pipeline;
+  final dynamic srv; // ServerApiClient
+  final Oc2Palette palette;
+
+  @override
+  State<_EditPipelineSheet> createState() => _EditPipelineSheetState();
+}
+
+class _EditPipelineSheetState extends State<_EditPipelineSheet> {
+  late final TextEditingController _name;
+  late final TextEditingController _repoFull;
+  late final TextEditingController _label;
+  late final TextEditingController _customCron;
+  late String _selectedCron;
+  late int _maxDay;
+  late int _issuesRun;
+  late bool _requireTests;
+  bool _useCustomCron = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.pipeline;
+    _name = TextEditingController(text: p['name'] as String? ?? '');
+    final cron = (p['scheduleCron'] ?? p['schedule_cron'] ?? '0 8,14,20 * * *').toString();
+    final knownCron = _cronPresets.any((e) => e.cron == cron);
+    _selectedCron = knownCron ? cron : _cronPresets[0].cron;
+    _useCustomCron = !knownCron;
+    _customCron = TextEditingController(text: _useCustomCron ? cron : '');
+
+    final maxDay = p['maxRunsPerDay'] ?? p['max_runs_per_day'];
+    _maxDay = (maxDay is int ? maxDay : int.tryParse('$maxDay') ?? 0).clamp(0, 500);
+
+    Map<String, dynamic> cfg = {};
+    try {
+      final raw = p['configJson'] ?? p['config_json'];
+      if (raw is String && raw.isNotEmpty) cfg = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    } catch (_) {}
+
+    _repoFull = TextEditingController(text: cfg['repo_full_name'] as String? ?? '');
+    _label = TextEditingController(text: cfg['label'] as String? ?? 'agent');
+    _issuesRun = (cfg['max_issues_per_run'] as int?) ?? 3;
+    final rt = cfg['require_passing_tests'];
+    _requireTests = rt == null ? true : rt == true || rt == 1;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _repoFull.dispose();
+    _label.dispose();
+    _customCron.dispose();
+    super.dispose();
+  }
+
+  String get _effectiveCron => _useCustomCron ? _customCron.text.trim() : _selectedCron;
+
+  Future<void> _save() async {
+    final id = widget.pipeline['id'] as String?;
+    if (id == null) return;
+    setState(() => _saving = true);
+
+    final strategy = widget.pipeline['strategy'] as String? ?? '';
+    Map<String, dynamic>? config;
+    if (strategy == 'repo-issue-worker') {
+      config = {
+        'repo_full_name': _repoFull.text.trim(),
+        'label': _label.text.trim().isEmpty ? 'agent' : _label.text.trim(),
+        'max_issues_per_run': _issuesRun.clamp(1, 30),
+        'require_passing_tests': _requireTests,
+      };
+    }
+
+    await widget.srv.pipelinePatch(
+      id,
+      name: _name.text.trim().isEmpty ? null : _name.text.trim(),
+      cron: _effectiveCron.isEmpty ? null : _effectiveCron,
+      maxRuns: _maxDay,
+      config: config,
+    );
+
+    if (!mounted) return;
+    setState(() => _saving = false);
+    Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final strategy = widget.pipeline['strategy'] as String? ?? '';
+    final isRepoWorker = strategy == 'repo-issue-worker';
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      maxChildSize: 0.95,
+      minChildSize: 0.4,
+      expand: false,
+      builder: (_, scroll) => Container(
+        decoration: BoxDecoration(
+          color: palette.backgroundBase,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            // Handle
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 4),
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: palette.borderWeak, borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+              child: Row(
+                children: [
+                  Expanded(child: Text('Edit Pipeline', style: Theme.of(context).textTheme.titleMedium)),
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                controller: scroll,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                children: [
+                  // Name
+                  Text('Name', style: TextStyle(fontSize: 13, color: palette.textWeak, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _name,
+                    decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Cron schedule
+                  Text('Schedule', style: TextStyle(fontSize: 13, color: palette.textWeak, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 6),
+                  if (!_useCustomCron) ...[
+                    DropdownButtonFormField<String>(
+                      value: _selectedCron,
+                      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+                      items: [
+                        ..._cronPresets.map((p) => DropdownMenuItem(value: p.cron, child: Text(p.label))),
+                        const DropdownMenuItem(value: '__custom', child: Text('Custom cron…')),
+                      ],
+                      onChanged: (v) {
+                        if (v == '__custom') {
+                          setState(() { _useCustomCron = true; _customCron.text = _selectedCron; });
+                        } else if (v != null) {
+                          setState(() => _selectedCron = v);
+                        }
+                      },
+                    ),
+                  ] else ...[
+                    TextField(
+                      controller: _customCron,
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        hintText: 'e.g. 0 8,14,20 * * *',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.list_alt, size: 18),
+                          tooltip: 'Use preset',
+                          onPressed: () => setState(() { _useCustomCron = false; }),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+
+                  // Max runs per day
+                  Text('Max runs / day', style: TextStyle(fontSize: 13, color: palette.textWeak, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: _maxDayOptions.map((opt) {
+                      final label = opt == 0 ? '∞' : '$opt';
+                      final selected = _maxDay == opt;
+                      return ChoiceChip(
+                        label: Text(label),
+                        selected: selected,
+                        onSelected: (_) => setState(() => _maxDay = opt),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Repo-issue-worker config
+                  if (isRepoWorker) ...[
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    Text('Repository', style: TextStyle(fontSize: 13, color: palette.textWeak, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _repoFull,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        hintText: 'owner/repo or https://github.com/owner/repo',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Issue label', style: TextStyle(fontSize: 13, color: palette.textWeak, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _label,
+                      decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, hintText: 'agent'),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Max issues per run', style: TextStyle(fontSize: 13, color: palette.textWeak, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      children: _issuesRunOptions.map((opt) {
+                        final selected = _issuesRun == opt;
+                        return ChoiceChip(
+                          label: Text('$opt'),
+                          selected: selected,
+                          onSelected: (_) => setState(() => _issuesRun = opt),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Require passing tests'),
+                      subtitle: Text(
+                        'Block PR until tests pass',
+                        style: TextStyle(fontSize: 12, color: palette.textWeak),
+                      ),
+                      value: _requireTests,
+                      onChanged: (v) => setState(() => _requireTests = v),
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                      child: _saving
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : const Text('Save changes'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
