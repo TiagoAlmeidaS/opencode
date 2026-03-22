@@ -312,8 +312,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const currentAgent = local.agent.current()
     const variant = local.model.variant.current()
     if (!currentModel || !currentAgent) {
+      if (!sync.ready) return
+
       const connected = providers.connected()
       const agents = local.agent.list()
+      const rawAgents = sync.data?.agent ?? []
+      const status = sync.status
+
       if (connected.length === 0) {
         dedupePromptToast("no-providers", () =>
           showToast({
@@ -324,6 +329,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         )
         return
       }
+
+      if (rawAgents.length === 0 && status === "partial") {
+        dedupePromptToast("bootstrap-failed", () =>
+          showToast({
+            title: language.t("prompt.toast.bootstrapFailed.title"),
+            description: language.t("prompt.toast.bootstrapFailed.description"),
+            variant: "error",
+          }),
+        )
+        return
+      }
+
       if (agents.length === 0) {
         dedupePromptToast("no-agents", () =>
           showToast({

@@ -289,7 +289,11 @@ export const dict = {
   "prompt.toast.noConnectedProviders.description":
     "Configure API keys or auth so at least one model provider is connected (check GET /provider connected on the server).",
   "prompt.toast.noAgentsAvailable.title": "No agents available",
-  "prompt.toast.noAgentsAvailable.description": "The server returned no agents. Reload the project or check your opencode configuration.",
+  "prompt.toast.noAgentsAvailable.description":
+    "No usable primary agent: the server may have returned none, or build/plan are disabled in opencode.json. See docs/runbooks/troubleshoot-chat-agents.md.",
+  "prompt.toast.bootstrapFailed.title": "Project data failed to load",
+  "prompt.toast.bootstrapFailed.description":
+    "Initial requests to the server failed (agents, project, or providers). Check the URL, basic auth if OPENCODE_SERVER_PASSWORD is set, and GET /agent. Reload the project from the sidebar.",
   "prompt.toast.worktreeCreateFailed.title": "Failed to create worktree",
   "prompt.toast.sessionCreateFailed.title": "Failed to create session",
   "prompt.toast.shellSendFailed.title": "Failed to send shell command",

@@ -269,7 +269,10 @@ export const dict = {
     "Configure chaves de API ou autenticação para que pelo menos um provider de modelo fique conectado (veja GET /provider no servidor).",
   "prompt.toast.noAgentsAvailable.title": "Nenhum agente disponível",
   "prompt.toast.noAgentsAvailable.description":
-    "O servidor não retornou agentes. Recarregue o projeto ou verifique a configuração do opencode.",
+    "Nenhum agente primário utilizável: o servidor pode não ter devolvido agentes, ou build/plan estão desativados no opencode.json. Ver docs/runbooks/troubleshoot-chat-agents.md.",
+  "prompt.toast.bootstrapFailed.title": "Falha ao carregar dados do projeto",
+  "prompt.toast.bootstrapFailed.description":
+    "Pedidos iniciais ao servidor falharam (agentes, projeto ou providers). Verifique a URL, basic auth se OPENCODE_SERVER_PASSWORD estiver definido e GET /agent. Recarregue o projeto na barra lateral.",
   "prompt.toast.worktreeCreateFailed.title": "Falha ao criar worktree",
   "prompt.toast.sessionCreateFailed.title": "Falha ao criar sessão",
   "prompt.toast.shellSendFailed.title": "Falha ao enviar comando shell",

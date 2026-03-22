@@ -20,7 +20,9 @@ Assim o catálogo de providers (que espera `AZURE_*`) continua coerente sem dupl
 
 Model format: `azure/<deployment-name>` (o deployment name é o que você configurou no Azure para o modelo). A lista de modelos disponíveis vem do [models.dev](https://models.dev); use o provider **azure** e o deployment name correspondente.
 
-### Verificação: `GET /provider`
+### Verificação: `GET /provider` e `GET /agent`
+
+Para uma checklist completa (incl. agentes, bootstrap e Docker), ver [troubleshoot-chat-agents.md](../runbooks/troubleshoot-chat-agents.md).
 
 Se a UI mostrar "nenhum provider conectado" ou não permitir escolher modelo, confira no mesmo host/porta do servidor OpenCode:
 
