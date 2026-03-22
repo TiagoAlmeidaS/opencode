@@ -49,6 +49,7 @@ import { lazy } from "@/util/lazy"
 import { createOpenCodeServer, getDefaultDbPath } from "@opencode-ai/server"
 import path from "path"
 import { applyAzureOpenAiEnvAliases } from "@opencode-ai/util/azure-openai-env"
+import { APP_DIST_API_PREFIXES } from "./app-dist-bypass"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -263,37 +264,7 @@ export namespace Server {
         const appDist = process.env.OPENCODE_APP_DIST
         if (!appDist) return next()
         const p = c.req.path
-        const apiPrefixes = [
-          "/global",
-          "/auth",
-          "/doc",
-          "/project",
-          "/pty",
-          "/config",
-          "/experimental",
-          "/session",
-          "/permission",
-          "/question",
-          "/provider",
-          "/mcp",
-          "/tui",
-          "/server",
-          "/path",
-          "/event",
-          "/instance",
-          "/openapi",
-          "/agent",
-          "/command",
-          "/log",
-          "/vcs",
-          "/skill",
-          "/lsp",
-          "/formatter",
-          "/file",
-          "/find",
-          "/github",
-        ]
-        if (apiPrefixes.some((prefix) => p === prefix || p.startsWith(prefix + "/"))) return next()
+        if (APP_DIST_API_PREFIXES.some((prefix) => p === prefix || p.startsWith(prefix + "/"))) return next()
         const reqPath = p === "/" ? "index.html" : p.replace(/^\//, "")
         const safe = path.resolve(appDist, path.normalize(reqPath))
         const root = path.resolve(appDist)

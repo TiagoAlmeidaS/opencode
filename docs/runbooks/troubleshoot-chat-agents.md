@@ -62,3 +62,12 @@ Stack local típica: [docker-compose.scheduler.yml](../../docker-compose.schedul
 ## 5. Comparação homolog vs local
 
 Se `GET /agent` for correto no Docker/local e falhar na homolog (ou o contrário), o problema é **deploy, URL, firewall ou env no host**, não a lógica de `Agent.list()` no repositório.
+
+## Testes automatizados (regressão)
+
+- **Contrato HTTP com `OPENCODE_APP_DIST`:** [`packages/opencode/test/server/app-dist-api-contract.test.ts`](../../packages/opencode/test/server/app-dist-api-contract.test.ts) — garante que `GET /agent` e `GET /file` devolvem JSON e não `index.html` quando o SPA está embutido.
+- **Lista de prefixos API:** [`packages/opencode/test/server/app-dist-api-prefixes.test.ts`](../../packages/opencode/test/server/app-dist-api-prefixes.test.ts) e a constante [`packages/opencode/src/server/app-dist-bypass.ts`](../../packages/opencode/src/server/app-dist-bypass.ts).
+- **Toasts do prompt (guards):** [`packages/app/src/components/prompt-input/submit-toast-guards.test.ts`](../../packages/app/src/components/prompt-input/submit-toast-guards.test.ts) — cobre `noConnectedProviders`, `bootstrapFailed` e `noAgentsAvailable` quando modelo/agente não estão selecionados.
+- **Aliases Azure (CLI/serve):** [`packages/util/src/azure-openai-env.test.ts`](../../packages/util/src/azure-openai-env.test.ts) — independente do encaminhamento `/agent`, útil quando se usa `AZURE_OPENAI_*` no `.env.server`.
+
+Correr testes a partir dos pacotes: `bun test` em `packages/opencode`, `packages/app` e `packages/util` (não a partir da raiz do monorepo; ver [AGENTS.md](../../AGENTS.md)).
