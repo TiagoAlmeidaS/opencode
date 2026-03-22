@@ -263,7 +263,33 @@ export namespace Server {
         const appDist = process.env.OPENCODE_APP_DIST
         if (!appDist) return next()
         const p = c.req.path
-        const apiPrefixes = ["/global", "/auth", "/doc", "/project", "/pty", "/config", "/experimental", "/session", "/permission", "/question", "/provider", "/mcp", "/tui", "/server", "/path", "/event", "/instance", "/openapi"]
+        const apiPrefixes = [
+          "/global",
+          "/auth",
+          "/doc",
+          "/project",
+          "/pty",
+          "/config",
+          "/experimental",
+          "/session",
+          "/permission",
+          "/question",
+          "/provider",
+          "/mcp",
+          "/tui",
+          "/server",
+          "/path",
+          "/event",
+          "/instance",
+          "/openapi",
+          "/agent",
+          "/command",
+          "/log",
+          "/vcs",
+          "/skill",
+          "/lsp",
+          "/formatter",
+        ]
         if (apiPrefixes.some((prefix) => p === prefix || p.startsWith(prefix + "/"))) return next()
         const reqPath = p === "/" ? "index.html" : p.replace(/^\//, "")
         const safe = path.resolve(appDist, path.normalize(reqPath))

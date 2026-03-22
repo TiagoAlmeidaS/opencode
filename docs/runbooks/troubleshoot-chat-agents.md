@@ -13,6 +13,14 @@ curl -sS -u "opencode:SUA_SENHA" "http://127.0.0.1:4096/provider"
 
 Sem password no servidor, omitir `-u`.
 
+**Resposta esperada para `/agent`:** JSON array (lista de agentes). Se receberes **HTML** (página OpenCode), o pedido está a ser servido como ficheiro estático em vez da API — atualiza o servidor para uma versão que inclua `/agent` nos prefixos API do `server.ts` ou confirma que não estás a bater num reverse proxy que sirva só o SPA.
+
+Opcionalmente fixa o diretório do projeto (como o SDK faz):
+
+```bash
+curl -sS -H "x-opencode-directory: /caminho/absoluto/do/repo" "http://127.0.0.1:4096/agent"
+```
+
 - **`/agent`:** deve ser um JSON array com entradas como `build`, `plan` (modo `primary`, não `hidden`).
 - **`/provider`:** o array **`connected`** deve listar IDs de providers com credenciais carregadas.
 
