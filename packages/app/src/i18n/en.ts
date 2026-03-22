@@ -285,6 +285,11 @@ export const dict = {
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",
   "prompt.toast.modelAgentRequired.description": "Choose an agent and model before sending a prompt.",
+  "prompt.toast.noConnectedProviders.title": "No provider connected",
+  "prompt.toast.noConnectedProviders.description":
+    "Configure API keys or auth so at least one model provider is connected (check GET /provider connected on the server).",
+  "prompt.toast.noAgentsAvailable.title": "No agents available",
+  "prompt.toast.noAgentsAvailable.description": "The server returned no agents. Reload the project or check your opencode configuration.",
   "prompt.toast.worktreeCreateFailed.title": "Failed to create worktree",
   "prompt.toast.sessionCreateFailed.title": "Failed to create session",
   "prompt.toast.shellSendFailed.title": "Failed to send shell command",

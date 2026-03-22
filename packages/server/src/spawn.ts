@@ -1,5 +1,6 @@
 import { Database as BunDatabase } from "bun:sqlite"
 import path from "path"
+import { applyAzureOpenAiEnvAliases } from "@opencode-ai/util/azure-openai-env"
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const CLI = process.env.OPENCODE_CLI_PATH ?? "opencode"
@@ -15,17 +16,14 @@ const OPENCODE_DB = process.env.OPENCODE_DB_PATH
  * Priority: explicit OPENCODE_CONFIG_CONTENT > dynamic build from provider vars.
  */
 function buildCliEnv(): Record<string, string> {
+  applyAzureOpenAiEnvAliases()
   const extra: Record<string, string> = {}
   const provider = process.env.MEMORY_LLM_PROVIDER ?? "openrouter"
 
-  // Always inject Azure credentials when Azure is the active provider.
-  // The opencode CLI and @ai-sdk/azure expect AZURE_API_KEY / AZURE_RESOURCE_NAME,
-  // but the server .env uses AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL.
+  // Always inject Azure credentials when Azure is the active provider (after aliases).
   if (provider === "azure") {
-    const apiKey = process.env.AZURE_OPENAI_API_KEY ?? ""
-    const baseUrl = process.env.AZURE_OPENAI_BASE_URL ?? ""
-    // Extract resource name from URL: https://my-resource.openai.azure.com → my-resource
-    const resourceName = baseUrl ? new URL(baseUrl).hostname.split(".")[0] : ""
+    const apiKey = process.env.AZURE_API_KEY ?? ""
+    const resourceName = process.env.AZURE_RESOURCE_NAME ?? ""
     if (apiKey) extra.AZURE_API_KEY = apiKey
     if (resourceName) extra.AZURE_RESOURCE_NAME = resourceName
   }

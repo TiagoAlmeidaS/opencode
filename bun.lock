@@ -456,6 +456,7 @@
       "dependencies": {
         "@hono/zod-validator": "catalog:",
         "@octokit/rest": "catalog:",
+        "@opencode-ai/util": "workspace:*",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
         "ulid": "catalog:",

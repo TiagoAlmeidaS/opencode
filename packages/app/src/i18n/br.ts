@@ -264,6 +264,12 @@ export const dict = {
   "prompt.toast.pasteUnsupported.description": "Apenas imagens, PDFs ou arquivos de texto podem ser anexados aqui.",
   "prompt.toast.modelAgentRequired.title": "Selecione um agente e modelo",
   "prompt.toast.modelAgentRequired.description": "Escolha um agente e modelo antes de enviar um prompt.",
+  "prompt.toast.noConnectedProviders.title": "Nenhum provider conectado",
+  "prompt.toast.noConnectedProviders.description":
+    "Configure chaves de API ou autenticação para que pelo menos um provider de modelo fique conectado (veja GET /provider no servidor).",
+  "prompt.toast.noAgentsAvailable.title": "Nenhum agente disponível",
+  "prompt.toast.noAgentsAvailable.description":
+    "O servidor não retornou agentes. Recarregue o projeto ou verifique a configuração do opencode.",
   "prompt.toast.worktreeCreateFailed.title": "Falha ao criar worktree",
   "prompt.toast.sessionCreateFailed.title": "Falha ao criar sessão",
   "prompt.toast.shellSendFailed.title": "Falha ao enviar comando shell",

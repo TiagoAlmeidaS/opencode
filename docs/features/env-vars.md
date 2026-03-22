@@ -11,7 +11,24 @@ OpenCode supports **Azure OpenAI** via the built-in provider `azure` (`@ai-sdk/a
 | Resource name | `AZURE_RESOURCE_NAME` | `provider.azure.options.resourceName` | Nome do recurso no Azure (ex.: `meu-recurso-openai`) |
 | API key | `AZURE_API_KEY` | Auth (UI) | Chave em Keys and Endpoint no portal Azure |
 
+**Aliases (servidor e CLI):** se você já usa nomes típicos do Azure OpenAI em `.env` / `.env.server`, o processo do **`opencode serve`** e o subprocesso da CLI no OpenCode Server aplicam automaticamente:
+
+- `AZURE_OPENAI_API_KEY` → `AZURE_API_KEY` (somente se `AZURE_API_KEY` não estiver definida)
+- `AZURE_OPENAI_BASE_URL` (ex.: `https://meu-recurso.openai.azure.com`) → `AZURE_RESOURCE_NAME` derivado do hostname (somente se `AZURE_RESOURCE_NAME` não estiver definida)
+
+Assim o catálogo de providers (que espera `AZURE_*`) continua coerente sem duplicar variáveis. O mapeamento **não** substitui valores já definidos em `AZURE_API_KEY` / `AZURE_RESOURCE_NAME`.
+
 Model format: `azure/<deployment-name>` (o deployment name é o que você configurou no Azure para o modelo). A lista de modelos disponíveis vem do [models.dev](https://models.dev); use o provider **azure** e o deployment name correspondente.
+
+### Verificação: `GET /provider`
+
+Se a UI mostrar "nenhum provider conectado" ou não permitir escolher modelo, confira no mesmo host/porta do servidor OpenCode:
+
+```bash
+curl -sS -u "USER:PASSWORD" "http://127.0.0.1:4096/provider"
+```
+
+(omit `-u` se `OPENCODE_SERVER_PASSWORD` não estiver definido). No JSON, o array **`connected`** deve listar IDs de providers com credenciais carregadas; **`all`** lista os modelos expostos. Se `connected` estiver vazio, configure env (`AZURE_*` ou outro provider), auth na UI ou `provider` / `enabled_providers` em `opencode.json`.
 
 ## Telegram
 
@@ -74,8 +91,20 @@ OPENCODE_WHATSAPP_ACCESS_TOKEN=...
 OPENCODE_WHATSAPP_PHONE_NUMBER_ID=...
 OPENCODE_WHATSAPP_TO_NUMBER=5511999999999
 
+# Azure OpenAI — opcional: aliases são aplicados automaticamente no serve
+# AZURE_OPENAI_API_KEY=...
+# AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com
+
 # OpenCode serve (optional)
 OPENCODE_SERVER_PASSWORD=your-secret
 ```
 
 Do not commit `.env` with real tokens; use `.env.example` (without secrets) for documentation.
+
+## `opencode.json` e providers
+
+- **`enabled_providers`**: se definido, apenas esses IDs de provider são carregados; qualquer outro (mesmo com env) fica de fora. Omita a chave para permitir todos os não desabilitados.
+- **`disabled_providers`**: lista de IDs excluídos mesmo com credenciais.
+- **`provider`**: por provider, você pode definir `options` (ex.: `provider.azure.options.resourceName`), `models`, `whitelist` / `blacklist` de deployments, etc. Ver schema em [config](https://opencode.ai/config.json).
+
+Se o chat exigir agente/modelo mas nada aparecer conectado, verifique se `enabled_providers` não está restrito demais e se as variáveis de ambiente batem com o provider (ex.: `azure` precisa de credenciais carregáveis — ver tabela Azure acima).

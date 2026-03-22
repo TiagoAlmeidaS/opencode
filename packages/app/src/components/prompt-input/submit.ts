@@ -9,6 +9,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
+import { useProviders } from "@/hooks/use-providers"
 import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
@@ -25,6 +26,18 @@ type PendingPrompt = {
 }
 
 const pending = new Map<string, PendingPrompt>()
+
+let lastPromptGuardKey = ""
+let lastPromptGuardAt = 0
+const PROMPT_GUARD_DEDUPE_MS = 2500
+
+function dedupePromptToast(key: string, show: () => void) {
+  const now = Date.now()
+  if (key === lastPromptGuardKey && now - lastPromptGuardAt < PROMPT_GUARD_DEDUPE_MS) return
+  lastPromptGuardKey = key
+  lastPromptGuardAt = now
+  show()
+}
 
 export type FollowupDraft = {
   sessionID: string
@@ -202,6 +215,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const sync = useSync()
   const globalSync = useGlobalSync()
   const local = useLocal()
+  const providers = useProviders()
   const permission = usePermission()
   const prompt = usePrompt()
   const layout = useLayout()
@@ -298,10 +312,34 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const currentAgent = local.agent.current()
     const variant = local.model.variant.current()
     if (!currentModel || !currentAgent) {
-      showToast({
-        title: language.t("prompt.toast.modelAgentRequired.title"),
-        description: language.t("prompt.toast.modelAgentRequired.description"),
-      })
+      const connected = providers.connected()
+      const agents = local.agent.list()
+      if (connected.length === 0) {
+        dedupePromptToast("no-providers", () =>
+          showToast({
+            title: language.t("prompt.toast.noConnectedProviders.title"),
+            description: language.t("prompt.toast.noConnectedProviders.description"),
+            variant: "error",
+          }),
+        )
+        return
+      }
+      if (agents.length === 0) {
+        dedupePromptToast("no-agents", () =>
+          showToast({
+            title: language.t("prompt.toast.noAgentsAvailable.title"),
+            description: language.t("prompt.toast.noAgentsAvailable.description"),
+            variant: "error",
+          }),
+        )
+        return
+      }
+      dedupePromptToast("model-agent", () =>
+        showToast({
+          title: language.t("prompt.toast.modelAgentRequired.title"),
+          description: language.t("prompt.toast.modelAgentRequired.description"),
+        }),
+      )
       return
     }
 
