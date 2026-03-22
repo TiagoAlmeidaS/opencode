@@ -15,36 +15,41 @@ const OPENCODE_DB = process.env.OPENCODE_DB_PATH
  * Priority: explicit OPENCODE_CONFIG_CONTENT > dynamic build from provider vars.
  */
 function buildCliEnv(): Record<string, string> {
-  // If the caller already set a config, respect it as-is
-  if (process.env.OPENCODE_CONFIG_CONTENT) {
-    return {}
-  }
-
+  const extra: Record<string, string> = {}
   const provider = process.env.MEMORY_LLM_PROVIDER ?? "openrouter"
 
+  // Always inject Azure credentials when Azure is the active provider.
+  // The opencode CLI and @ai-sdk/azure expect AZURE_API_KEY / AZURE_RESOURCE_NAME,
+  // but the server .env uses AZURE_OPENAI_API_KEY / AZURE_OPENAI_BASE_URL.
   if (provider === "azure") {
-    const baseUrl = process.env.AZURE_OPENAI_BASE_URL ?? ""
-    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-4o-mini"
     const apiKey = process.env.AZURE_OPENAI_API_KEY ?? ""
+    const baseUrl = process.env.AZURE_OPENAI_BASE_URL ?? ""
     // Extract resource name from URL: https://my-resource.openai.azure.com → my-resource
     const resourceName = baseUrl ? new URL(baseUrl).hostname.split(".")[0] : ""
-    const config = JSON.stringify({
+    if (apiKey) extra.AZURE_API_KEY = apiKey
+    if (resourceName) extra.AZURE_RESOURCE_NAME = resourceName
+  }
+
+  // If OPENCODE_CONFIG_CONTENT is already set (e.g. explicit override in .env.server),
+  // respect it and only return the credential aliases above.
+  if (process.env.OPENCODE_CONFIG_CONTENT) {
+    return extra
+  }
+
+  // Build OPENCODE_CONFIG_CONTENT dynamically from provider env vars.
+  if (provider === "azure") {
+    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? "gpt-4o-mini"
+    const resourceName = extra.AZURE_RESOURCE_NAME ?? ""
+    extra.OPENCODE_CONFIG_CONTENT = JSON.stringify({
       model: `azure/${deployment}`,
       provider: { azure: { options: { resourceName } } },
     })
-    return {
-      OPENCODE_CONFIG_CONTENT: config,
-      AZURE_API_KEY: apiKey, // @ai-sdk/azure reads AZURE_API_KEY
-    }
-  }
-
-  if (provider === "openrouter") {
+  } else if (provider === "openrouter") {
     const model = process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini"
-    const config = JSON.stringify({ model: `openrouter/${model}` })
-    return { OPENCODE_CONFIG_CONTENT: config }
+    extra.OPENCODE_CONFIG_CONTENT = JSON.stringify({ model: `openrouter/${model}` })
   }
 
-  return {}
+  return extra
 }
 
 export interface SpawnResult {
