@@ -2,6 +2,18 @@
 
 Este runbook cobre validação quando a UI bloqueia o envio do prompt ou mostra toasts sobre providers, agentes ou falha de carregamento do projeto.
 
+## Chat (porta 4096) vs jobs `repo-issue` (scheduler / fila)
+
+São **fluxos diferentes**:
+
+| | **UI de chat** (`opencode serve`, :4096) | **Repo issue worker** (`repo-issue-worker`, fila, activities) |
+|---|------------------------------------------|----------------------------------------------------------------|
+| O que é | Browser chama `GET /agent`, `GET /provider`, `GET /file`, etc. | Scheduler corre pipelines; `implement-code` chama `opencode run` via **CLI** no disco (`spawnOpenCode`). |
+| LLM | Providers no processo do serve (env `OPENAI_*`, `AZURE_*`, …) | Mesmo `.env.server`: `MEMORY_LLM_PROVIDER`, `OPENCODE_CONFIG_CONTENT`, `OPENROUTER_*`, aliases Azure em [`spawn.ts`](../../packages/server/src/spawn.ts). |
+| Se o chat falha | Corrigir HTTP/API (deploy com prefixos `/agent`, `/file`, `/find` no `server.ts`) e `opencode.json`. | Ver `GITHUB_TOKEN`, fila/RabbitMQ, logs do job, `cli_output` no registo do job, `max_runs_per_day`, cron da pipeline. |
+
+Ou seja: **melhorar o chat não “liga” sozinho os jobs** — mas **erros de LLM no `.env.server`** podem afetar **ambos** (serve e CLI).
+
 ## 1. Confirmar API no mesmo host que a app
 
 Com basic auth (se `OPENCODE_SERVER_PASSWORD` estiver definido no processo do `opencode serve`):
@@ -14,6 +26,8 @@ curl -sS -u "opencode:SUA_SENHA" "http://127.0.0.1:4096/provider"
 Sem password no servidor, omitir `-u`.
 
 **Resposta esperada para `/agent`:** JSON array (lista de agentes). Se receberes **HTML** (página OpenCode), o pedido está a ser servido como ficheiro estático em vez da API — atualiza o servidor para uma versão que inclua `/agent` nos prefixos API do `server.ts` ou confirma que não estás a bater num reverse proxy que sirva só o SPA.
+
+O mesmo tipo de problema pode afetar **`GET /file`** e **`GET /find`** (árvore de ficheiros / pesquisa): têm de devolver JSON, não HTML. Erros do tipo **`h.map is not a function`** na UI costumam ser lista de ficheiros que chegou como não-array (p.ex. corpo HTML).
 
 Opcionalmente fixa o diretório do projeto (como o SDK faz):
 

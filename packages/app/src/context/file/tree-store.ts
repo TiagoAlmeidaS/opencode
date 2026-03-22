@@ -62,7 +62,8 @@ export function createFileTreeStore(options: TreeStoreOptions) {
 
     const promise = options
       .list(dir)
-      .then((nodes) => {
+      .then((raw) => {
+        const nodes = Array.isArray(raw) ? raw : []
         if (options.scope() !== directory) return
         const prevChildren = tree.dir[dir]?.children ?? []
         const nextChildren = nodes.map((node) => node.path)

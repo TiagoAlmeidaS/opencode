@@ -289,6 +289,9 @@ export namespace Server {
           "/skill",
           "/lsp",
           "/formatter",
+          "/file",
+          "/find",
+          "/github",
         ]
         if (apiPrefixes.some((prefix) => p === prefix || p.startsWith(prefix + "/"))) return next()
         const reqPath = p === "/" ? "index.html" : p.replace(/^\//, "")
