@@ -68,6 +68,41 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
     if (ok) await _load();
   }
 
+  Future<void> _execute(String id, String title) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Launch dev cycle?'),
+        content: Text('This will create a job and start the full implementation pipeline for:\n\n"$title"'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Launch'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final srv = context.read<AppState>().server;
+    if (srv == null) return;
+    final result = await srv.opportunityExecute(id);
+    if (!mounted) return;
+    if (result != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Dev cycle launched — check Repo Jobs tab for progress'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      await _load();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to launch dev cycle'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   Color _scoreColor(double score) {
     if (score >= 70) return Colors.green;
     if (score >= 40) return Colors.orange;
@@ -190,6 +225,7 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
     final typeColor = _typeColor(type);
     final scoreColor = _scoreColor(score);
     final showActions = status == 'new' || status == 'scored';
+    final showExecute = status == 'shortlisted';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -263,6 +299,16 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
                     child: const Text('Ignore'),
                   ),
                 ],
+              ),
+            ],
+            if (showExecute) ...[
+              const SizedBox(height: 10),
+              OpenCodeButton(
+                onPressed: () => _execute(id, title),
+                variant: OpenCodeButtonVariant.primary,
+                size: OpenCodeButtonSize.small,
+                icon: Icons.rocket_launch_outlined,
+                child: const Text('Launch Dev Cycle'),
               ),
             ],
           ],

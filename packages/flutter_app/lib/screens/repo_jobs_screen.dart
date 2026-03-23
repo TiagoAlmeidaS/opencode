@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -17,6 +19,7 @@ class _RepoJobsScreenState extends State<RepoJobsScreen> {
   List<Map<String, dynamic>>? _jobs;
   bool _loading = true;
   String? _filterStatus;
+  StreamSubscription<void>? _refreshSub;
 
   static const _steps = ['pending', 'spec', 'tests', 'implementing', 'docs', 'pr-open', 'completed'];
   static const _stepLabels = ['Queued', 'Spec', 'Tests', 'Code', 'Docs', 'PR', 'Done'];
@@ -25,6 +28,15 @@ class _RepoJobsScreenState extends State<RepoJobsScreen> {
   void initState() {
     super.initState();
     _load();
+    _refreshSub = context.read<AppState>().jobRefresh.listen((_) {
+      if (mounted) _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {

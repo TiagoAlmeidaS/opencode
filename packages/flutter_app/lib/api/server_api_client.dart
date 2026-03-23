@@ -378,4 +378,29 @@ class ServerApiClient {
     final r = await _http.post(_uri('submissions/$id/reject'), headers: _headers);
     return r.statusCode == 200;
   }
+
+  // ── Queue ────────────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>?> queueItems({String? status, String? activityType, int limit = 50}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (status != null) q['status'] = status;
+    if (activityType != null) q['activity_type'] = activityType;
+    final r = await _http.get(_uri('queue', q), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return (jsonDecode(r.body) as List).cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>?> queueItemCancel(String id) async {
+    final r = await _http.delete(_uri('queue/$id'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
+
+  // ── Opportunity execute ───────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>?> opportunityExecute(String id) async {
+    final r = await _http.post(_uri('opportunities/$id/execute'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>;
+  }
 }

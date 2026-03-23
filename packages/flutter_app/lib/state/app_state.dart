@@ -6,6 +6,7 @@ import '../api/daemon_url.dart';
 import '../api/models.dart';
 import '../api/opencode_client.dart';
 import '../api/server_api_client.dart';
+import '../services/notification_service.dart';
 import '../services/sse_client.dart';
 
 class ServerConfig {
@@ -47,6 +48,12 @@ class AppState extends ChangeNotifier {
   Stream<String> get sessionAttention => _attention.stream;
 
   final Map<String, Timer> _debounce = {};
+
+  // ── Job polling for live updates + notifications ─────────────────────────
+  Timer? _jobPollTimer;
+  final Map<String, String> _lastJobStatuses = {}; // jobId → status
+  final StreamController<void> _jobRefresh = StreamController.broadcast();
+  Stream<void> get jobRefresh => _jobRefresh.stream;
 
   List<ServerConfig> get servers => List.unmodifiable(_servers);
   String? get activeKey => _activeKey;
@@ -202,8 +209,40 @@ class AppState extends ChangeNotifier {
       _onSse(dir, raw);
     });
 
+    _startJobPolling();
+
     notifyListeners();
     return true;
+  }
+
+  void _startJobPolling() {
+    _jobPollTimer?.cancel();
+    _jobPollTimer = Timer.periodic(const Duration(seconds: 30), (_) => _pollJobs());
+  }
+
+  Future<void> _pollJobs() async {
+    final srv = _server;
+    if (srv == null) return;
+    try {
+      final jobs = await srv.repoIssueJobs(limit: 20);
+      if (jobs == null) return;
+      bool changed = false;
+      for (final job in jobs) {
+        final id = job['id'] as String? ?? '';
+        final status = job['status'] as String? ?? '';
+        final prev = _lastJobStatuses[id];
+        if (prev != null && prev != status) {
+          changed = true;
+          final title = job['issueTitle'] as String? ?? job['issue_title'] as String? ?? 'Job';
+          final repo = job['repoFullName'] as String? ?? job['repo_full_name'] as String? ?? '';
+          if (status == 'completed') NotificationService.instance.showJobCompleted(title, repo);
+          if (status == 'failed') NotificationService.instance.showJobFailed(title, repo);
+          if (status == 'pr-open') NotificationService.instance.showPrOpened(title, repo);
+        }
+        if (id.isNotEmpty) _lastJobStatuses[id] = status;
+      }
+      if (changed && !_jobRefresh.isClosed) _jobRefresh.add(null);
+    } catch (_) {}
   }
 
   void _pulse(String dir, String sid) {
@@ -339,12 +378,14 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _sseSub?.cancel();
+    _jobPollTimer?.cancel();
     for (final t in _debounce.values) {
       t.cancel();
     }
     _debounce.clear();
     _chat.close();
     _attention.close();
+    _jobRefresh.close();
     super.dispose();
   }
 }

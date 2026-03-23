@@ -7,7 +7,11 @@ import '../theme/oc2_colors.dart';
 import '../widgets/dialog_add_project.dart';
 import '../widgets/opencode_button.dart';
 import 'home_dashboard_screen.dart';
+import 'learnings_screen.dart';
 import 'llm_settings_screen.dart';
+import 'opportunities_screen.dart';
+import 'queue_monitor_screen.dart';
+import 'reports_screen.dart';
 import 'repo_jobs_screen.dart';
 import 'server_dashboard_screen.dart';
 import 'session_screen.dart';
@@ -90,18 +94,24 @@ class _MainLayoutState extends State<MainLayout> {
           label: 'Home',
         ),
         NavigationDestination(
+          icon: Icon(Icons.lightbulb_outline),
+          selectedIcon: Icon(Icons.lightbulb),
+          label: 'Opps',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.merge_type_outlined),
+          selectedIcon: Icon(Icons.merge_type),
+          label: 'Jobs',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.queue_outlined),
+          selectedIcon: Icon(Icons.queue),
+          label: 'Queue',
+        ),
+        NavigationDestination(
           icon: Icon(Icons.dashboard_outlined),
           selectedIcon: Icon(Icons.dashboard),
           label: 'Server',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.merge_type),
-          label: 'Repo Jobs',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.settings_outlined),
-          selectedIcon: Icon(Icons.settings),
-          label: 'LLM Config',
         ),
       ],
     );
@@ -150,12 +160,10 @@ class _MainLayoutState extends State<MainLayout> {
 
   String _tabTitle(int tab, String? session, List<dynamic> sessions) {
     switch (tab) {
-      case 1:
-        return 'Server Dashboard';
-      case 2:
-        return 'Repo Jobs';
-      case 3:
-        return 'LLM Config';
+      case 1: return 'Opportunities';
+      case 2: return 'Repo Jobs';
+      case 3: return 'Queue Monitor';
+      case 4: return 'Server Dashboard';
       default:
         if (session != null) {
           try {
@@ -169,12 +177,10 @@ class _MainLayoutState extends State<MainLayout> {
 
   Widget _buildContent(BuildContext context, AppState state, String? directory, {required bool narrow}) {
     switch (_selectedTab) {
-      case 1:
-        return const ServerDashboardScreen();
-      case 2:
-        return const RepoJobsScreen();
-      case 3:
-        return LlmSettingsScreen(catalogDirectory: directory);
+      case 1: return const OpportunitiesScreen();
+      case 2: return const RepoJobsScreen();
+      case 3: return const QueueMonitorScreen();
+      case 4: return const ServerDashboardScreen();
       default: // 0 = Home
         if (_selectedSession != null && directory != null) {
           return SessionScreen(
@@ -342,10 +348,35 @@ class _MainLayoutState extends State<MainLayout> {
                 ],
               ),
             ),
-          ],
-        ),
+          const Divider(),
+          ListTile(
+            leading: Icon(Icons.bar_chart_outlined, color: palette.iconBase),
+            title: const Text('Reports'),
+            onTap: () {
+              _closeDrawer();
+              Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ReportsScreen()));
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.school_outlined, color: palette.iconBase),
+            title: const Text('Learnings'),
+            onTap: () {
+              _closeDrawer();
+              Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LearningsScreen()));
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.settings_outlined, color: palette.iconBase),
+            title: const Text('LLM Config'),
+            onTap: () {
+              _closeDrawer();
+              Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LlmSettingsScreen(catalogDirectory: directory)));
+            },
+          ),
+        ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildPanel(

@@ -3,10 +3,14 @@ import 'package:provider/provider.dart';
 
 import 'screens/connection_screen.dart';
 import 'screens/main_layout.dart';
+import 'services/notification_service.dart';
 import 'state/app_state.dart';
 import 'theme/opencode_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.instance.init();
+  await NotificationService.instance.requestPermission();
   runApp(const OpenCodeApp());
 }
 
