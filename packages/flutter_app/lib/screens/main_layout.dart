@@ -6,18 +6,17 @@ import '../theme/button_style.dart';
 import '../theme/oc2_colors.dart';
 import '../widgets/dialog_add_project.dart';
 import '../widgets/opencode_button.dart';
+import 'brain_hub_screen.dart';
 import 'home_dashboard_screen.dart';
-import 'learnings_screen.dart';
 import 'llm_settings_screen.dart';
-import 'opportunities_screen.dart';
-import 'queue_monitor_screen.dart';
-import 'reports_screen.dart';
-import 'repo_jobs_screen.dart';
-import 'server_dashboard_screen.dart';
+import 'management_hub_screen.dart';
+import 'opportunities_hub_screen.dart';
 import 'session_screen.dart';
 
 const _breakpoint = 600.0;
 
+/// 5-tab main layout:
+///  0 Home | 1 Chat | 2 Opportunities | 3 Brain | 4 Management
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
 
@@ -48,23 +47,25 @@ class _MainLayoutState extends State<MainLayout> {
     );
   }
 
-  void _closeDrawer() {
-    Navigator.of(context).pop();
-  }
+  void _closeDrawer() => Navigator.of(context).pop();
 
   void _selectSession(String id) {
     setState(() {
       _selectedSession = id;
-      _selectedTab = 0; // sempre volta para Home ao abrir sessão
+      _selectedTab = 1; // Chat tab
     });
   }
+
+  bool get _showChatPanel => _selectedTab == 1;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final projects = state.projects;
     final sessions = state.sessions;
-    final directory = _selectedProject ?? state.activeDirectory ?? (projects.isNotEmpty ? projects.first.worktree : null);
+    final directory = _selectedProject ??
+        state.activeDirectory ??
+        (projects.isNotEmpty ? projects.first.worktree : null);
 
     if (directory != null && state.activeDirectory != directory) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -83,7 +84,6 @@ class _MainLayoutState extends State<MainLayout> {
       onDestinationSelected: (i) {
         setState(() {
           _selectedTab = i;
-          if (i != 0) _selectedSession = null;
         });
         if (i == 0) context.read<AppState>().refreshServerStatus();
       },
@@ -94,24 +94,24 @@ class _MainLayoutState extends State<MainLayout> {
           label: 'Home',
         ),
         NavigationDestination(
-          icon: Icon(Icons.lightbulb_outline),
-          selectedIcon: Icon(Icons.lightbulb),
-          label: 'Opps',
+          icon: Icon(Icons.chat_outlined),
+          selectedIcon: Icon(Icons.chat),
+          label: 'Chat',
         ),
         NavigationDestination(
-          icon: Icon(Icons.merge_type_outlined),
-          selectedIcon: Icon(Icons.merge_type),
-          label: 'Jobs',
+          icon: Icon(Icons.trending_up_outlined),
+          selectedIcon: Icon(Icons.trending_up),
+          label: 'Opp',
         ),
         NavigationDestination(
-          icon: Icon(Icons.queue_outlined),
-          selectedIcon: Icon(Icons.queue),
-          label: 'Queue',
+          icon: Icon(Icons.psychology_outlined),
+          selectedIcon: Icon(Icons.psychology),
+          label: 'Brain',
         ),
         NavigationDestination(
-          icon: Icon(Icons.dashboard_outlined),
-          selectedIcon: Icon(Icons.dashboard),
-          label: 'Server',
+          icon: Icon(Icons.manage_accounts_outlined),
+          selectedIcon: Icon(Icons.manage_accounts),
+          label: 'Manage',
         ),
       ],
     );
@@ -123,12 +123,27 @@ class _MainLayoutState extends State<MainLayout> {
           title: Text(_tabTitle(_selectedTab, _selectedSession, sessions)),
           backgroundColor: _palette.backgroundBase,
           foregroundColor: _palette.textStrong,
-          leading: IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-          ),
+          leading: _showChatPanel
+              ? IconButton(
+                  icon: const Icon(Icons.menu),
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                )
+              : null,
+          actions: [
+            if (_selectedTab == 4)
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => LlmSettingsScreen(catalogDirectory: directory),
+                  ),
+                ),
+              ),
+          ],
         ),
-        drawer: _buildDrawer(context, state, projects, sessions, directory),
+        drawer: _showChatPanel
+            ? _buildDrawer(context, state, projects, sessions, directory)
+            : null,
         body: state.connected
             ? _buildContent(context, state, directory, narrow: true)
             : Center(child: Text('Connecting…', style: TextStyle(color: _palette.textWeak))),
@@ -136,12 +151,11 @@ class _MainLayoutState extends State<MainLayout> {
       );
     }
 
-    // Desktop
+    // Desktop layout
     Widget body;
     if (!state.connected) {
       body = Center(child: Text('Connecting…', style: TextStyle(color: _palette.textWeak)));
-    } else if (_selectedTab == 0) {
-      // Home: sidebar de sessões visível ao lado do conteúdo
+    } else if (_showChatPanel) {
       body = Row(
         children: [
           _buildPanel(context, state, projects, sessions, directory),
@@ -152,36 +166,38 @@ class _MainLayoutState extends State<MainLayout> {
       body = _buildContent(context, state, directory, narrow: false);
     }
 
-    return Scaffold(
-      body: body,
-      bottomNavigationBar: navBar,
-    );
+    return Scaffold(body: body, bottomNavigationBar: navBar);
   }
 
   String _tabTitle(int tab, String? session, List<dynamic> sessions) {
     switch (tab) {
-      case 1: return 'Opportunities';
-      case 2: return 'Repo Jobs';
-      case 3: return 'Queue Monitor';
-      case 4: return 'Server Dashboard';
-      default:
+      case 1:
         if (session != null) {
           try {
             final s = sessions.firstWhere((s) => s.id == session);
             return s.title ?? 'Session';
           } catch (_) {}
         }
+        return 'Chat';
+      case 2:
+        return 'Opportunities';
+      case 3:
+        return 'Brain';
+      case 4:
+        return 'Management';
+      default:
         return 'OpenCode';
     }
   }
 
-  Widget _buildContent(BuildContext context, AppState state, String? directory, {required bool narrow}) {
+  Widget _buildContent(
+    BuildContext context,
+    AppState state,
+    String? directory, {
+    required bool narrow,
+  }) {
     switch (_selectedTab) {
-      case 1: return const OpportunitiesScreen();
-      case 2: return const RepoJobsScreen();
-      case 3: return const QueueMonitorScreen();
-      case 4: return const ServerDashboardScreen();
-      default: // 0 = Home
+      case 1: // Chat
         if (_selectedSession != null && directory != null) {
           return SessionScreen(
             key: ValueKey(_selectedSession),
@@ -189,6 +205,14 @@ class _MainLayoutState extends State<MainLayout> {
             sessionID: _selectedSession!,
           );
         }
+        return _chatNoSession(context, narrow: narrow);
+      case 2:
+        return const OpportunitiesHubScreen();
+      case 3:
+        return const BrainHubScreen();
+      case 4:
+        return const ManagementHubScreen();
+      default: // 0 = Home
         if (state.daemonAvailable) {
           return const HomeDashboardScreen(key: ValueKey('home-dashboard'));
         }
@@ -196,7 +220,37 @@ class _MainLayoutState extends State<MainLayout> {
     }
   }
 
-  /// Home when `/server/status` is unavailable (OpenCode without daemon layer).
+  Widget _chatNoSession(BuildContext context, {required bool narrow}) {
+    final palette = _palette;
+    return Container(
+      color: palette.backgroundBase,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.chat_outlined, size: 56, color: palette.iconBase),
+          const SizedBox(height: 16),
+          Text('No session selected', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 12),
+          if (narrow)
+            OpenCodeButton(
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+              variant: OpenCodeButtonVariant.primary,
+              size: OpenCodeButtonSize.large,
+              icon: Icons.menu,
+              child: const Text('Open sessions'),
+            )
+          else
+            Text(
+              'Select a session from the panel on the left, or create a new one.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.textWeak),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _homeDaemonUnavailable(BuildContext context, AppState state, {required bool narrow}) {
     final palette = _palette;
     return Container(
@@ -211,51 +265,21 @@ class _MainLayoutState extends State<MainLayout> {
             children: [
               Icon(Icons.dashboard_outlined, size: 56, color: palette.iconBase),
               const SizedBox(height: 16),
-              Text(
-                'Server dashboard unavailable',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('Server dashboard unavailable', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 12),
               Text(
                 'OpenCode Server (daemon) is not enabled on this host. '
-                'The Home summary (reports, pipelines, opportunities) needs GET /server/status.\n\n'
-                'Start the server with opencode serve --daemon or set server.daemon: true in config. '
-                'See docs/api/opencode-server.md in the repo.',
+                'Start the server with opencode serve --daemon or set server.daemon: true in config.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.textWeak),
               ),
               const SizedBox(height: 24),
-              Text(
-                'You can still use chat sessions:',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 12),
-              if (narrow)
-                OpenCodeButton(
-                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                  variant: OpenCodeButtonVariant.primary,
-                  size: OpenCodeButtonSize.large,
-                  icon: Icons.menu,
-                  child: const Text('Sessions menu'),
-                ),
-              if (!narrow) ...[
-                Text(
-                  'Pick a session from the list on the left, or start a new one.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.textWeak),
-                ),
-              ],
-              const SizedBox(height: 16),
               OpenCodeButton(
-                onPressed: () => setState(() {
-                  _selectedTab = 1;
-                  _selectedSession = null;
-                }),
-                variant: OpenCodeButtonVariant.secondary,
+                onPressed: () => setState(() => _selectedTab = 1),
+                variant: OpenCodeButtonVariant.primary,
                 size: OpenCodeButtonSize.large,
-                icon: Icons.dashboard_outlined,
-                child: const Text('Open Server tab'),
+                icon: Icons.chat_outlined,
+                child: const Text('Open Chat'),
               ),
               const SizedBox(height: 10),
               OpenCodeButton(
@@ -291,19 +315,19 @@ class _MainLayoutState extends State<MainLayout> {
               child: Text('Projects', style: Theme.of(context).textTheme.titleMedium),
             ),
             ...projects.take(8).map(
-                  (p) => ListTile(
-                    leading: Icon(Icons.folder, color: palette.iconBase),
-                    title: Text(p.name ?? p.worktree.split('/').last, overflow: TextOverflow.ellipsis),
-                    selected: _selectedProject == p.worktree,
-                    onTap: () {
-                      setState(() {
-                        _selectedProject = p.worktree;
-                        _selectedTab = 0;
-                      });
-                      _closeDrawer();
-                    },
-                  ),
-                ),
+              (p) => ListTile(
+                leading: Icon(Icons.folder, color: palette.iconBase),
+                title: Text(p.name ?? p.worktree.split('/').last, overflow: TextOverflow.ellipsis),
+                selected: _selectedProject == p.worktree,
+                onTap: () {
+                  setState(() {
+                    _selectedProject = p.worktree;
+                    _selectedTab = 1;
+                  });
+                  _closeDrawer();
+                },
+              ),
+            ),
             ListTile(
               leading: Icon(Icons.add, color: palette.iconBase),
               title: const Text('Add project'),
@@ -348,35 +372,10 @@ class _MainLayoutState extends State<MainLayout> {
                 ],
               ),
             ),
-          const Divider(),
-          ListTile(
-            leading: Icon(Icons.bar_chart_outlined, color: palette.iconBase),
-            title: const Text('Reports'),
-            onTap: () {
-              _closeDrawer();
-              Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ReportsScreen()));
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.school_outlined, color: palette.iconBase),
-            title: const Text('Learnings'),
-            onTap: () {
-              _closeDrawer();
-              Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const LearningsScreen()));
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.settings_outlined, color: palette.iconBase),
-            title: const Text('LLM Config'),
-            onTap: () {
-              _closeDrawer();
-              Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => LlmSettingsScreen(catalogDirectory: directory)));
-            },
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _buildPanel(
@@ -396,7 +395,6 @@ class _MainLayoutState extends State<MainLayout> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Project selector
           if (projects.length > 1)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -404,18 +402,16 @@ class _MainLayoutState extends State<MainLayout> {
                 isExpanded: true,
                 value: directory,
                 underline: const SizedBox.shrink(),
-                items: projects
-                    .map<DropdownMenuItem<String>>(
-                      (p) => DropdownMenuItem<String>(
-                        value: p.worktree as String,
-                        child: Text(
-                          (p.name ?? (p.worktree as String).split('/').last) as String,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                    )
-                    .toList(),
+                items: projects.map<DropdownMenuItem<String>>(
+                  (p) => DropdownMenuItem<String>(
+                    value: p.worktree as String,
+                    child: Text(
+                      (p.name ?? (p.worktree as String).split('/').last) as String,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ).toList(),
                 onChanged: (v) {
                   if (v != null) setState(() => _selectedProject = v);
                 },

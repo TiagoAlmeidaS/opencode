@@ -9,12 +9,12 @@ class PathInfo {
   });
 
   factory PathInfo.fromJson(Map<String, dynamic> j) => PathInfo(
-        state: j['state'] as String? ?? '',
-        config: j['config'] as String? ?? '',
-        worktree: j['worktree'] as String? ?? '',
-        directory: j['directory'] as String? ?? '',
-        home: j['home'] as String? ?? '',
-      );
+    state: j['state'] as String? ?? '',
+    config: j['config'] as String? ?? '',
+    worktree: j['worktree'] as String? ?? '',
+    directory: j['directory'] as String? ?? '',
+    home: j['home'] as String? ?? '',
+  );
 
   final String state;
   final String config;
@@ -27,9 +27,9 @@ class HealthInfo {
   HealthInfo({required this.healthy, this.version});
 
   factory HealthInfo.fromJson(Map<String, dynamic> j) => HealthInfo(
-        healthy: j['healthy'] as bool? ?? false,
-        version: j['version'] as String?,
-      );
+    healthy: j['healthy'] as bool? ?? false,
+    version: j['version'] as String?,
+  );
 
   final bool healthy;
   final String? version;
@@ -44,13 +44,13 @@ class Project {
   });
 
   factory Project.fromJson(Map<String, dynamic> j) => Project(
-        id: j['id'] as String? ?? '',
-        worktree: j['worktree'] as String? ?? '',
-        name: j['name'] as String?,
-        sandboxes: (j['sandboxes'] as List<dynamic>?)
-            ?.map((e) => e as String)
-            .toList(),
-      );
+    id: j['id'] as String? ?? '',
+    worktree: j['worktree'] as String? ?? '',
+    name: j['name'] as String?,
+    sandboxes: (j['sandboxes'] as List<dynamic>?)
+        ?.map((e) => e as String)
+        .toList(),
+  );
 
   final String id;
   final String worktree;
@@ -68,12 +68,14 @@ class Session {
   });
 
   factory Session.fromJson(Map<String, dynamic> j) => Session(
-        id: j['id'] as String? ?? '',
-        directory: j['directory'] as String? ?? '',
-        title: j['title'] as String?,
-        parentID: j['parentID'] as String?,
-        time: j['time'] != null ? SessionTime.fromJson(Map<String, dynamic>.from(j['time'] as Map)) : null,
-      );
+    id: j['id'] as String? ?? '',
+    directory: j['directory'] as String? ?? '',
+    title: j['title'] as String?,
+    parentID: j['parentID'] as String?,
+    time: j['time'] != null
+        ? SessionTime.fromJson(Map<String, dynamic>.from(j['time'] as Map))
+        : null,
+  );
 
   final String id;
   final String directory;
@@ -86,10 +88,10 @@ class SessionTime {
   SessionTime({this.created, this.updated, this.archived});
 
   factory SessionTime.fromJson(Map<String, dynamic> j) => SessionTime(
-        created: j['created'] as int?,
-        updated: j['updated'] as int?,
-        archived: j['archived'] as int?,
-      );
+    created: j['created'] as int?,
+    updated: j['updated'] as int?,
+    archived: j['archived'] as int?,
+  );
 
   final int? created;
   final int? updated;
@@ -106,7 +108,11 @@ class Message {
       id: info['id'] as String? ?? '',
       role: info['role'] as String?,
       parts: raw
-          ?.map((e) => e is Part ? e : Part.fromJson(Map<String, dynamic>.from(e as Map)))
+          ?.map(
+            (e) => e is Part
+                ? e
+                : Part.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
           .toList(),
     );
   }
@@ -120,10 +126,10 @@ class Part {
   Part({required this.id, this.type, this.text});
 
   factory Part.fromJson(Map<String, dynamic> j) => Part(
-        id: j['id'] as String? ?? '',
-        type: j['type'] as String?,
-        text: j['text'] as String?,
-      );
+    id: j['id'] as String? ?? '',
+    type: j['type'] as String?,
+    text: j['text'] as String?,
+  );
 
   final String id;
   final String? type;
@@ -134,10 +140,10 @@ class PtyInfo {
   PtyInfo({required this.id, this.directory, this.sessionID});
 
   factory PtyInfo.fromJson(Map<String, dynamic> j) => PtyInfo(
-        id: j['id'] as String? ?? '',
-        directory: j['directory'] as String?,
-        sessionID: j['sessionID'] as String?,
-      );
+    id: j['id'] as String? ?? '',
+    directory: j['directory'] as String?,
+    sessionID: j['sessionID'] as String?,
+  );
 
   final String id;
   final String? directory;
@@ -145,15 +151,21 @@ class PtyInfo {
 }
 
 class FileNode {
-  FileNode({required this.name, required this.path, required this.absolute, required this.type, this.ignored = false});
+  FileNode({
+    required this.name,
+    required this.path,
+    required this.absolute,
+    required this.type,
+    this.ignored = false,
+  });
 
   factory FileNode.fromJson(Map<String, dynamic> j) => FileNode(
-        name: j['name'] as String? ?? '',
-        path: j['path'] as String? ?? '',
-        absolute: j['absolute'] as String? ?? '',
-        type: j['type'] as String? ?? 'file',
-        ignored: j['ignored'] as bool? ?? false,
-      );
+    name: j['name'] as String? ?? '',
+    path: j['path'] as String? ?? '',
+    absolute: j['absolute'] as String? ?? '',
+    type: j['type'] as String? ?? 'file',
+    ignored: j['ignored'] as bool? ?? false,
+  );
 
   final String name;
   final String path;
@@ -163,14 +175,19 @@ class FileNode {
 }
 
 class FileContent {
-  FileContent({required this.type, required this.content, this.diff, this.mimeType});
+  FileContent({
+    required this.type,
+    required this.content,
+    this.diff,
+    this.mimeType,
+  });
 
   factory FileContent.fromJson(Map<String, dynamic> j) => FileContent(
-        type: j['type'] as String? ?? 'text',
-        content: j['content'] as String? ?? '',
-        diff: j['diff'] as String?,
-        mimeType: j['mimeType'] as String?,
-      );
+    type: j['type'] as String? ?? 'text',
+    content: j['content'] as String? ?? '',
+    diff: j['diff'] as String?,
+    mimeType: j['mimeType'] as String?,
+  );
 
   final String type;
   final String content;
@@ -182,11 +199,11 @@ class FileStatusEntry {
   FileStatusEntry({required this.path, this.status, this.added, this.removed});
 
   factory FileStatusEntry.fromJson(Map<String, dynamic> j) => FileStatusEntry(
-        path: j['path'] as String? ?? '',
-        status: j['status'] as String?,
-        added: j['added'] as int?,
-        removed: j['removed'] as int?,
-      );
+    path: j['path'] as String? ?? '',
+    status: j['status'] as String?,
+    added: j['added'] as int?,
+    removed: j['removed'] as int?,
+  );
 
   final String path;
   final String? status;
@@ -219,6 +236,66 @@ class ServerStatus {
   final int? pipelinesEnabled;
   final int? jobsRunning;
   final int? proposalsPending;
+}
+
+/// Discovery report from project/venture idea validation.
+class DiscoveryReport {
+  DiscoveryReport({
+    required this.id,
+    required this.ideaText,
+    this.description,
+    required this.status,
+    this.reportJson,
+    this.sessionId,
+    this.jobId,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory DiscoveryReport.fromJson(Map<String, dynamic> j) => DiscoveryReport(
+    id: j['id'] as String? ?? '',
+    ideaText: j['idea_text'] as String? ?? '',
+    description: j['description'] as String?,
+    status: DiscoveryStatus.fromJson(j['status'] as String? ?? 'pending'),
+    reportJson: j['report_json'] as String?,
+    sessionId: j['session_id'] as String?,
+    jobId: j['job_id'] as String?,
+    createdAt: (j['created_at'] as num?)?.toInt(),
+    updatedAt: (j['updated_at'] as num?)?.toInt(),
+  );
+
+  final String id;
+  final String ideaText;
+  final String? description;
+  final DiscoveryStatus status;
+  final String? reportJson;
+  final String? sessionId;
+  final String? jobId;
+  final int? createdAt;
+  final int? updatedAt;
+}
+
+enum DiscoveryStatus {
+  pending,
+  completed,
+  failed;
+
+  factory DiscoveryStatus.fromJson(String? json) {
+    switch (json?.toLowerCase()) {
+      case 'pending':
+        return DiscoveryStatus.pending;
+      case 'completed':
+        return DiscoveryStatus.completed;
+      case 'failed':
+        return DiscoveryStatus.failed;
+      default:
+        return DiscoveryStatus.pending;
+    }
+  }
+
+  String toJson() {
+    return toString().split('.').last;
+  }
 }
 
 /// One selectable model from [GET /config/providers] (`id` = `provider/model`).

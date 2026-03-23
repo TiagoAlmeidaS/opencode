@@ -403,4 +403,90 @@ class ServerApiClient {
     if (r.statusCode != 200) return null;
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
+
+  // ---------------------------------------------------------------------------
+  // Market Data
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>?> marketData({String? symbol, int limit = 50}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (symbol != null) q['symbol'] = symbol;
+    final r = await _http.get(_uri('market-data', q), headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>?> marketDataLatest() async {
+    final r = await _http.get(_uri('market-data/latest'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Niches
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>?> niches() async {
+    final r = await _http.get(_uri('niches'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> niche(String id) async {
+    final r = await _http.get(_uri('niches/$id'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Specs
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>?> specs({String? status, int limit = 50}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (status != null) q['status'] = status;
+    final r = await _http.get(_uri('specs', q), headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> specCreate({required String title, String? description, String? repoUrl}) async {
+    final body = <String, dynamic>{
+      'title': title,
+      if (description != null) 'description': description,
+      if (repoUrl != null) 'repo_url': repoUrl,
+    };
+    final r = await _http.post(_uri('specs'), headers: _headers, body: jsonEncode(body));
+    if (r.statusCode != 201) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  Future<String?> specPrompt(String id) async {
+    final r = await _http.get(_uri('specs/$id/prompt'), headers: _headers);
+    if (r.statusCode != 200) return null;
+    try {
+      final j = jsonDecode(r.body);
+      return j['prompt'] as String? ?? r.body;
+    } catch (_) {
+      return r.body;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Logs
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>?> logs({String? pipeline, String? level, int limit = 100}) async {
+    final q = <String, String>{'limit': '$limit'};
+    if (pipeline != null) q['pipeline'] = pipeline;
+    if (level != null) q['level'] = level;
+    final r = await _http.get(_uri('logs', q), headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
 }
