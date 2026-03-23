@@ -26,10 +26,15 @@ export async function ensureOppDevCycle(
     .where(eq(repoIssueJobs.opportunityId, opts.opp.id))
     .limit(1)
 
+  const STUCK_HOURS = 2
+  const stuckCutoff = Math.floor((Date.now() - STUCK_HOURS * 60 * 60 * 1000) / 1000)
   const active = ["spec", "tests", "implementing", "docs", "pr-open"]
   if (existing) {
-    if (existing.status === "completed" || existing.status === "pending" || active.includes(existing.status)) return
-    if (existing.status === "failed") {
+    if (existing.status === "completed" || existing.status === "pending") return
+    // Job ativo mas sem update há mais de STUCK_HOURS → tratar como falho e re-tentar
+    const isStuckActive = active.includes(existing.status) && existing.updatedAt < stuckCutoff
+    if (active.includes(existing.status) && !isStuckActive) return
+    if (existing.status === "failed" || isStuckActive) {
       const ts = Math.floor(Date.now() / 1000)
       await db
         .update(repoIssueJobs)

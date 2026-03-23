@@ -8,6 +8,7 @@ import {
   Match,
 } from "solid-js"
 import { useServer } from "@/context/server"
+import { useNavigate } from "@solidjs/router"
 import { DialogSpecEditor } from "@/components/dialog-spec-editor"
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -150,6 +151,7 @@ function changeColor(change: number | null): string {
 
 export default function Board() {
   const server = useServer()
+  const navigate = useNavigate()
 
   const apiBase = () => {
     const url = server.current?.http.url ?? ""
@@ -693,7 +695,10 @@ export default function Board() {
                     <div class="divide-y divide-border-base">
                       <For each={jobs.sort((a, b) => b.updatedAt - a.updatedAt)}>
                         {(j) => (
-                          <div class="px-4 py-3 flex flex-wrap items-center gap-3 text-12-regular">
+                          <div
+                            class="px-4 py-3 flex flex-wrap items-center gap-3 text-12-regular cursor-pointer hover:bg-surface-hover-base transition-colors"
+                            onClick={() => navigate(`/job/${j.id}`)}
+                          >
                             <span class={`px-2 py-0.5 rounded text-11-medium shrink-0 ${repoStatusClass(j.status)}`}>
                               {j.status}
                             </span>
@@ -707,6 +712,7 @@ export default function Board() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 class="px-2 py-1 rounded-md bg-surface-raised-base border border-border-base text-11-medium text-text-info hover:underline shrink-0"
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 Ver PR
                               </a>

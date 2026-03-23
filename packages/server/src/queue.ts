@@ -55,6 +55,7 @@ export async function enqueueDeduped(
 const TICK_MS = 10_000
 const MAX_CONCURRENT = 3
 const STALE_LOCK_MS = 30 * 60 * 1000 // 30 minutes
+const STALE_JOB_MS = 60 * 60 * 1000 // 1 hour — jobs active with no pending/running steps
 
 export interface QueueProcessorOpts {
   db: ServerDb
@@ -70,6 +71,7 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
   const { db, tickIntervalMs = TICK_MS, maxConcurrent = MAX_CONCURRENT, memoryLlm, embed } = opts
   const workerId = ulid()
   let intervalId: ReturnType<typeof setInterval> | null = null
+  let tickCount = 0
 
   async function recoverStaleLocks() {
     const staleCutoff = Math.floor((Date.now() - STALE_LOCK_MS) / 1000)
@@ -84,8 +86,45 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
       )
   }
 
+  async function recoverStaleJobs() {
+    const staleCutoff = Math.floor((Date.now() - STALE_JOB_MS) / 1000)
+    const staleJobs = await db
+      .select()
+      .from(repoIssueJobs)
+      .where(
+        and(
+          inArray(repoIssueJobs.status, ["spec", "tests", "implementing", "docs", "pr-open"]),
+          sql`${repoIssueJobs.updatedAt} < ${staleCutoff}`,
+        ),
+      )
+
+    for (const job of staleJobs) {
+      const [activeStep] = await db
+        .select({ id: daemonQueue.id })
+        .from(daemonQueue)
+        .where(
+          and(
+            sql`json_extract(${daemonQueue.inputJson}, '$.repo_issue_job_id') = ${job.id}`,
+            inArray(daemonQueue.status, ["pending", "running"]),
+          ),
+        )
+        .limit(1)
+
+      if (!activeStep) {
+        const now = Math.floor(Date.now() / 1000)
+        await db
+          .update(repoIssueJobs)
+          .set({ status: "failed", updatedAt: now })
+          .where(eq(repoIssueJobs.id, job.id))
+        console.warn(`[queue] stale job recovered → failed: ${job.id} (was ${job.status})`)
+      }
+    }
+  }
+
   async function tick() {
+    tickCount++
     await recoverStaleLocks()
+    if (tickCount % 6 === 0) await recoverStaleJobs().catch((e) => console.error("[queue] recoverStaleJobs error:", e))
 
     // Find pending items whose dependency (if any) is already completed
     const pendingItems = await db
@@ -205,12 +244,16 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
           lockedAt: null,
         })
         .where(eq(daemonQueue.id, id))
-      const inp = JSON.parse(item.inputJson ?? "{}") as { repo_issue_job_id?: string }
-      if (inp.repo_issue_job_id) {
-        await db
-          .update(repoIssueJobs)
-          .set({ status: "failed", updatedAt: completedAt })
-          .where(eq(repoIssueJobs.id, inp.repo_issue_job_id))
+      try {
+        const inp = JSON.parse(item.inputJson ?? "{}") as { repo_issue_job_id?: string }
+        if (inp.repo_issue_job_id) {
+          await db
+            .update(repoIssueJobs)
+            .set({ status: "failed", updatedAt: completedAt })
+            .where(eq(repoIssueJobs.id, inp.repo_issue_job_id))
+        }
+      } catch (jobUpdateErr) {
+        console.error("[queue] failed to propagate failure to repoIssueJob:", jobUpdateErr)
       }
     }
   }

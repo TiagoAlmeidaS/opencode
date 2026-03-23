@@ -50,6 +50,7 @@ const Home = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
 const Board = lazy(() => import("@/pages/board"))
 const Schedules = lazy(() => import("@/pages/schedules"))
+const JobDetail = lazy(() => import("@/pages/job-detail"))
 const Loading = () => <div class="size-full" />
 
 const HomeRoute = () => (
@@ -292,6 +293,11 @@ export function AppInterface(props: {
               <Route path="/schedules" component={() => (
                 <Suspense fallback={<Loading />}>
                   <Schedules />
+                </Suspense>
+              )} />
+              <Route path="/job/:id" component={() => (
+                <Suspense fallback={<Loading />}>
+                  <JobDetail />
                 </Suspense>
               )} />
               <Route path="/:dir" component={DirectoryLayout}>
