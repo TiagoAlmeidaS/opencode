@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme/oc2_colors.dart';
 import 'discovery_screen.dart';
 import 'goals_screen.dart';
+import 'repo_issues_screen.dart';
 import 'llm_settings_screen.dart';
 import 'logs_screen.dart';
 import 'proposals_screen.dart';
@@ -27,6 +28,9 @@ class ManagementHubScreen extends StatelessWidget {
       }),
       _Section('Repo Jobs', Icons.merge_type_outlined, Colors.teal, () {
         Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoJobsScreen()));
+      }),
+      _Section('Issues', Icons.bug_report_outlined, Colors.pink, () {
+        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const RepoIssuesScreen()));
       }),
       _Section('Queue', Icons.queue_outlined, Colors.blue, () {
         Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const QueueMonitorScreen()));

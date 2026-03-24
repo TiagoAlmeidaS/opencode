@@ -405,6 +405,54 @@ class ServerApiClient {
   }
 
   // ---------------------------------------------------------------------------
+  // GitHub Repo Issues
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>?> repoIssues(
+    String owner,
+    String repo, {
+    String state = 'open',
+    String? labels,
+    int limit = 50,
+  }) async {
+    final q = <String, String>{'state': state, 'limit': '$limit'};
+    if (labels != null && labels.isNotEmpty) q['labels'] = labels;
+    final r = await _http.get(_uri('repos/$owner/$repo/issues', q), headers: _headers);
+    if (r.statusCode == 503) throw Exception('GITHUB_TOKEN not configured on server');
+    if (r.statusCode == 404) throw Exception('Repository not found or no access');
+    if (r.statusCode == 401) throw Exception('GitHub token invalid or missing permissions');
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>?> createRepoIssueJob({
+    required String repo,
+    required int issueNumber,
+    required String issueTitle,
+    String issueBody = '',
+    String baseBranch = 'main',
+    bool useFork = false,
+  }) async {
+    final body = {
+      'repo': repo,
+      'issueNumber': issueNumber,
+      'issueTitle': issueTitle,
+      'issueBody': issueBody,
+      'baseBranch': baseBranch,
+      'useFork': useFork,
+    };
+    final r = await _http.post(_uri('repo-issue-jobs'), headers: _headers, body: jsonEncode(body));
+    if (r.statusCode == 409) {
+      // Duplicate: return existing job_id in error field
+      final j = jsonDecode(r.body) as Map<String, dynamic>?;
+      throw Exception('duplicate:${j?['job_id'] ?? ''}');
+    }
+    if (r.statusCode != 201) return null;
+    return jsonDecode(r.body) as Map<String, dynamic>?;
+  }
+
+  // ---------------------------------------------------------------------------
   // Market Data
   // ---------------------------------------------------------------------------
 

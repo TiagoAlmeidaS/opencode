@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import z from "zod"
+import { Octokit } from "@octokit/rest"
 import type { ServerDb } from "./db"
 import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs, agentLearnings, repoIssueJobs } from "./schema"
 import { eq, desc, sql, gte, and, asc, inArray } from "drizzle-orm"
@@ -997,6 +998,120 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     const id = c.req.param("id")
     await db.delete(agentLearnings).where(eq(agentLearnings.id, id))
     return c.json({ ok: true })
+  })
+
+  // ---------------------------------------------------------------------------
+  // GitHub repo issues (proxy — uses GITHUB_TOKEN from env)
+  // ---------------------------------------------------------------------------
+
+  app.get("/repos/:owner/:repo/issues", async (c) => {
+    const owner = c.req.param("owner")
+    const repo = c.req.param("repo")
+    const state = (c.req.query("state") ?? "open") as "open" | "closed" | "all"
+    const labels = c.req.query("labels") // comma-separated
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+
+    const token = process.env.GITHUB_TOKEN
+    if (!token) return c.json({ error: "GITHUB_TOKEN not configured on server" }, 503)
+
+    try {
+      const octokit = new Octokit({ auth: token })
+      const { data } = await octokit.issues.listForRepo({
+        owner,
+        repo,
+        state,
+        labels: labels ?? undefined,
+        per_page: limit,
+      })
+
+      const issues = data
+        .filter((i) => !i.pull_request) // exclude PRs
+        .map((i) => ({
+          number: i.number,
+          title: i.title,
+          body: i.body ?? "",
+          state: i.state,
+          html_url: i.html_url,
+          labels: i.labels.map((l) => (typeof l === "string" ? l : l.name ?? "")),
+          assignees: (i.assignees ?? []).map((a) => a.login),
+          created_at: i.created_at,
+          updated_at: i.updated_at,
+          comments: i.comments,
+          user: i.user?.login ?? null,
+        }))
+
+      return c.json(issues)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes("404")) return c.json({ error: "Repository not found or no access" }, 404)
+      if (msg.includes("401") || msg.includes("403")) return c.json({ error: "GitHub token invalid or missing permissions" }, 401)
+      return c.json({ error: msg }, 500)
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // Create repo-issue-job manually from a GitHub issue
+  // ---------------------------------------------------------------------------
+
+  const createRepoJobSchema = z.object({
+    repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "Must be in owner/repo format"),
+    issueNumber: z.number().int().positive(),
+    issueTitle: z.string().min(1),
+    issueBody: z.string().optional().default(""),
+    baseBranch: z.string().optional().default("main"),
+    useFork: z.boolean().optional().default(false),
+  })
+
+  app.post("/repo-issue-jobs", zValidator("json", createRepoJobSchema), async (c) => {
+    const body = c.req.valid("json")
+    const now = Math.floor(Date.now() / 1000)
+
+    // Prevent duplicate active jobs for the same issue
+    const existingRows = await db
+      .select()
+      .from(repoIssueJobs)
+      .where(
+        and(
+          eq(repoIssueJobs.repoFullName, body.repo),
+          eq(repoIssueJobs.issueNumber, body.issueNumber),
+          sql`${repoIssueJobs.status} NOT IN ('completed', 'failed', 'cancelled')`,
+        ),
+      )
+      .limit(1)
+
+    if (existingRows.length > 0) {
+      return c.json(
+        { error: "An active job already exists for this issue", job_id: existingRows[0].id },
+        409,
+      )
+    }
+
+    const [owner] = body.repo.split("/")
+    const id = ulid()
+
+    await db.insert(repoIssueJobs).values({
+      id,
+      repoFullName: body.repo,
+      issueNumber: body.issueNumber,
+      issueTitle: body.issueTitle,
+      issueBody: body.issueBody,
+      status: "pending",
+      baseBranch: body.baseBranch,
+      useFork: body.useFork ? 1 : 0,
+      upstreamOwner: body.useFork ? owner : null,
+      upstreamRepo: body.useFork ? body.repo.split("/")[1] : null,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await enqueueDevCycleChain(db, {
+      jobId: id,
+      dedupKey: `repo-job:${id}`,
+      triggeredBy: "manual-issue-queue",
+    })
+
+    const [created] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
+    return c.json(created, 201)
   })
 
   return app
