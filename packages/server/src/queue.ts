@@ -54,7 +54,7 @@ export async function enqueueDeduped(
 
 const TICK_MS = 10_000
 const MAX_CONCURRENT = 3
-const STALE_LOCK_MS = 30 * 60 * 1000 // 30 minutes
+const STALE_LOCK_MS = 55 * 60 * 1000 // 55 min — must exceed LONG_MS (50 min) in implement-code to avoid race
 const STALE_JOB_MS = 60 * 60 * 1000 // 1 hour — jobs active with no pending/running steps
 
 export interface QueueProcessorOpts {
@@ -65,6 +65,31 @@ export interface QueueProcessorOpts {
   memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
   /** Embedding function para Activities de RAG. */
   embed?: (text: string) => Promise<number[]>
+}
+
+/**
+ * Recursively cancels all pending queue items that depend (directly or
+ * transitively) on a failed item. Running items are skipped — they will
+ * fail on their own and trigger another round of cascading.
+ */
+async function cancelDependents(db: ServerDb, failedId: string, failedType: string): Promise<void> {
+  const dependents = await db
+    .select({ id: daemonQueue.id, activityType: daemonQueue.activityType })
+    .from(daemonQueue)
+    .where(and(eq(daemonQueue.dependsOn, failedId), eq(daemonQueue.status, "pending")))
+  if (dependents.length === 0) return
+  const now = Math.floor(Date.now() / 1000)
+  for (const dep of dependents) {
+    await db
+      .update(daemonQueue)
+      .set({
+        status: "failed",
+        errorMessage: `Cancelled: dependency ${failedType} failed`,
+        completedAt: now,
+      })
+      .where(eq(daemonQueue.id, dep.id))
+    await cancelDependents(db, dep.id, dep.activityType)
+  }
 }
 
 export function createQueueProcessor(opts: QueueProcessorOpts) {
@@ -244,6 +269,9 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
           lockedAt: null,
         })
         .where(eq(daemonQueue.id, id))
+      await cancelDependents(db, id, item.activityType).catch((e) =>
+        console.error("[queue] cancelDependents error:", e),
+      )
       try {
         const inp = JSON.parse(item.inputJson ?? "{}") as { repo_issue_job_id?: string }
         if (inp.repo_issue_job_id) {

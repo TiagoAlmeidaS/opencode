@@ -16,6 +16,44 @@ interface Input {
 const MAX_TRIES = 3
 const SPEC_PATH = ".opencode/spec.json"
 
+// ─── Adaptive timeout ─────────────────────────────────────────────────────────
+const SHORT_MS  = 15 * 60 * 1000  // body < 500 chars, no spec
+const MEDIUM_MS = 30 * 60 * 1000  // default
+const LONG_MS   = 50 * 60 * 1000  // body > 3000 chars or spec > 2000 chars
+
+function computeTimeoutMs(job: typeof repoIssueJobs.$inferSelect): number {
+  const envMs = parseInt(process.env.CLI_TIMEOUT_MS ?? "", 10)
+  if (!isNaN(envMs) && envMs > 0) return envMs
+  const bodyLen = (job.issueBody ?? "").length
+  const specLen = (job.specJson ?? "").length
+  if (specLen > 2000 || bodyLen > 3000) return LONG_MS
+  if (bodyLen < 500 && specLen === 0) return SHORT_MS
+  return MEDIUM_MS
+}
+
+// ─── Empty issue body detection ───────────────────────────────────────────────
+// Returns true when the issue body is empty, too short, or contains only
+// template placeholders — saves 30+ min of wasted CLI execution.
+const BODY_PLACEHOLDERS = [
+  /critério funcional \d+/i,
+  /tarefa técnica? \d+/i,
+  /task técnica? \d+/i,
+  /acceptance criteria \d+/i,
+  /^\s*\[[ x]\]\s*$/,
+  /^(tbd|wip|todo|placeholder)$/i,
+]
+
+export function detectEmptyIssueBody(body: string | null | undefined): boolean {
+  if (!body || body.trim().length === 0) return true
+  const stripped = body.replace(/<!--[\s\S]*?-->/g, "").trim()
+  if (stripped.length < 80) return true
+  const lines = stripped.split("\n").filter((l) => l.trim().length > 0)
+  const substantive = lines.filter(
+    (l) => !BODY_PLACEHOLDERS.some((p) => p.test(l.trim())) && !/^#{1,4}\s/.test(l),
+  )
+  return substantive.length < 3
+}
+
 // ─── Stuck-loop detection ─────────────────────────────────────────────────────
 // If the CLI agent output shows ≥ STUCK_EDIT_THRESHOLD consecutive edit
 // failures without any test-passing signal, the agent is stuck in a loop.
@@ -87,6 +125,17 @@ export const implementCodeActivity: Activity = {
       }
     }
 
+    if (detectEmptyIssueBody(job.issueBody)) {
+      await ctx.db
+        .update(repoIssueJobs)
+        .set({ status: "skipped", updatedAt: Math.floor(Date.now() / 1000) })
+        .where(eq(repoIssueJobs.id, job.id))
+      return {
+        summary: "Skipped — issue body is empty or template-only",
+        extra: { skipped: true, reason: "empty_issue_body" },
+      }
+    }
+
     const base = job.baseBranch || "main"
     let cloneUrl: string
     let forkFull: string | null = job.forkRepoFullName
@@ -145,6 +194,7 @@ export const implementCodeActivity: Activity = {
 
     const MAX_OUTPUT = 10_000
 
+    const timeoutMs = computeTimeoutMs(job)
     let sessionId: string | null = null
     let cliOutput = ""
     for (let n = 1; n <= MAX_TRIES; n++) {
@@ -155,7 +205,10 @@ export const implementCodeActivity: Activity = {
       }
       const task = buildTask(job, n, n > 1 ? cliOutput : undefined)
       try {
-        const result = await ctx.spawnOpenCode(task, workDir)
+        const result = await ctx.spawnOpenCode(task, workDir, timeoutMs, async (chunk) => {
+          const lastLine = chunk.split("\n").reverse().find((l) => l.trim().length > 10) ?? ""
+          await ctx.updateProgress?.(`CLI (tentativa ${n}/${MAX_TRIES}): ${lastLine.slice(0, 120)}`)
+        })
         sessionId = result.sessionId ?? sessionId
         cliOutput = result.output.slice(-MAX_OUTPUT)
         break

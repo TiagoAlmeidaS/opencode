@@ -73,10 +73,53 @@ function findSession(cwd: string, before: number): string | null {
   }
 }
 
+const FLUSH_LINES = 20
+const FLUSH_MS = 15_000
+
+async function drainStdout(
+  stream: ReadableStream<Uint8Array>,
+  onProgress?: (chunk: string) => Promise<void>,
+): Promise<string> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  const rollingLines: string[] = []
+  let buf = ""
+  let remainder = ""
+  let lineCount = 0
+  let lastFlush = Date.now()
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = remainder + decoder.decode(value, { stream: true })
+      const parts = chunk.split("\n")
+      remainder = parts.pop() ?? ""
+      for (const line of parts) {
+        buf += line + "\n"
+        rollingLines.push(line)
+        if (rollingLines.length > 500) rollingLines.shift()
+        lineCount++
+      }
+      if (onProgress) {
+        const now = Date.now()
+        if (lineCount % FLUSH_LINES === 0 || now - lastFlush > FLUSH_MS) {
+          lastFlush = now
+          await onProgress(rollingLines.slice(-50).join("\n")).catch(() => {})
+        }
+      }
+    }
+    if (remainder) buf += remainder
+  } finally {
+    reader.releaseLock()
+  }
+  return buf
+}
+
 export async function spawnOpenCode(
   task: string,
   cwd: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  onProgress?: (chunk: string) => Promise<void>,
 ): Promise<SpawnResult> {
   const before = Math.floor(Date.now() / 1000) - 2
 
@@ -94,7 +137,7 @@ export async function spawnOpenCode(
   }, timeoutMs)
 
   const [stdoutBuf, stderrBuf] = await Promise.all([
-    new Response(proc.stdout).text(),
+    drainStdout(proc.stdout, onProgress),
     new Response(proc.stderr).text(),
   ])
 

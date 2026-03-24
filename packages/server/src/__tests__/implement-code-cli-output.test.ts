@@ -55,7 +55,7 @@ mock.module("fs/promises", () => ({
 
 import { getDb, closeDb } from "../db"
 import { repoIssueJobs } from "../schema"
-import { implementCodeActivity, detectStuckLoop } from "../activities/implement-code"
+import { implementCodeActivity, detectStuckLoop, detectEmptyIssueBody } from "../activities/implement-code"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -70,7 +70,7 @@ async function insertJob(
     repoFullName: "test-owner/test-repo",
     issueNumber: null,
     issueTitle: "Implement feature X",
-    issueBody: "Please add feature X",
+    issueBody: "## Summary\nPlease add feature X to the application.\nThe feature should integrate with module Y and expose /api/x.\nAdd unit tests covering the happy path and error cases.\nEnsure backward compatibility with existing endpoints.",
     status: "pending",
     baseBranch: "main",
     useFork: 0,
@@ -99,6 +99,42 @@ function makeCtx(
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+// ── detectEmptyIssueBody unit tests ──────────────────────────────────────────
+
+describe("detectEmptyIssueBody", () => {
+  test("returns true for null/undefined body", () => {
+    expect(detectEmptyIssueBody(null)).toBe(true)
+    expect(detectEmptyIssueBody(undefined)).toBe(true)
+    expect(detectEmptyIssueBody("")).toBe(true)
+    expect(detectEmptyIssueBody("   ")).toBe(true)
+  })
+
+  test("returns true for body shorter than 80 chars", () => {
+    expect(detectEmptyIssueBody("Fix the bug")).toBe(true)
+    expect(detectEmptyIssueBody("Please add feature X")).toBe(true)
+  })
+
+  test("returns true for template-only body", () => {
+    const template = "## Description\nCritério funcional 1\nCritério funcional 2\nCritério funcional 3\nCritério funcional 4"
+    expect(detectEmptyIssueBody(template)).toBe(true)
+  })
+
+  test("returns true when body has fewer than 3 substantive lines", () => {
+    const body = "## Summary\nDo the thing.\nAlso do this other thing that is long enough."
+    expect(detectEmptyIssueBody(body)).toBe(true)
+  })
+
+  test("returns false for substantive body", () => {
+    const body = "## Summary\nImplement OAuth login via GitHub.\nUsers should be able to sign in with their GitHub account.\nStore the access token securely in the session.\nRedirect to dashboard after successful login."
+    expect(detectEmptyIssueBody(body)).toBe(false)
+  })
+
+  test("strips HTML comments before evaluation", () => {
+    const body = "<!-- template comment -->\n".repeat(10) + "Short"
+    expect(detectEmptyIssueBody(body)).toBe(true)
+  })
+})
 
 // ── detectStuckLoop unit tests ────────────────────────────────────────────────
 

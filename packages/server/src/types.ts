@@ -54,7 +54,7 @@ export interface ActivityContext {
   queueItemId: string
   input: Record<string, unknown>
   db: import("./db").ServerDb
-  spawnOpenCode: (task: string, cwd: string) => Promise<import("./spawn").SpawnResult>
+  spawnOpenCode: (task: string, cwd: string, timeoutMs?: number, onProgress?: (chunk: string) => Promise<void>) => Promise<import("./spawn").SpawnResult>
   enqueue: (type: string, input: unknown, opts?: { priority?: number; dependsOn?: string; relatedOpportunityId?: string }) => Promise<string>
   /** Atualiza o passo atual visível no card "Running" do Activity Queue. */
   updateProgress?: (step: string) => Promise<void>
