@@ -9,8 +9,6 @@
 #   docker compose -f docker-compose.vps.yml -f docker-compose.opencode-server.yml up -d
 # =============================================================================
 
-version: '3.8'
-
 services:
   # Qdrant — vetores para RAG
   qdrant:
@@ -30,6 +28,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - jarvis-network
 
   # Redis — cache e sessões
   redis:
@@ -46,6 +46,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - jarvis-network
 
   # PostgreSQL — dados persistentes
   postgres:
@@ -65,6 +67,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - jarvis-network
 
   # Adminer — UI para Postgres (porta 8080)
   adminer:
@@ -75,6 +79,8 @@ services:
       - "8080:8080"
     environment:
       ADMINER_DEFAULT_SERVER: postgres
+    networks:
+      - jarvis-network
 
 volumes:
   qdrant_storage:
@@ -85,5 +91,6 @@ volumes:
     driver: local
 
 networks:
-  default:
+  jarvis-network:
+    external: true
     name: jarvis-network
