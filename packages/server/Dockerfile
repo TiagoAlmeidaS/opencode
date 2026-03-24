@@ -26,8 +26,9 @@ COPY --from=deps /app/packages/plugin ./packages/plugin
 COPY --from=deps /app/.opencode/skills ./.opencode/skills
 COPY package.json bunfig.toml ./
 
-# git: fork+clone; nodejs+npm: projetos Node detectados por detectTestCommand
-RUN apk add --no-cache git openssh-client nodejs npm
+# git: fork+clone; nodejs+npm+curl: base; pnpm+yarn: package managers comuns em repos de clientes
+RUN apk add --no-cache git openssh-client nodejs npm curl bash \
+  && npm install -g pnpm yarn --prefer-offline 2>/dev/null || npm install -g pnpm yarn
 
 # Wrapper para opencode CLI (executa via bun; bin/opencode exige binário nativo)
 RUN mkdir -p /app/bin && printf '%s\n' '#!/bin/sh' 'exec bun /app/packages/opencode/src/index.ts "$@"' > /app/bin/opencode-wrap && chmod +x /app/bin/opencode-wrap
