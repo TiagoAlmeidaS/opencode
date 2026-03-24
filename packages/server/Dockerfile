@@ -26,15 +26,24 @@ COPY --from=deps /app/packages/plugin ./packages/plugin
 COPY --from=deps /app/.opencode/skills ./.opencode/skills
 COPY package.json bunfig.toml ./
 
-# git: fork+clone; nodejs+npm+curl: base; pnpm+yarn: package managers comuns em repos de clientes
+# Base tools + Node package managers (cobertura imediata para projetos JS/TS)
 RUN apk add --no-cache git openssh-client nodejs npm curl bash \
-  && npm install -g pnpm yarn --prefer-offline 2>/dev/null || npm install -g pnpm yarn
+  && npm install -g pnpm yarn
+
+# mise — gerenciador universal de runtimes (Python, Java, Go, Rust, Ruby, PHP, .NET, etc.)
+# Instala na imagem e expõe globalmente; runtimes são baixados sob demanda pelo agente em /data/mise
+RUN curl https://mise.run | sh \
+  && mv /root/.local/bin/mise /usr/local/bin/mise
+
+# mise armazena runtimes em /data/mise (diretório sob controle do user bun)
+ENV MISE_DATA_DIR=/data/mise
+ENV MISE_CACHE_DIR=/data/mise/cache
 
 # Wrapper para opencode CLI (executa via bun; bin/opencode exige binário nativo)
 RUN mkdir -p /app/bin && printf '%s\n' '#!/bin/sh' 'exec bun /app/packages/opencode/src/index.ts "$@"' > /app/bin/opencode-wrap && chmod +x /app/bin/opencode-wrap
 
 # Diretório para o banco de dados SQLite
-RUN mkdir -p /data && chown bun:bun /data
+RUN mkdir -p /data /data/mise && chown -R bun:bun /data
 
 USER bun
 
