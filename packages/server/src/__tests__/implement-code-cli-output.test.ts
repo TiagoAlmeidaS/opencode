@@ -1,10 +1,13 @@
 /**
- * Unit tests for implement-code activity: cli_output is persisted before throwing
- * when the OpenCode CLI fails on all MAX_TRIES attempts.
+ * Unit tests for implement-code activity:
  *
- * Bug fixed: when spawnOpenCode threw on the last retry, cli_output was never
- * saved because the DB update was placed AFTER the loop (after the throw).
- * Fix: the DB update is now inside the catch block on the final attempt.
+ * 1. cli_output is persisted before throwing when the OpenCode CLI fails on all MAX_TRIES.
+ *    Bug fixed: when spawnOpenCode threw on the last retry, cli_output was never
+ *    saved because the DB update was placed AFTER the loop (after the throw).
+ *    Fix: the DB update is now inside the catch block on the final attempt.
+ *
+ * 2. detectStuckLoop: detects when the agent is stuck in an edit loop (≥4 "edit failed"
+ *    without a test-pass signal) and marks the job as "failed".
  */
 import { mock, describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { eq } from "drizzle-orm"
@@ -52,7 +55,7 @@ mock.module("fs/promises", () => ({
 
 import { getDb, closeDb } from "../db"
 import { repoIssueJobs } from "../schema"
-import { implementCodeActivity } from "../activities/implement-code"
+import { implementCodeActivity, detectStuckLoop } from "../activities/implement-code"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -96,6 +99,62 @@ function makeCtx(
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+// ── detectStuckLoop unit tests ────────────────────────────────────────────────
+
+describe("detectStuckLoop", () => {
+  test("returns stuck=false when fewer than 4 edit failures", () => {
+    const output = [
+      "✗ edit failed",
+      "✗ edit failed",
+      "✗ edit failed",
+    ].join("\n")
+    const result = detectStuckLoop(output)
+    expect(result.stuck).toBe(false)
+    expect(result.reason).toBeNull()
+  })
+
+  test("returns stuck=true when 4+ edit failures with no success signal", () => {
+    const output = [
+      "✗ edit failed",
+      "Error: Found multiple matches for oldString",
+      "✗ edit failed",
+      "Error: Found multiple matches for oldString",
+      "✗ edit failed",
+      "Error: Could not find oldString in the file",
+      "✗ edit failed",
+    ].join("\n")
+    const result = detectStuckLoop(output)
+    expect(result.stuck).toBe(true)
+    expect(result.reason).toContain("4 edit failures")
+    expect(result.reason).toContain("multiple matches")
+  })
+
+  test("returns stuck=false when 4+ edit failures but tests passed", () => {
+    const output = [
+      "✗ edit failed",
+      "✗ edit failed",
+      "✗ edit failed",
+      "✗ edit failed",
+      "All tests passed (52 passed, 0 failed)",
+    ].join("\n")
+    const result = detectStuckLoop(output)
+    expect(result.stuck).toBe(false)
+  })
+
+  test("returns stuck=false on clean output", () => {
+    const result = detectStuckLoop("All tests passed (10 passed, 0 failed)")
+    expect(result.stuck).toBe(false)
+  })
+
+  test("is case-insensitive for edit failed pattern", () => {
+    const output = Array(5).fill("Edit Failed").join("\n")
+    const result = detectStuckLoop(output)
+    expect(result.stuck).toBe(true)
+  })
+})
+
+// ── implement-code activity tests ─────────────────────────────────────────────
 
 describe("implement-code: cli_output captured on max retries", () => {
   let db: ReturnType<typeof getDb>
@@ -191,5 +250,55 @@ describe("implement-code: cli_output captured on max retries", () => {
     expect(job.branchName).toMatch(/^agent\/opp-/)
     expect(job.cli_output).toBe("Spec written, tests passed")
     expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
+  test("CLI exits 0 but output shows stuck edit loop: status becomes failed and throws", async () => {
+    const jobId = await insertJob(db, 1)
+
+    const stuckOutput = [
+      "→ Read apps/web/app/api/tests/apiRoutes.test.ts",
+      "✗ edit failed",
+      "Error: Found multiple matches for oldString. Provide more surrounding context.",
+      "✗ edit failed",
+      "Error: Found multiple matches for oldString. Provide more surrounding context.",
+      "✗ edit failed",
+      "Error: Could not find oldString in the file.",
+      "✗ edit failed",
+      "Error: Found multiple matches for oldString. Provide more surrounding context.",
+      "✗ edit failed",
+    ].join("\n")
+
+    const spawnMock = mock(async () => ({ output: stuckOutput, sessionId: "sess-stuck" }))
+    const ctx = makeCtx(db, jobId, spawnMock)
+
+    await expect(implementCodeActivity.execute(ctx as never)).rejects.toThrow("stuck in edit loop")
+
+    const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, jobId))
+    expect(job.status).toBe("failed")
+    expect(job.cli_output).toContain("[STUCK LOOP DETECTED]")
+    expect(job.cli_output).toContain("5 edit failures")
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
+  test("CLI exits 0 with edit failures but tests passed: status stays implementing", async () => {
+    const jobId = await insertJob(db, 1)
+
+    // 4 edit failures but the agent eventually got tests passing
+    const outputWithRecovery = [
+      "✗ edit failed",
+      "✗ edit failed",
+      "✗ edit failed",
+      "✗ edit failed",
+      "→ Write apps/web/app/api/tests/apiRoutes.test.ts",
+      "All tests passed (52 passed, 0 failed)",
+    ].join("\n")
+
+    const spawnMock = mock(async () => ({ output: outputWithRecovery, sessionId: "sess-ok" }))
+    const ctx = makeCtx(db, jobId, spawnMock)
+
+    await implementCodeActivity.execute(ctx as never)
+
+    const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, jobId))
+    expect(job.status).toBe("implementing")
   })
 })

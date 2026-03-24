@@ -16,6 +16,28 @@ interface Input {
 const MAX_TRIES = 3
 const SPEC_PATH = ".opencode/spec.json"
 
+// ─── Stuck-loop detection ─────────────────────────────────────────────────────
+// If the CLI agent output shows ≥ STUCK_EDIT_THRESHOLD consecutive edit
+// failures without any test-passing signal, the agent is stuck in a loop.
+const STUCK_EDIT_THRESHOLD = 4
+
+export function detectStuckLoop(output: string): { stuck: boolean; reason: string | null } {
+  const editFailures = (output.match(/edit failed/gi) ?? []).length
+  const multipleMatches = (output.match(/Found multiple matches for oldString/gi) ?? []).length
+  const notFound = (output.match(/Could not find oldString/gi) ?? []).length
+
+  // Agent is considered stuck if it racked up many edit errors with no test-pass signal
+  const hasSuccessSignal = /all tests passed|tests passed.*0 fail|no tests failing|build successful/i.test(output)
+
+  if (editFailures >= STUCK_EDIT_THRESHOLD && !hasSuccessSignal) {
+    return {
+      stuck: true,
+      reason: `Agent stuck in edit loop: ${editFailures} edit failures (${multipleMatches} "multiple matches", ${notFound} "not found"). The agent should use the Write tool to rewrite the file instead of retrying Edit.`,
+    }
+  }
+  return { stuck: false, reason: null }
+}
+
 function slug(s: string): string {
   return s
     .toLowerCase()
@@ -156,6 +178,26 @@ export const implementCodeActivity: Activity = {
 
     const spec = await readSpec(workDir)
     const now = Math.floor(Date.now() / 1000)
+
+    // Detect if the agent got stuck in an edit loop (CLI exited 0 but made no progress)
+    const loopCheck = detectStuckLoop(cliOutput)
+    if (loopCheck.stuck) {
+      await ctx.db
+        .update(repoIssueJobs)
+        .set({
+          branchName: branch,
+          localWorkPath: workDir,
+          forkRepoFullName: forkFull,
+          specJson: spec,
+          session_id: sessionId,
+          cli_output: `[STUCK LOOP DETECTED] ${loopCheck.reason}\n\n--- CLI output (last 8000 chars) ---\n${cliOutput}`,
+          status: "failed",
+          updatedAt: now,
+        })
+        .where(eq(repoIssueJobs.id, job.id))
+      throw new Error(`implement-code aborted: ${loopCheck.reason}`)
+    }
+
     await ctx.db
       .update(repoIssueJobs)
       .set({
@@ -209,9 +251,25 @@ function buildTask(
 
   parts.push(
     ``,
+    `⚠️  CRITICAL RULES (read before starting):`,
+    ``,
+    `RULE 1 — BASELINE TESTS (mandatory first step):`,
+    `Before writing a single line of code, run the full test suite ONCE and record which test suites pass or fail.`,
+    `This is your BASELINE. Any test suite that fails BEFORE your changes is a PRE-EXISTING failure.`,
+    `DO NOT attempt to fix pre-existing test failures — they are out of scope for this issue.`,
+    `Your goal is only to ensure tests that were PASSING before remain passing after your changes.`,
+    `Document pre-existing failures in your spec and proceed with the feature regardless.`,
+    ``,
+    `RULE 2 — EDIT LOOP PREVENTION:`,
+    `If the Edit tool fails on the same file 2 times in a row (any error: "multiple matches", "not found", etc.),`,
+    `STOP retrying Edit immediately. Instead: Read the full file content, then use the Write tool to rewrite`,
+    `the entire file with the needed changes. Never attempt more than 2 consecutive Edit failures on any file.`,
+    ``,
     `Instructions:`,
     ``,
-    `PHASE 1 — DISCOVERY`,
+    `PHASE 1 — BASELINE + DISCOVERY`,
+    `0. Run the full test suite NOW (before any changes) to establish the baseline.`,
+    `   Record: which test suites pass, which fail. Pre-existing failures → skip, do not fix.`,
     `Check if .opencode/skills/pm-discover/SKILL.md exists and follow it. Otherwise:`,
     `1. Map the project directory structure. Detect monorepo vs single-app.`,
     `2. Read the main manifest (package.json, Cargo.toml, go.mod, *.csproj, etc.) to identify language, framework, package manager, and scripts.`,
@@ -220,18 +278,18 @@ function buildTask(
     `5. Identify architecture layers (API, services, models, UI).`,
     ``,
     `PHASE 2 — PLAN`,
-    `6. Write a spec file at ${SPEC_PATH} as JSON with: title, goal, scope, acceptance_criteria, technical_approach, files_to_touch, test_scenarios.`,
+    `6. Write a spec file at ${SPEC_PATH} as JSON with: title, goal, scope, acceptance_criteria, technical_approach, files_to_touch, test_scenarios. Include a "baseline_failures" field listing any pre-existing test suite failures.`,
     `7. Extract acceptance criteria from the issue body. For each criterion, plan: (a) code task, (b) unit test, (c) integration test if applicable.`,
     ``,
     `PHASE 3 — BUILD`,
     `8. Install ALL dependencies required to build and test the project. Use whatever tools are available (bun, npm, npx, pip, cargo, dotnet, go, etc.).`,
     `9. Write tests following the project's existing patterns (Given/When/Then where appropriate).`,
     `10. Implement the code to pass all tests.`,
-    `11. Run the project's full test suite and ensure ALL tests pass. If a test runner is not installed, install it first. Adapt to the runtime available.`,
+    `11. Run the full test suite. Verify: (a) tests you ADDED pass, (b) tests that were passing in baseline still pass. Ignore pre-existing failures.`,
     ``,
     `PHASE 4 — FINALIZE`,
     `12. Make minimal, focused changes. Do not commit or push.`,
-    `13. If any step fails, diagnose the error, fix it, and retry until tests pass.`,
+    `13. If any step fails, diagnose the error, fix it, and retry. If an Edit fails twice on the same file → use Write.`,
   )
 
   return parts.join("\n")
