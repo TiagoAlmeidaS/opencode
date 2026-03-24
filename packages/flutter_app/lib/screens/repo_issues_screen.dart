@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../theme/button_style.dart';
 import '../theme/oc2_colors.dart';
 import '../widgets/opencode_button.dart';
 import 'repo_jobs_screen.dart';
