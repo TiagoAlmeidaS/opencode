@@ -188,6 +188,32 @@ describe("detectStuckLoop", () => {
     const result = detectStuckLoop(output)
     expect(result.stuck).toBe(true)
   })
+
+  test("returns stuck=true when 4+ bash tool failures with undefined command", () => {
+    const bashError = "Error: The bash tool was called with invalid arguments: [{ expected: \"string\", path: [\"command\"], message: \"Invalid input: expected string, received undefined\" }]"
+    const output = Array(5).fill(`✗ bash failed\n${bashError}`).join("\n")
+    const result = detectStuckLoop(output)
+    expect(result.stuck).toBe(true)
+    expect(result.reason).toContain("bash failure loop")
+    expect(result.reason).toContain("5")
+  })
+
+  test("returns stuck=false when fewer than 4 bash tool failures", () => {
+    const bashError = "Error: The bash tool was called with invalid arguments: [{ path: [\"command\"], message: \"Invalid input: expected string, received undefined\" }]"
+    const output = Array(3).fill(`✗ bash failed\n${bashError}`).join("\n")
+    const result = detectStuckLoop(output)
+    expect(result.stuck).toBe(false)
+  })
+
+  test("returns stuck=false when bash failures present but tests passed", () => {
+    const bashError = "Error: The bash tool was called with invalid arguments: [{ path: [\"command\"], message: \"Invalid input: expected string, received undefined\" }]"
+    const output = [
+      ...Array(5).fill(`✗ bash failed\n${bashError}`),
+      "All tests passed (10 passed, 0 failed)",
+    ].join("\n")
+    const result = detectStuckLoop(output)
+    expect(result.stuck).toBe(false)
+  })
 })
 
 // ── implement-code activity tests ─────────────────────────────────────────────
@@ -336,5 +362,30 @@ describe("implement-code: cli_output captured on max retries", () => {
 
     const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, jobId))
     expect(job.status).toBe("implementing")
+  })
+
+  test("CLI exits 0 but output shows bash failure loop: status becomes failed and throws", async () => {
+    const jobId = await insertJob(db, 1)
+
+    const bashError = "Error: The bash tool was called with invalid arguments: [{ expected: \"string\", path: [\"command\"], message: \"Invalid input: expected string, received undefined\" }]"
+    const bashLoopOutput = [
+      "→ Running baseline tests",
+      `✗ bash failed\n${bashError}`,
+      `✗ bash failed\n${bashError}`,
+      `✗ bash failed\n${bashError}`,
+      `✗ bash failed\n${bashError}`,
+      `✗ bash failed\n${bashError}`,
+    ].join("\n")
+
+    const spawnMock = mock(async () => ({ output: bashLoopOutput, sessionId: "sess-bash" }))
+    const ctx = makeCtx(db, jobId, spawnMock)
+
+    await expect(implementCodeActivity.execute(ctx as never)).rejects.toThrow("stuck in")
+
+    const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, jobId))
+    expect(job.status).toBe("failed")
+    expect(job.cli_output).toContain("[STUCK LOOP DETECTED]")
+    expect(job.cli_output).toContain("bash failure loop")
+    expect(spawnMock).toHaveBeenCalledTimes(1)
   })
 })

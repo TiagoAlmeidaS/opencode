@@ -58,6 +58,7 @@ export function detectEmptyIssueBody(body: string | null | undefined): boolean {
 // If the CLI agent output shows ≥ STUCK_EDIT_THRESHOLD consecutive edit
 // failures without any test-passing signal, the agent is stuck in a loop.
 const STUCK_EDIT_THRESHOLD = 4
+const STUCK_BASH_THRESHOLD = 4
 
 export function detectStuckLoop(output: string): { stuck: boolean; reason: string | null } {
   const editFailures = (output.match(/edit failed/gi) ?? []).length
@@ -73,6 +74,16 @@ export function detectStuckLoop(output: string): { stuck: boolean; reason: strin
       reason: `Agent stuck in edit loop: ${editFailures} edit failures (${multipleMatches} "multiple matches", ${notFound} "not found"). The agent should use the Write tool to rewrite the file instead of retrying Edit.`,
     }
   }
+
+  // Detect bash tool failure loop: agent generating calls with undefined/null command
+  const bashToolErrors = (output.match(/bash tool was called with invalid arguments/gi) ?? []).length
+  if (bashToolErrors >= STUCK_BASH_THRESHOLD && !hasSuccessSignal) {
+    return {
+      stuck: true,
+      reason: `Agent stuck in bash failure loop: ${bashToolErrors} bash calls with undefined/null command. Agent is context-confused — generating malformed tool calls.`,
+    }
+  }
+
   return { stuck: false, reason: null }
 }
 
@@ -317,6 +328,20 @@ function buildTask(
     `If the Edit tool fails on the same file 2 times in a row (any error: "multiple matches", "not found", etc.),`,
     `STOP retrying Edit immediately. Instead: Read the full file content, then use the Write tool to rewrite`,
     `the entire file with the needed changes. Never attempt more than 2 consecutive Edit failures on any file.`,
+    ``,
+    `RULE 3 — BASH TOOL FAILURE:`,
+    `If you see "bash tool was called with invalid arguments" or "command received undefined", you are`,
+    `generating a bash call without a command string. STOP immediately. Do not retry the same call.`,
+    `Review what you intended to run and write the command explicitly as a complete string.`,
+    `If this error occurs 3 times in a row, abandon the current approach entirely and try a different method.`,
+    ``,
+    `RULE 4 — MONOREPO TYPE CHECKING:`,
+    `NEVER run "npx tsc --noEmit" or "tsc --noEmit" from the repository root unless tsconfig.json`,
+    `exists there (run: ls tsconfig.json first to confirm). In a monorepo:`,
+    `  - Check package.json scripts for "typecheck", "type-check", or "tsc" keys and use those scripts`,
+    `  - Or cd into the package: cd packages/<name> && npx tsc --noEmit`,
+    `  - Or use turbo if turbo.json exists at root: npx turbo typecheck`,
+    `Always confirm tsconfig.json exists in the current directory before running tsc directly.`,
     ``,
     `Instructions:`,
     ``,
