@@ -71,6 +71,17 @@ const DEFAULTS: Array<{
       approved_label: "approved",
     },
   },
+  {
+    strategy: "crypto-analysis-daily",
+    name: "Análise Técnica de Cripto (Diária)",
+    scheduleCron: "0 7 * * *", // daily 07:00 UTC
+    configJson: {
+      symbols: ["bitcoin", "ethereum", "solana", "binancecoin"],
+      currency: "usd",
+      lookback_days: 60,
+      send_telegram: true,
+    },
+  },
 ]
 
 export async function seedDefaultPipelines(db: ServerDb) {

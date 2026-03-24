@@ -472,6 +472,20 @@ class ServerApiClient {
     return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  Future<List<Map<String, dynamic>>?> cryptoSignals({int limit = 50}) async {
+    final r = await _http.get(_uri('crypto-signals', {'limit': '$limit'}), headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>?> cryptoSignalBySymbol(String symbol, {int limit = 30}) async {
+    final r = await _http.get(_uri('crypto-signals/$symbol', {'limit': '$limit'}), headers: _headers);
+    if (r.statusCode != 200) return null;
+    final list = jsonDecode(r.body) as List<dynamic>?;
+    return list?.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
   // ---------------------------------------------------------------------------
   // Niches
   // ---------------------------------------------------------------------------

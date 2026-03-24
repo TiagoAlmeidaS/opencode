@@ -3,7 +3,7 @@ import { zValidator } from "@hono/zod-validator"
 import z from "zod"
 import { Octokit } from "@octokit/rest"
 import type { ServerDb } from "./db"
-import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs, agentLearnings, repoIssueJobs } from "./schema"
+import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenue, daemonLogs, daemonQueue, oppOpportunities, oppNiches, oppMarketData, oppNicheRelations, oppSubmissions, oppTelegramReports, discoveryReports, projectSpecs, agentLearnings, repoIssueJobs, oppCryptoSignals } from "./schema"
 import { eq, desc, sql, gte, and, asc, inArray } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
@@ -1112,6 +1112,37 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
 
     const [created] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
     return c.json(created, 201)
+  })
+
+  // ── Crypto Signals ───────────────────────────────────────────────────────
+  app.get("/crypto-signals", async (c) => {
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "50", 10)))
+    // Return the latest signal for each symbol
+    const rows = await db
+      .select()
+      .from(oppCryptoSignals)
+      .orderBy(desc(oppCryptoSignals.collectedAt))
+      .limit(limit * 10) // fetch extra to dedupe per symbol
+    // Dedupe: keep newest per symbol
+    const seen = new Set<string>()
+    const latest = rows.filter((r) => {
+      if (seen.has(r.symbol)) return false
+      seen.add(r.symbol)
+      return true
+    }).slice(0, limit)
+    return c.json(latest)
+  })
+
+  app.get("/crypto-signals/:symbol", async (c) => {
+    const symbol = c.req.param("symbol").toLowerCase()
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query("limit") ?? "30", 10)))
+    const rows = await db
+      .select()
+      .from(oppCryptoSignals)
+      .where(eq(oppCryptoSignals.symbol, symbol))
+      .orderBy(desc(oppCryptoSignals.collectedAt))
+      .limit(limit)
+    return c.json(rows)
   })
 
   return app

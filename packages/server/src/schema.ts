@@ -150,6 +150,30 @@ export const oppMarketData = sqliteTable("opp_market_data", {
   createdAt: integer("created_at").notNull(),
 })
 
+export const oppCryptoSignals = sqliteTable("opp_crypto_signals", {
+  id: text("id").primaryKey(),
+  symbol: text("symbol").notNull(),
+  collectedAt: integer("collected_at").notNull(),
+  price: real("price"),
+  change24h: real("change_24h"),
+  sma7: real("sma_7"),
+  sma21: real("sma_21"),
+  sma50: real("sma_50"),
+  rsi14: real("rsi_14"),
+  macd: real("macd"),
+  macdSignal: real("macd_signal"),
+  macdHistogram: real("macd_histogram"),
+  bbUpper: real("bb_upper"),
+  bbLower: real("bb_lower"),
+  bbMiddle: real("bb_middle"),
+  trend: text("trend"),            // 'bullish'|'bearish'|'neutral'
+  signal: text("signal"),          // 'buy'|'sell'|'hold'
+  signalStrength: real("signal_strength"),
+  reasoning: text("reasoning"),
+  recommendation: text("recommendation"),
+  createdAt: integer("created_at").notNull(),
+})
+
 export const oppNiches = sqliteTable("opp_niches", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),

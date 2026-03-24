@@ -1,0 +1,40 @@
+# =============================================================================
+# OpenCode Flutter Web App
+# =============================================================================
+# Serve o Flutter app como Progressive Web App no navegador.
+#
+# Uso standalone:
+#   docker compose -f docker-compose.flutter-web.yml up -d
+#
+# Uso junto com o backend:
+#   docker compose \
+#     -f docker-compose.scheduler.yml \
+#     -f docker-compose.opencode-server.yml \
+#     -f docker-compose.flutter-web.yml up -d
+#
+# Acesso:
+#   http://<host>:${FLUTTER_WEB_PORT:-8090}
+#
+# Após abrir o app no navegador:
+#   1. Clique no botão de configurações (ícone de engrenagem)
+#   2. Adicione o servidor OpenCode: http://<host>:4096
+#   3. (Opcional) Configure o Daemon API: http://<host>:3000
+# =============================================================================
+
+services:
+
+  flutter-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.flutter-web
+    container_name: opencode-flutter-web
+    restart: unless-stopped
+    ports:
+      - "${FLUTTER_WEB_PORT:-8090}:80"
+    networks:
+      - opencode-net
+
+networks:
+  opencode-net:
+    external: true
+    name: opencode-net
