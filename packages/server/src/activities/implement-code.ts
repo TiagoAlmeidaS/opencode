@@ -401,5 +401,13 @@ async function injectSkills(cwd: string): Promise<void> {
     const dst = path.join(cwd, ".opencode", "skills")
     await mkdir(dst, { recursive: true })
     await cp(SKILLS_SRC, dst, { recursive: true })
+
+    // Previne que .opencode/ seja commitado no repo alvo (local ao clone, nunca vai para o remote)
+    const excludePath = path.join(cwd, ".git", "info", "exclude")
+    const existing = await Bun.file(excludePath).text().catch(() => "")
+    if (!existing.includes(".opencode/")) {
+      const sep = existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""
+      await Bun.write(excludePath, existing + sep + "# opencode agent internals\n.opencode/\n")
+    }
   } catch { /* skills injection is best-effort */ }
 }

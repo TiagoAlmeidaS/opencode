@@ -62,6 +62,8 @@ export interface ActivityContext {
   memoryLlm?: (opts: MemoryLlmOptions) => Promise<string>
   /** Embedding function para RAG. */
   embed?: (text: string) => Promise<number[]>
+  /** Publica diretamente em fila RabbitMQ (disponível quando rabbit conectado no daemon). */
+  publishToRabbit?: (queue: string, payload: unknown) => void
 }
 
 export interface ActivityOutput {

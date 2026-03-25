@@ -5,6 +5,7 @@ import type { ServerDb } from "./db"
 import { repoIssueJobs } from "./schema"
 import { parseGithubUrl, parseRepoFullName } from "./activities/dev-cycle-shared"
 import { enqueueDevCycleChain } from "./repo-job-chain"
+import { DEV_CYCLE_QUEUES } from "./rabbitmq"
 
 export async function ensureOppDevCycle(
   db: ServerDb,
@@ -18,6 +19,8 @@ export async function ensureOppDevCycle(
     }
     triggeredBy: string
     mode: "fork-temp" | "direct"
+    /** Publica diretamente no RabbitMQ quando disponível (event-driven). Fallback: polling via enqueueDevCycleChain. */
+    publishFn?: (queue: string, payload: unknown) => void
   },
 ): Promise<void> {
   const [existing] = await db
@@ -51,11 +54,15 @@ export async function ensureOppDevCycle(
           updatedAt: ts,
         })
         .where(eq(repoIssueJobs.id, existing.id))
-      await enqueueDevCycleChain(db, {
-        jobId: existing.id,
-        dedupKey: opts.opp.id,
-        triggeredBy: opts.triggeredBy,
-      })
+      if (opts.publishFn) {
+        opts.publishFn(DEV_CYCLE_QUEUES.implementCode, { repo_issue_job_id: existing.id })
+      } else {
+        await enqueueDevCycleChain(db, {
+          jobId: existing.id,
+          dedupKey: opts.opp.id,
+          triggeredBy: opts.triggeredBy,
+        })
+      }
     }
     return
   }
@@ -122,9 +129,13 @@ export async function ensureOppDevCycle(
     updatedAt: now,
   })
 
-  await enqueueDevCycleChain(db, {
-    jobId: id,
-    dedupKey: opts.opp.id,
-    triggeredBy: opts.triggeredBy,
-  })
+  if (opts.publishFn) {
+    opts.publishFn(DEV_CYCLE_QUEUES.implementCode, { repo_issue_job_id: id })
+  } else {
+    await enqueueDevCycleChain(db, {
+      jobId: id,
+      dedupKey: opts.opp.id,
+      triggeredBy: opts.triggeredBy,
+    })
+  }
 }

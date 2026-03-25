@@ -42,6 +42,7 @@ export const claimBountyIssueActivity: Activity = {
         opp,
         triggeredBy: ctx.queueItemId,
         mode: "fork-temp",
+        publishFn: ctx.publishToRabbit,
       })
       return {
         summary: "No issue number — skipped claim, started dev cycle directly",
@@ -98,6 +99,7 @@ export const claimBountyIssueActivity: Activity = {
       opp,
       triggeredBy: ctx.queueItemId,
       mode: "fork-temp",
+      publishFn: ctx.publishToRabbit,
     })
 
     return {

@@ -99,6 +99,7 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
   let intervalId: ReturnType<typeof setInterval> | null = null
   let tickCount = 0
   let lastTickAt = 0
+  let rabbitRef: RabbitMQClient | undefined
 
   async function recoverStaleLocks() {
     const staleCutoff = Math.floor((Date.now() - STALE_LOCK_MS) / 1000)
@@ -221,6 +222,7 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
       spawnOpenCode,
       memoryLlm,
       embed,
+      publishToRabbit: rabbitRef ? (q, p) => rabbitRef!.publish(q, p) : undefined,
       async enqueue(type, input, opts) {
         const result = await enqueueDeduped(db, {
           activityType: type,
@@ -309,6 +311,7 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
   // the activity, then publishes to the next queue. Errors go to dev-cycle.error
   // for LLM analysis via the analyze-failure activity.
   async function setupDevCycleConsumers(rabbit: RabbitMQClient): Promise<void> {
+    rabbitRef = rabbit
     type StepDef = { queue: string; activityType: string; nextQueue: string | null; priority: number }
     const CHAIN: StepDef[] = [
       { queue: DEV_CYCLE_QUEUES.implementCode,     activityType: "implement-code",     nextQueue: DEV_CYCLE_QUEUES.generateDocs,      priority: 5 },
