@@ -558,13 +558,25 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     const [opp] = await db.select().from(oppOpportunities).where(eq(oppOpportunities.id, id)).limit(1)
     if (!opp) return c.json({ error: "Opportunity not found" }, 404)
 
-    const rabbit = ragOpts?.getRabbit?.()
-    await ensureOppDevCycle(db, {
-      opp,
-      triggeredBy: "manual",
-      mode: "fork-temp",
-      publishFn: rabbit ? (q, p) => rabbit.publish(q, p) : undefined,
-    })
+    const isGithubUrl = opp.url?.includes("github.com")
+    const hasWorkspace = !!opp.workspaceRepoUrl
+    if (!isGithubUrl && !hasWorkspace) {
+      return c.json({ error: "Cannot start dev cycle: no GitHub URL or workspace repo configured" }, 422)
+    }
+    const mode = isGithubUrl ? "fork-temp" : "direct"
+
+    try {
+      const rabbit = ragOpts?.getRabbit?.()
+      await ensureOppDevCycle(db, {
+        opp,
+        triggeredBy: "manual",
+        mode,
+        publishFn: rabbit ? (q, p) => rabbit.publish(q, p) : undefined,
+      })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return c.json({ error: msg }, 422)
+    }
 
     const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.opportunityId, id)).limit(1)
     return c.json(job ?? { opportunity_id: id }, 201)

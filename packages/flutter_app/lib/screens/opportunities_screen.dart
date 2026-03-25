@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../screens/job_detail_screen.dart';
 import '../theme/button_style.dart';
 import '../theme/oc2_colors.dart';
 import '../widgets/opencode_button.dart';
@@ -88,17 +89,16 @@ class _OpportunitiesScreenState extends State<OpportunitiesScreen> {
     if (srv == null) return;
     final result = await srv.opportunityExecute(id);
     if (!mounted) return;
-    if (result != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Dev cycle launched — check Repo Jobs tab for progress'),
-          duration: Duration(seconds: 4),
+    if (result != null && result['id'] != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => JobDetailScreen(jobId: result['id'] as String),
         ),
       );
-      await _load();
     } else {
+      final errMsg = result?['error'] as String? ?? 'Failed to launch dev cycle';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to launch dev cycle'), backgroundColor: Colors.red),
+        SnackBar(content: Text(errMsg), backgroundColor: Colors.red),
       );
     }
   }
