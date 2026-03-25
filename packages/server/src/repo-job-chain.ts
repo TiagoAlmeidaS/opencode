@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm"
 import type { ServerDb } from "./db"
 import { daemonQueue } from "./schema"
 import { enqueueDeduped } from "./queue"
+import { DEV_CYCLE_QUEUES, type RabbitMQClient } from "./rabbitmq"
 
 const STEPS: [string, number][] = [
   ["implement-code", 5],
@@ -11,7 +12,16 @@ const STEPS: [string, number][] = [
 ]
 
 /**
- * Enfileira ciclo completo. dedupKey: opp.id ou repo-job:{jobId} para dedup na fila.
+ * Publica o início do dev-cycle no RabbitMQ (event-driven).
+ * Preferir sobre enqueueDevCycleChain quando rabbit estiver disponível.
+ */
+export function publishDevCycleStart(rabbit: RabbitMQClient, jobId: string): void {
+  rabbit.publish(DEV_CYCLE_QUEUES.implementCode, { repo_issue_job_id: jobId })
+}
+
+/**
+ * Enfileira ciclo completo via dependsOn (fallback sem RabbitMQ).
+ * dedupKey: opp.id ou repo-job:{jobId} para dedup na fila.
  */
 export async function enqueueDevCycleChain(
   db: ServerDb,

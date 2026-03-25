@@ -12,6 +12,7 @@ import { runJob, type RunJobExtra } from "./runner"
 import { countPipelineJobsToday, dailyLimitBlocks } from "./pipeline-daily-limit"
 import { daemonPipelines } from "./schema"
 import { seedDefaultPipelines } from "./seed-pipelines"
+import { createRabbitMQClient, type RabbitMQClient } from "./rabbitmq"
 import "./pipelines"
 import "./activities"
 import type { MemoryLlmOptions } from "./types"
@@ -38,6 +39,8 @@ export interface OpenCodeServerOpts {
   memoryEmbed?: (text: string) => Promise<number[]>
   /** Optional Qdrant URL for RAG (e.g. OPENCODE_QDRANT_URL). */
   qdrantUrl?: string
+  /** Optional RabbitMQ URL for event-driven dev-cycle pipeline (e.g. amqp://user:pass@host/vhost). */
+  rabbitmqUrl?: string
 }
 
 export interface OpenCodeServerInstance {
@@ -45,6 +48,7 @@ export interface OpenCodeServerInstance {
   routes: ReturnType<typeof ServerRoutes>
   scheduler: ReturnType<typeof createScheduler>
   queue: ReturnType<typeof createQueueProcessor>
+  rabbit?: RabbitMQClient
   startDaemon(): void
   stopDaemon(): void
 }
@@ -106,11 +110,15 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
     return runJob(db, row.id, row, runJobExtra)
   }
 
+  // RabbitMQ client — created lazily in startDaemon if URL provided
+  let rabbit: RabbitMQClient | undefined
+
   const routes = ServerRoutes(db, {
     memoryEmbed: opts.memoryEmbed,
     qdrantUrl: opts.qdrantUrl,
     runPipelineNow,
     runPipelineByStrategy,
+    getRabbit: () => rabbit,
   })
 
   return {
@@ -118,6 +126,7 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
     routes,
     scheduler,
     queue,
+    get rabbit() { return rabbit },
     startDaemon() {
       if (opts.daemon) {
         seedDefaultPipelines(db)
@@ -125,12 +134,22 @@ export function createOpenCodeServer(opts: OpenCodeServerOpts): OpenCodeServerIn
           .finally(() => {
             scheduler.start()
             queue.start()
+            // Connect RabbitMQ and setup event-driven consumers if URL configured
+            if (opts.rabbitmqUrl) {
+              createRabbitMQClient(opts.rabbitmqUrl)
+                .then((client) => {
+                  rabbit = client
+                  return queue.setupDevCycleConsumers(client)
+                })
+                .catch((err) => console.error("[opencode-server] RabbitMQ setup error:", err))
+            }
           })
       }
     },
     stopDaemon() {
       queue.stop()
       scheduler.stop()
+      rabbit?.close().catch(() => {})
       closeDb()
     },
   }

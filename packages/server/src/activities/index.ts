@@ -35,6 +35,7 @@ import { notifyPrApprovalActivity } from "./notify-pr-approval"
 import { prOutcomeCheckActivity } from "./pr-outcome-check"
 import { discoverNichesActivity } from "./discover-niches"
 import { analyzeCryptoTechnicalsActivity } from "./analyze-crypto-technicals"
+import { analyzeFailureActivity } from "./analyze-failure"
 
 registerActivity(githubIssuesScanActivity)
 registerActivity(seedNichesActivity)
@@ -72,3 +73,4 @@ registerActivity(notifyPrApprovalActivity)
 registerActivity(prOutcomeCheckActivity)
 registerActivity(discoverNichesActivity)
 registerActivity(analyzeCryptoTechnicalsActivity)
+registerActivity(analyzeFailureActivity)

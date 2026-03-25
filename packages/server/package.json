@@ -16,6 +16,7 @@
     "@opencode-ai/util": "workspace:*",
     "@hono/zod-validator": "catalog:",
     "@octokit/rest": "catalog:",
+    "amqplib": "^0.10.5",
     "drizzle-orm": "catalog:",
     "hono": "catalog:",
     "zod": "catalog:",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@tsconfig/bun": "catalog:",
+    "@types/amqplib": "^0.10.7",
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   }

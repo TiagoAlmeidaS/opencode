@@ -7,7 +7,8 @@ import { daemonPipelines, daemonJobs, daemonGoals, daemonProposals, daemonRevenu
 import { eq, desc, sql, gte, and, asc, inArray } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
-import { enqueueDevCycleChain } from "./repo-job-chain"
+import { enqueueDevCycleChain, publishDevCycleStart } from "./repo-job-chain"
+import type { RabbitMQClient } from "./rabbitmq"
 import { listActivities } from "./activity"
 import { setRagConfig, search } from "./memory/rag"
 import { compileSpecToPrompt } from "./spec-compiler"
@@ -20,6 +21,8 @@ export interface ServerRoutesRagOpts {
   runPipelineNow?: (pipelineId: string) => Promise<{ jobId: string; ok: boolean; error?: string }>
   /** Run the first enabled pipeline with the given strategy (e.g. project_discovery). */
   runPipelineByStrategy?: (strategy: string) => Promise<{ jobId: string; ok: boolean; error?: string }>
+  /** Returns the RabbitMQ client if connected (used for event-driven dev-cycle). */
+  getRabbit?: () => RabbitMQClient | undefined
 }
 
 export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
@@ -519,11 +522,16 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       cli_output: null,
       updatedAt: now,
     }).where(eq(repoIssueJobs.id, id))
-    await enqueueDevCycleChain(db, {
-      jobId: id,
-      dedupKey: `repo-job:${id}`,
-      triggeredBy: "manual-retry",
-    })
+    const rabbit = ragOpts?.getRabbit?.()
+    if (rabbit) {
+      publishDevCycleStart(rabbit, id)
+    } else {
+      await enqueueDevCycleChain(db, {
+        jobId: id,
+        dedupKey: `repo-job:${id}`,
+        triggeredBy: "manual-retry",
+      })
+    }
     const [updated] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
     return c.json(updated)
   })
@@ -1104,11 +1112,16 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       updatedAt: now,
     })
 
-    await enqueueDevCycleChain(db, {
-      jobId: id,
-      dedupKey: `repo-job:${id}`,
-      triggeredBy: "manual-issue-queue",
-    })
+    const rabbit = ragOpts?.getRabbit?.()
+    if (rabbit) {
+      publishDevCycleStart(rabbit, id)
+    } else {
+      await enqueueDevCycleChain(db, {
+        jobId: id,
+        dedupKey: `repo-job:${id}`,
+        triggeredBy: "manual-issue-queue",
+      })
+    }
 
     const [created] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.id, id))
     return c.json(created, 201)

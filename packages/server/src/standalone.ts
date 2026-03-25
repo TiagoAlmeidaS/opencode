@@ -49,6 +49,11 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "openrouter/free"
 const QDRANT_URL = process.env.QDRANT_URL
 const API_TOKEN = process.env.API_TOKEN
 const CORS_ORIGIN = process.env.CORS_ORIGIN ?? "*"
+// RabbitMQ: aceita URL direta ou constrói a partir de variáveis individuais
+const RABBITMQ_URL = process.env.RABBITMQ_URL ??
+  (process.env.RABBITMQ_HOST
+    ? `amqp://${process.env.RABBITMQ_USER ?? "opencode"}:${process.env.RABBITMQ_PASS ?? "opencode_change_me"}@${process.env.RABBITMQ_HOST}:${process.env.RABBITMQ_PORT ?? "5672"}/${encodeURIComponent(process.env.RABBITMQ_VHOST ?? "opencode")}`
+    : undefined)
 
 const RETRY_CODES = new Set([429, 502, 503, 529])
 const MAX_RETRIES = 3
@@ -248,6 +253,7 @@ const instance = createOpenCodeServer({
   opencodeDbPath: OPENCODE_DB_PATH,
   memoryLlm,
   qdrantUrl: QDRANT_URL,
+  rabbitmqUrl: RABBITMQ_URL,
 })
 
 // ── Hono app ──────────────────────────────────────────────────────────────────
@@ -319,6 +325,7 @@ console.log(`   LLM:        ${memoryLlmLabel}`)
 console.log(`   Auth:       ${API_TOKEN ? "Bearer token enabled" : "disabled"}`)
 if (injectToken) console.log(`   Token:      injetado no dashboard`)
 console.log(`   Qdrant:     ${QDRANT_URL ?? "disabled"}`)
+console.log(`   RabbitMQ:   ${RABBITMQ_URL ? RABBITMQ_URL.replace(/:\/\/[^@]*@/, "://***@") : "disabled (fallback: polling)"}`)
 console.log()
 
 // Graceful shutdown

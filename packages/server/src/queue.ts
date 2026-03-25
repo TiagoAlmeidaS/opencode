@@ -5,6 +5,7 @@ import { daemonQueue, repoIssueJobs } from "./schema"
 import { getActivity } from "./activity"
 import { spawnOpenCode } from "./spawn"
 import type { ActivityContext, MemoryLlmOptions } from "./types"
+import { DEV_CYCLE_QUEUES, type RabbitMQClient } from "./rabbitmq"
 
 /**
  * Enfileira uma activity com dedup por relatedOpportunityId.
@@ -303,5 +304,84 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
     }
   }
 
-  return { start, stop, tick, getLastTickAt: () => lastTickAt }
+  // ── RabbitMQ event-driven consumers for the dev-cycle chain ──────────────
+  // Each consumer receives a message when the previous step completes, executes
+  // the activity, then publishes to the next queue. Errors go to dev-cycle.error
+  // for LLM analysis via the analyze-failure activity.
+  async function setupDevCycleConsumers(rabbit: RabbitMQClient): Promise<void> {
+    type StepDef = { queue: string; activityType: string; nextQueue: string | null; priority: number }
+    const CHAIN: StepDef[] = [
+      { queue: DEV_CYCLE_QUEUES.implementCode,     activityType: "implement-code",     nextQueue: DEV_CYCLE_QUEUES.generateDocs,      priority: 5 },
+      { queue: DEV_CYCLE_QUEUES.generateDocs,      activityType: "generate-docs",      nextQueue: DEV_CYCLE_QUEUES.openPr,            priority: 6 },
+      { queue: DEV_CYCLE_QUEUES.openPr,            activityType: "open-pr",            nextQueue: DEV_CYCLE_QUEUES.notifyPrApproval,  priority: 6 },
+      { queue: DEV_CYCLE_QUEUES.notifyPrApproval,  activityType: "notify-pr-approval", nextQueue: null,                               priority: 7 },
+    ]
+
+    for (const step of CHAIN) {
+      await rabbit.consume(step.queue, async (rawPayload, ack) => {
+        const { repo_issue_job_id } = rawPayload as { repo_issue_job_id: string }
+
+        // Insert into daemon_queue for audit/visibility (deduped)
+        const r = await enqueueDeduped(db, {
+          activityType: step.activityType,
+          input: { repo_issue_job_id },
+          priority: step.priority,
+          triggeredBy: "rabbitmq",
+          relatedOpportunityId: `repo-job:${repo_issue_job_id}`,
+        })
+
+        if (!r.skipped) {
+          await processItem(r.id)
+        }
+
+        // Check outcome
+        const [item] = await db
+          .select({ status: daemonQueue.status, errorMessage: daemonQueue.errorMessage })
+          .from(daemonQueue)
+          .where(eq(daemonQueue.id, r.id))
+          .limit(1)
+
+        if (item?.status === "completed") {
+          if (step.nextQueue) rabbit.publish(step.nextQueue, { repo_issue_job_id })
+        } else {
+          // Publish to error queue for LLM analysis
+          rabbit.publish(DEV_CYCLE_QUEUES.error, {
+            repo_issue_job_id,
+            failed_step: step.activityType,
+            error_message: item?.errorMessage ?? "Unknown error",
+          })
+        }
+
+        ack()
+      })
+    }
+
+    // Error queue consumer — triggers LLM failure analysis
+    await rabbit.consume(DEV_CYCLE_QUEUES.error, async (rawPayload, ack) => {
+      const payload = rawPayload as {
+        repo_issue_job_id: string
+        failed_step: string
+        error_message: string
+        cli_output?: string
+      }
+
+      const r = await enqueueDeduped(db, {
+        activityType: "analyze-failure",
+        input: payload,
+        priority: 8,
+        triggeredBy: "rabbitmq-error",
+        relatedOpportunityId: `repo-job:${payload.repo_issue_job_id}:error:${payload.failed_step}`,
+      })
+
+      if (!r.skipped) {
+        await processItem(r.id)
+      }
+
+      ack()
+    })
+
+    console.log("[queue] dev-cycle RabbitMQ consumers ready")
+  }
+
+  return { start, stop, tick, getLastTickAt: () => lastTickAt, setupDevCycleConsumers }
 }
