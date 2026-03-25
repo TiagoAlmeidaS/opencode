@@ -289,13 +289,16 @@ app.get("/health", (c) => {
 })
 
 // ── Global error handlers — garante crash explícito para o Docker reiniciar ───
+// uncaughtException é sempre fatal (erro síncrono não capturado = estado inconsistente)
 process.on("uncaughtException", (err) => {
-  console.error("[fatal] uncaughtException:", err)
+  console.error("[fatal] uncaughtException — exiting:", err)
   process.exit(1)
 })
+// unhandledRejection: apenas loga por enquanto para diagnóstico.
+// Promises rejeitadas fora do queue tick (ex: atividades assíncronas) não devem
+// derrubar o servidor — o queue.ts já trata falhas individualmente por item.
 process.on("unhandledRejection", (reason) => {
-  console.error("[fatal] unhandledRejection:", reason)
-  process.exit(1)
+  console.error("[warn] unhandledRejection (não fatal):", reason)
 })
 
 // ── Start ─────────────────────────────────────────────────────────────────────
