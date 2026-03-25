@@ -400,7 +400,7 @@ class ServerApiClient {
 
   Future<Map<String, dynamic>?> opportunityExecute(String id) async {
     final r = await _http.post(_uri('opportunities/$id/execute'), headers: _headers);
-    if (r.statusCode != 200) return null;
+    if (r.statusCode < 200 || r.statusCode >= 300) return null;
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 

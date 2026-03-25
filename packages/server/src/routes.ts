@@ -8,6 +8,7 @@ import { eq, desc, sql, gte, and, asc, inArray } from "drizzle-orm"
 import { ulid } from "ulid"
 import { listPipelineStrategies } from "./registry"
 import { enqueueDevCycleChain, publishDevCycleStart } from "./repo-job-chain"
+import { ensureOppDevCycle } from "./opp-dev-cycle"
 import type { RabbitMQClient } from "./rabbitmq"
 import { listActivities } from "./activity"
 import { setRagConfig, search } from "./memory/rag"
@@ -554,33 +555,19 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
 
   app.post("/opportunities/:id/execute", async (c) => {
     const id = c.req.param("id")
-    const body = (await c.req.json().catch(() => ({}))) as {
-      cwd?: string
-      dry_run?: boolean
-      spec_id?: string
-      validation_command?: string
-      max_retries?: number
-    }
-    const now = Math.floor(Date.now() / 1000)
-    const queueId = ulid()
-    const input = {
-      opportunity_id: id,
-      cwd: body.cwd,
-      dry_run: body.dry_run,
-      spec_id: body.spec_id,
-      validation_command: body.validation_command,
-      max_retries: body.max_retries,
-    }
-    await db.insert(daemonQueue).values({
-      id: queueId,
-      activityType: "execute-opportunity",
-      status: "pending",
-      priority: 3,
-      inputJson: JSON.stringify(input),
+    const [opp] = await db.select().from(oppOpportunities).where(eq(oppOpportunities.id, id)).limit(1)
+    if (!opp) return c.json({ error: "Opportunity not found" }, 404)
+
+    const rabbit = ragOpts?.getRabbit?.()
+    await ensureOppDevCycle(db, {
+      opp,
       triggeredBy: "manual",
-      createdAt: now,
+      mode: "fork-temp",
+      publishFn: rabbit ? (q, p) => rabbit.publish(q, p) : undefined,
     })
-    return c.json({ queue_id: queueId }, 202)
+
+    const [job] = await db.select().from(repoIssueJobs).where(eq(repoIssueJobs.opportunityId, id)).limit(1)
+    return c.json(job ?? { opportunity_id: id }, 201)
   })
 
   // ── Niches ────────────────────────────────────────────────────────────────
