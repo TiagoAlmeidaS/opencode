@@ -53,6 +53,6 @@ EXPOSE 3000
 ENV OPENCODE_CLI_PATH=/app/bin/opencode-wrap
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
 
 CMD ["bun", "run", "packages/server/src/standalone.ts"]
