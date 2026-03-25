@@ -101,6 +101,17 @@ class ServerApiClient {
     return r.statusCode == 200;
   }
 
+  Future<Map<String, dynamic>?> pipelinesRunAllEnabled() async {
+    final r = await _http.post(_uri('pipelines/run-all-enabled'), headers: _headers);
+    Map<String, dynamic>? j;
+    try {
+      final d = jsonDecode(r.body);
+      if (d is Map<String, dynamic>) j = d;
+    } catch (_) {}
+    if (r.statusCode == 200) return j;
+    return null;
+  }
+
   Future<Map<String, dynamic>?> pipelineRun(String id) async {
     final r = await _http.post(_uri('pipelines/$id/run'), headers: _headers);
     Map<String, dynamic>? j;
@@ -542,9 +553,9 @@ class ServerApiClient {
   // Logs
   // ---------------------------------------------------------------------------
 
-  Future<List<Map<String, dynamic>>?> logs({String? pipeline, String? level, int limit = 100}) async {
+  Future<List<Map<String, dynamic>>?> logs({String? pipelineId, String? level, int limit = 100}) async {
     final q = <String, String>{'limit': '$limit'};
-    if (pipeline != null) q['pipeline'] = pipeline;
+    if (pipelineId != null) q['pipeline_id'] = pipelineId;
     if (level != null) q['level'] = level;
     final r = await _http.get(_uri('logs', q), headers: _headers);
     if (r.statusCode != 200) return null;

@@ -217,18 +217,47 @@ class ServerStatus {
     this.pipelinesEnabled,
     this.jobsRunning,
     this.proposalsPending,
+    this.revenueUsd30d,
+    this.goalsActive,
+    this.goalsAtRisk,
+    this.contentPublishedLast7d,
+    this.serverStartedAt,
+    this.jobsCompletedLast12h,
+    this.loadIndex,
+    this.jobsLastHour,
+    this.jobsPerHourAvg12h,
+    this.chartHighlightSlot,
   });
 
   factory ServerStatus.fromJson(Map<String, dynamic> j) {
-    // Server returns nested: {pipelines:{total,enabled}, jobs:{running}, proposals:{pending}}
     final pip = j['pipelines'] as Map<String, dynamic>? ?? {};
     final jobs = j['jobs'] as Map<String, dynamic>? ?? {};
     final props = j['proposals'] as Map<String, dynamic>? ?? {};
+    final rev = j['revenue'] as Map<String, dynamic>? ?? {};
+    final goals = j['goals'] as Map<String, dynamic>? ?? {};
+    final content = j['content'] as Map<String, dynamic>? ?? {};
+    final server = j['server'] as Map<String, dynamic>? ?? {};
+    final metrics = j['metrics'] as Map<String, dynamic>? ?? {};
+    final spark = metrics['jobs_completed_last_12h'];
+    List<int>? last12;
+    if (spark is List) {
+      last12 = spark.map((e) => (e as num).toInt()).toList();
+    }
     return ServerStatus(
       pipelinesTotal: (pip['total'] as num?)?.toInt(),
       pipelinesEnabled: (pip['enabled'] as num?)?.toInt(),
       jobsRunning: (jobs['running'] as num?)?.toInt(),
       proposalsPending: (props['pending'] as num?)?.toInt(),
+      revenueUsd30d: (rev['total_usd_30d'] as num?)?.toDouble(),
+      goalsActive: (goals['active'] as num?)?.toInt(),
+      goalsAtRisk: (goals['at_risk'] as num?)?.toInt(),
+      contentPublishedLast7d: (content['published_last_7d'] as num?)?.toInt(),
+      serverStartedAt: (server['started_at'] as num?)?.toInt(),
+      jobsCompletedLast12h: last12,
+      loadIndex: (metrics['load_index'] as num?)?.toDouble(),
+      jobsLastHour: (metrics['jobs_last_hour'] as num?)?.toInt(),
+      jobsPerHourAvg12h: (metrics['jobs_per_hour_avg_12h'] as num?)?.toDouble(),
+      chartHighlightSlot: (metrics['chart_highlight_slot'] as num?)?.toInt(),
     );
   }
 
@@ -236,6 +265,16 @@ class ServerStatus {
   final int? pipelinesEnabled;
   final int? jobsRunning;
   final int? proposalsPending;
+  final double? revenueUsd30d;
+  final int? goalsActive;
+  final int? goalsAtRisk;
+  final int? contentPublishedLast7d;
+  final int? serverStartedAt;
+  final List<int>? jobsCompletedLast12h;
+  final double? loadIndex;
+  final int? jobsLastHour;
+  final double? jobsPerHourAvg12h;
+  final int? chartHighlightSlot;
 }
 
 /// Discovery report from project/venture idea validation.

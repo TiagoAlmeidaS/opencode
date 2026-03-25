@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
+import '../theme/kinetic_tokens.dart';
 import '../theme/oc2_colors.dart';
+import '../widgets/kinetic_glass_panel.dart';
+import '../widgets/kinetic_ui.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -78,12 +82,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = _palette;
+    final k = isKineticDark(context);
     return Scaffold(
-      backgroundColor: palette.backgroundBase,
+      backgroundColor: k ? KineticTokens.background : palette.backgroundBase,
       appBar: AppBar(
-        backgroundColor: palette.backgroundBase,
-        foregroundColor: palette.textStrong,
-        title: const Text('Relatórios'),
+        backgroundColor: k ? KineticTokens.headerBar : palette.backgroundBase,
+        foregroundColor: k ? KineticTokens.onSurface : palette.textStrong,
+        title: Text(
+          k ? 'RELATÓRIOS' : 'Relatórios',
+          style: k ? GoogleFonts.spaceGrotesk(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: 0.5) : null,
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -103,14 +111,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   final selected = _filter == t;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(t),
-                      selected: selected,
-                      onSelected: (_) {
-                        setState(() => _filter = t);
-                        _load();
-                      },
-                    ),
+                    child: k
+                        ? KineticFilterChip(
+                            label: t,
+                            selected: selected,
+                            onSelected: (_) {
+                              setState(() => _filter = t);
+                              _load();
+                            },
+                          )
+                        : FilterChip(
+                            label: Text(t),
+                            selected: selected,
+                            onSelected: (_) {
+                              setState(() => _filter = t);
+                              _load();
+                            },
+                          ),
                   );
                 }).toList(),
               ),
@@ -120,11 +137,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : (_reports == null || _reports!.isEmpty)
-                    ? Center(child: Text('Nenhum relatório', style: TextStyle(color: palette.textWeak)))
+                    ? Center(
+                        child: Text(
+                          'Nenhum relatório',
+                          style: k
+                              ? GoogleFonts.inter(color: KineticTokens.onSurfaceVariant, fontSize: 14)
+                              : TextStyle(color: palette.textWeak),
+                        ),
+                      )
                     : ListView.builder(
                         padding: const EdgeInsets.all(16),
                         itemCount: _reports!.length,
-                        itemBuilder: (ctx, i) => _buildCard(palette, _reports![i]),
+                        itemBuilder: (ctx, i) => _buildCard(context, palette, _reports![i]),
                       ),
           ),
         ],
@@ -132,7 +156,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Widget _buildCard(Oc2Palette palette, Map<String, dynamic> r) {
+  Widget _buildCard(BuildContext context, Oc2Palette palette, Map<String, dynamic> r) {
+    final k = isKineticDark(context);
     final type = r['reportType'] as String? ?? 'report';
     final createdAt = r['createdAt'];
     final digest = r['digest'] as String? ?? '';
@@ -143,43 +168,79 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final sentTelegram = sentAt != null;
     final color = _typeColor(type);
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        leading: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(type, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    final tile = ExpansionTile(
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      collapsedIconColor: k ? KineticTokens.onSurfaceVariant : null,
+      iconColor: k ? KineticTokens.primaryContainer : null,
+      leading: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: k ? 0.12 : 0.15),
+          borderRadius: BorderRadius.circular(8),
+          border: k ? Border.all(color: color.withValues(alpha: 0.45)) : null,
         ),
-        title: Row(
-          children: [
-            Text(_formatDate(createdAt), style: const TextStyle(fontSize: 13)),
-            if (sentTelegram) ...[
-              const SizedBox(width: 8),
-              Icon(Icons.send, size: 14, color: palette.textWeak),
-            ],
-          ],
+        child: Text(
+          k ? type.toUpperCase() : type,
+          style: k
+              ? GoogleFonts.jetBrainsMono(fontSize: 10, color: color, fontWeight: FontWeight.w600)
+              : TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
         ),
-        subtitle: Text(
-          [
-            if (oppCount != null) '$oppCount opps',
-            if (activeCount != null) '$activeCount ativos',
-            if (durationMs != null) 'Duração: ${(durationMs / 1000).toStringAsFixed(1)}s',
-          ].join(' · '),
-          style: TextStyle(fontSize: 12, color: palette.textWeak),
-        ),
+      ),
+      title: Row(
         children: [
-          if (digest.isNotEmpty)
-            Text(digest, style: TextStyle(fontSize: 12, color: palette.textWeak))
-          else
-            Text('Sem digest disponível', style: TextStyle(fontSize: 12, color: palette.textWeak)),
+          Text(
+            _formatDate(createdAt),
+            style: k
+                ? GoogleFonts.jetBrainsMono(fontSize: 12, color: KineticTokens.onSurface)
+                : const TextStyle(fontSize: 13),
+          ),
+          if (sentTelegram) ...[
+            const SizedBox(width: 8),
+            Icon(Icons.send, size: 14, color: k ? KineticTokens.onSurfaceVariant : palette.textWeak),
+          ],
         ],
       ),
+      subtitle: Text(
+        [
+          if (oppCount != null) '$oppCount opps',
+          if (activeCount != null) '$activeCount ativos',
+          if (durationMs != null) 'Duração: ${(durationMs / 1000).toStringAsFixed(1)}s',
+        ].join(' · '),
+        style: k
+            ? GoogleFonts.inter(fontSize: 11, color: KineticTokens.onSurfaceVariant)
+            : TextStyle(fontSize: 12, color: palette.textWeak),
+      ),
+      children: [
+        if (digest.isNotEmpty)
+          Text(
+            digest,
+            style: k
+                ? GoogleFonts.inter(fontSize: 12, height: 1.45, color: KineticTokens.onSurfaceVariant)
+                : TextStyle(fontSize: 12, color: palette.textWeak),
+          )
+        else
+          Text(
+            'Sem digest disponível',
+            style: k
+                ? GoogleFonts.inter(fontSize: 12, color: KineticTokens.onSurfaceVariant)
+                : TextStyle(fontSize: 12, color: palette.textWeak),
+          ),
+      ],
+    );
+
+    if (k) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: KineticGlassPanel(
+          padding: EdgeInsets.zero,
+          child: tile,
+        ),
+      );
+    }
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: tile,
     );
   }
 }

@@ -19,7 +19,7 @@ The same host also serves the main OpenCode API (e.g. `GET /project`, `POST /pro
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/server/status` | Summary: pipelines (total, enabled), jobs (running), proposals (pending), revenue (30d), goals (active) |
+| GET | `/server/status` | Summary: pipelines (total, enabled), jobs (running), proposals (pending), revenue (30d), goals (active). Em `metrics`: `jobs_completed_last_12h` (12 buckets horários), `load_index`, `jobs_last_hour`, `jobs_per_hour_avg_12h`, `chart_highlight_slot` — consumo no app em [flutter-kinetic-design-system](../architecture/flutter-kinetic-design-system.md). |
 | GET | `/server/pipelines` | List pipelines (optional query `?enabled=true`) |
 | GET | `/server/pipelines/strategies` | List registered pipeline strategy names |
 | POST | `/server/pipelines` | Create pipeline (body: `name`, `strategy`, `config_json?`, `schedule_cron?`, `max_runs_per_day?`) |

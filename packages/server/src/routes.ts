@@ -15,6 +15,9 @@ import { setRagConfig, search } from "./memory/rag"
 import { compileSpecToPrompt } from "./spec-compiler"
 import { executePendingProposals } from "./executor"
 
+/** Process start time (unix seconds) for uptime / dashboard SLA display. */
+const SERVER_STARTED_AT_SEC = Math.floor(Date.now() / 1000)
+
 export interface ServerRoutesRagOpts {
   memoryEmbed?: (text: string) => Promise<number[]>
   qdrantUrl?: string
@@ -64,13 +67,40 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
       .from(daemonRevenue)
       .where(gte(daemonRevenue.periodStart, thirtyDaysAgo))
 
+    const nowSec = Math.floor(Date.now() / 1000)
+    const twelveHrAgo = nowSec - 12 * 3600
+    const completedRows = await db
+      .select({ completedAt: daemonJobs.completedAt })
+      .from(daemonJobs)
+      .where(and(eq(daemonJobs.status, "completed"), gte(daemonJobs.completedAt, twelveHrAgo)))
+    const buckets: number[] = Array.from({ length: 12 }, () => 0)
+    for (const row of completedRows) {
+      const t = row.completedAt
+      if (t == null) continue
+      const slot = Math.min(11, Math.max(0, Math.floor((t - twelveHrAgo) / 3600)))
+      buckets[slot] = (buckets[slot] ?? 0) + 1
+    }
+    const runningN = Number(jobs?.running ?? 0)
+    const completedSum = buckets.reduce((a, b) => a + b, 0)
+    const loadIndex = Math.min(1, runningN * 0.08 + completedSum / 80)
+    const jobsLastHour = buckets[11] ?? 0
+    const jobsPerHourAvg12h = completedSum / 12
+
     return c.json({
       pipelines: { total: Number(pipelines?.total ?? 0), enabled: Number(pipelines?.enabled ?? 0) },
-      jobs: { running: Number(jobs?.running ?? 0) },
+      jobs: { running: runningN },
       content: { published_last_7d: 0 },
       proposals: { pending: Number(proposals?.pending ?? 0) },
       revenue: { total_usd_30d: Number(revenue?.totalUsd30d ?? 0) },
       goals: { active: Number(goals?.active ?? 0), at_risk: Number(goals?.atRisk ?? 0) },
+      server: { started_at: SERVER_STARTED_AT_SEC },
+      metrics: {
+        jobs_completed_last_12h: buckets,
+        load_index: Number(loadIndex.toFixed(3)),
+        jobs_last_hour: jobsLastHour,
+        jobs_per_hour_avg_12h: Number(jobsPerHourAvg12h.toFixed(2)),
+        chart_highlight_slot: 11,
+      },
     })
   })
 
@@ -168,6 +198,23 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
     return c.json({ jobId: result.jobId, ok: true }, 202)
   })
 
+  app.post("/pipelines/run-all-enabled", async (c) => {
+    const run = ragOpts?.runPipelineNow
+    if (!run) return c.json({ error: "Pipeline run not available (daemon context)" }, 503)
+    const rows = await db.select().from(daemonPipelines).where(eq(daemonPipelines.enabled, 1))
+    const results: { id: string; ok: boolean; jobId?: string; error?: string }[] = []
+    for (const row of rows) {
+      const result = await run(row.id)
+      results.push({
+        id: row.id,
+        ok: result.ok,
+        jobId: result.jobId || undefined,
+        error: result.error,
+      })
+    }
+    return c.json({ ok: true, results })
+  })
+
   app.get("/jobs", async (c) => {
     const pipelineId = c.req.query("pipeline_id")
     const status = c.req.query("status")
@@ -254,16 +301,34 @@ export function ServerRoutes(db: ServerDb, ragOpts?: ServerRoutesRagOpts) {
   })
 
   app.get("/logs", async (c) => {
-    const pipelineId = c.req.query("pipeline_id")
+    const pipelineId = c.req.query("pipeline_id") ?? c.req.query("pipeline")
+    const level = c.req.query("level")
     const limit = Math.min(500, Math.max(1, parseInt(c.req.query("limit") ?? "100", 10)))
-    const rows = pipelineId
-      ? await db
-          .select()
-          .from(daemonLogs)
-          .where(eq(daemonLogs.pipelineId, pipelineId))
-          .orderBy(desc(daemonLogs.createdAt))
-          .limit(limit)
-      : await db.select().from(daemonLogs).orderBy(desc(daemonLogs.createdAt)).limit(limit)
+    let rows
+    if (pipelineId && level) {
+      rows = await db
+        .select()
+        .from(daemonLogs)
+        .where(and(eq(daemonLogs.pipelineId, pipelineId), eq(daemonLogs.level, level)))
+        .orderBy(desc(daemonLogs.createdAt))
+        .limit(limit)
+    } else if (pipelineId) {
+      rows = await db
+        .select()
+        .from(daemonLogs)
+        .where(eq(daemonLogs.pipelineId, pipelineId))
+        .orderBy(desc(daemonLogs.createdAt))
+        .limit(limit)
+    } else if (level) {
+      rows = await db
+        .select()
+        .from(daemonLogs)
+        .where(eq(daemonLogs.level, level))
+        .orderBy(desc(daemonLogs.createdAt))
+        .limit(limit)
+    } else {
+      rows = await db.select().from(daemonLogs).orderBy(desc(daemonLogs.createdAt)).limit(limit)
+    }
     return c.json(rows)
   })
 
