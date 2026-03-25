@@ -416,6 +416,31 @@ export function getDb(dbPath: string) {
     "CREATE INDEX IF NOT EXISTS idx_si_proposals_status ON self_improvement_proposals(status)",
     "CREATE INDEX IF NOT EXISTS idx_si_proposals_repo ON self_improvement_proposals(repo)",
     "ALTER TABLE repo_issue_jobs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+    `CREATE TABLE IF NOT EXISTS opp_crypto_signals (
+  id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  collected_at INTEGER NOT NULL,
+  price REAL,
+  change_24h REAL,
+  sma_7 REAL,
+  sma_21 REAL,
+  sma_50 REAL,
+  rsi_14 REAL,
+  macd REAL,
+  macd_signal REAL,
+  macd_histogram REAL,
+  bb_upper REAL,
+  bb_lower REAL,
+  bb_middle REAL,
+  trend TEXT,
+  signal TEXT,
+  signal_strength REAL,
+  reasoning TEXT,
+  recommendation TEXT,
+  created_at INTEGER NOT NULL
+)`,
+    "CREATE INDEX IF NOT EXISTS idx_crypto_signals_symbol ON opp_crypto_signals(symbol)",
+    "CREATE INDEX IF NOT EXISTS idx_crypto_signals_collected ON opp_crypto_signals(collected_at)",
   ]
   for (const stmt of alterMigrations) {
     try {
