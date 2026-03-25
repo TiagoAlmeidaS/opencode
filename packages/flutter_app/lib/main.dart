@@ -11,18 +11,18 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.instance.init();
   await NotificationService.instance.requestPermission();
-  runApp(const OpenCodeApp());
+  runApp(const CortexApp());
 }
 
-class OpenCodeApp extends StatelessWidget {
-  const OpenCodeApp({super.key});
+class CortexApp extends StatelessWidget {
+  const CortexApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => AppState(),
       child: MaterialApp(
-        title: 'OpenCode',
+        title: 'Cortex',
         theme: OpenCodeTheme.light,
         darkTheme: OpenCodeTheme.dark,
         themeMode: ThemeMode.system,
