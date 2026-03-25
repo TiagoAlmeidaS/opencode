@@ -42,10 +42,25 @@ services:
       - opencode-net
       - jarvis-network
     labels:
+      - "autoheal=true"
       - "traefik.enable=true"
       - "traefik.http.routers.opencode-server.rule=Host(`${SERVER_DOMAIN:-opencode.localhost}`)"
       - "traefik.http.routers.opencode-server.entrypoints=web"
       - "traefik.http.services.opencode-server.loadbalancer.server.port=3000"
+
+  # ── Autoheal — reinicia automaticamente containers marcados como unhealthy ─
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: opencode-autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_INTERVAL: 30
+      AUTOHEAL_START_PERIOD: 60
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - opencode-net
 
   # ── RabbitMQ ─────────────────────────────────────────────────────────────
   rabbitmq:

@@ -97,6 +97,7 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
   const workerId = ulid()
   let intervalId: ReturnType<typeof setInterval> | null = null
   let tickCount = 0
+  let lastTickAt = 0
 
   async function recoverStaleLocks() {
     const staleCutoff = Math.floor((Date.now() - STALE_LOCK_MS) / 1000)
@@ -147,6 +148,7 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
   }
 
   async function tick() {
+    lastTickAt = Date.now()
     tickCount++
     await recoverStaleLocks()
     if (tickCount % 6 === 0) await recoverStaleJobs().catch((e) => console.error("[queue] recoverStaleJobs error:", e))
@@ -301,5 +303,5 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
     }
   }
 
-  return { start, stop, tick }
+  return { start, stop, tick, getLastTickAt: () => lastTickAt }
 }

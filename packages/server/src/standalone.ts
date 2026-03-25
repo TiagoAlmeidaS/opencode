@@ -276,10 +276,30 @@ if (injectToken && API_TOKEN) {
 app.get("/", (c) => c.html(dashboardHtml))
 app.get("/dashboard", (c) => c.html(dashboardHtml))
 
-// Health
-app.get("/health", (c) => c.json({ status: "ok", ts: Date.now() }))
+// Health — verifica se o queue tick está ativo (stale após 90s sem tick)
+const HEALTH_STALE_MS = 90_000
+app.get("/health", (c) => {
+  const lastTickAt = instance.queue.getLastTickAt()
+  const uptime = Date.now() - serverStartAt
+  const tickStale = lastTickAt > 0 && Date.now() - lastTickAt > HEALTH_STALE_MS
+  if (tickStale) {
+    return c.json({ status: "degraded", reason: "queue tick stalled", lastTickAt, uptime }, 503)
+  }
+  return c.json({ status: "ok", ts: Date.now(), lastTickAt, uptime })
+})
+
+// ── Global error handlers — garante crash explícito para o Docker reiniciar ───
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] uncaughtException:", err)
+  process.exit(1)
+})
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] unhandledRejection:", reason)
+  process.exit(1)
+})
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+const serverStartAt = Date.now()
 instance.startDaemon()
 
 const server = Bun.serve({ port: PORT, hostname: "0.0.0.0", fetch: app.fetch })
