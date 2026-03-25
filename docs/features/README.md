@@ -15,5 +15,6 @@ Funcionalidades e capacidades do produto: especificação, configuração, statu
 | [niche-explorer-pipeline.md](niche-explorer-pipeline.md) | Pipeline niche-explorer + activity discover-niches (LLM, novos opp_niches). |
 | [cli-server-memory.md](cli-server-memory.md) | CLI: RAG + learnings do OpenCode Server no prompt; comandos `opencode server`. |
 | [flutter-app.md](flutter-app.md) | App Flutter: API matrix, SSE chat reload, permissões/perguntas, dashboard (RAG + discovery). |
+| [project-settings-hub.md](project-settings-hub.md) | Hub de configuração KINETIC: drawer direito, perfil no header, GitHub/Git placeholders, sync local, atalho LLM. |
 | [flutter-app-ux-layout-audit.md](flutter-app-ux-layout-audit.md) | Auditoria UX/UI do app Flutter: layout responsivo, portrait/landscape, overflow e breakpoints. |
 | [github-integration-strategy.md](github-integration-strategy.md) | Integração GitHub: padrões de mercado (OAuth code vs device flow), estado actual OpenCode, desenho futuro (callback servidor vs deep link). **Spec — implementação posterior.** |

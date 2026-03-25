@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'kinetic_theme.dart';
 import 'oc2_colors.dart';
 
-/// OpenCode theme aligned with dashboard design system.
-/// Uses OC-2 palette, Inter (sans) and IBM Plex Mono (mono).
+/// OpenCode theme: **light** = OC-2 (dashboard parity); **dark** = KINETIC (cyber / prototype).
 class OpenCodeTheme {
   OpenCodeTheme._();
 
   static ThemeData get light => _build(Oc2Colors.light, Brightness.light);
-  static ThemeData get dark => _build(Oc2Colors.dark, Brightness.dark);
+  static ThemeData get dark => KineticTheme.build();
 
   static ThemeData _build(Oc2Palette palette, Brightness brightness) {
     return ThemeData(

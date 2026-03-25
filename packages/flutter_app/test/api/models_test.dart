@@ -241,6 +241,13 @@ void main() {
         'pipelines': {'total': total, 'enabled': enabled},
         'jobs': {'running': running},
         'proposals': {'pending': pending},
+        'metrics': {
+          'jobs_completed_last_12h': [0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3],
+          'load_index': 0.42,
+          'jobs_last_hour': 3,
+          'jobs_per_hour_avg_12h': 0.5,
+          'chart_highlight_slot': 11,
+        },
       };
 
       final s = ServerStatus.fromJson(j);
@@ -248,6 +255,11 @@ void main() {
       expect(s.pipelinesEnabled, enabled);
       expect(s.jobsRunning, running);
       expect(s.proposalsPending, pending);
+      expect(s.jobsCompletedLast12h?.length, 12);
+      expect(s.loadIndex, 0.42);
+      expect(s.jobsLastHour, 3);
+      expect(s.jobsPerHourAvg12h, 0.5);
+      expect(s.chartHighlightSlot, 11);
     });
   });
 

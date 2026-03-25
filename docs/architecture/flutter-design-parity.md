@@ -12,6 +12,8 @@ Permitir que o app Flutter siga o mesmo design system do dashboard OpenCode (`pa
 - **Tema OC-2:** `packages/ui/src/theme/themes/oc-2.json`
 - **Cores Tailwind:** `packages/ui/src/styles/tailwind/colors.css`
 
+O **tema escuro** do app Flutter segue o design **KINETIC** (protótipo cyber), não o OC-2 web. Ver [flutter-kinetic-design-system.md](flutter-kinetic-design-system.md).
+
 ## Mapeamento CSS → Flutter
 
 ### Tipografia
