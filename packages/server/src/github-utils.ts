@@ -68,6 +68,61 @@ export async function createGitHubIssue(
   return { number: data.number, url: data.html_url }
 }
 
+export interface CIStatus {
+  conclusion: "passing" | "failing" | "pending" | "skipped"
+  failingChecks: string[]
+}
+
+/**
+ * Check GitHub CI status for a given ref (branch/SHA).
+ * Queries both the Checks API (GitHub Actions) and the legacy Commit Status API.
+ * Returns "skipped" if no CI is configured on the repo.
+ */
+export async function checkCIStatus(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<CIStatus> {
+  let hasCI = false
+  let anyPending = false
+  const failingChecks: string[] = []
+
+  // GitHub Actions / Checks API
+  try {
+    const { data } = await octokit.checks.listForRef({ owner, repo, ref, per_page: 50 })
+    if (data.total_count > 0) {
+      hasCI = true
+      for (const run of data.check_runs) {
+        if (run.status !== "completed") {
+          anyPending = true
+        } else if (["failure", "timed_out", "cancelled"].includes(run.conclusion ?? "")) {
+          failingChecks.push(run.name)
+        }
+      }
+    }
+  } catch { /* checks API unavailable or no checks */ }
+
+  // Legacy Commit Status API
+  try {
+    const { data: combined } = await octokit.repos.getCombinedStatusForRef({ owner, repo, ref })
+    if (combined.statuses.length > 0) {
+      hasCI = true
+      if (combined.state === "pending") anyPending = true
+      if (combined.state === "failure" || combined.state === "error") {
+        for (const s of combined.statuses) {
+          if (s.state === "failure" || s.state === "error") failingChecks.push(s.context)
+        }
+      }
+    }
+  } catch { /* legacy status API unavailable */ }
+
+  if (!hasCI) return { conclusion: "skipped", failingChecks: [] }
+  if (anyPending) return { conclusion: "pending", failingChecks: [] }
+  if (failingChecks.length > 0) return { conclusion: "failing", failingChecks }
+  return { conclusion: "passing", failingChecks: [] }
+}
+
 /**
  * Check if an issue with the given title already exists (open state).
  */

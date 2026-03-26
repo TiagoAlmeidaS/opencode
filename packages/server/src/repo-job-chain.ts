@@ -8,6 +8,7 @@ const STEPS: [string, number][] = [
   ["implement-code", 5],
   ["generate-docs", 6],
   ["open-pr", 6],
+  ["validate-ci", 6],
   ["notify-pr-approval", 7],
 ]
 

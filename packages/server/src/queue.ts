@@ -316,7 +316,8 @@ export function createQueueProcessor(opts: QueueProcessorOpts) {
     const CHAIN: StepDef[] = [
       { queue: DEV_CYCLE_QUEUES.implementCode,     activityType: "implement-code",     nextQueue: DEV_CYCLE_QUEUES.generateDocs,      priority: 5 },
       { queue: DEV_CYCLE_QUEUES.generateDocs,      activityType: "generate-docs",      nextQueue: DEV_CYCLE_QUEUES.openPr,            priority: 6 },
-      { queue: DEV_CYCLE_QUEUES.openPr,            activityType: "open-pr",            nextQueue: DEV_CYCLE_QUEUES.notifyPrApproval,  priority: 6 },
+      { queue: DEV_CYCLE_QUEUES.openPr,            activityType: "open-pr",            nextQueue: DEV_CYCLE_QUEUES.validateCi,        priority: 6 },
+      { queue: DEV_CYCLE_QUEUES.validateCi,        activityType: "validate-ci",        nextQueue: DEV_CYCLE_QUEUES.notifyPrApproval,  priority: 6 },
       { queue: DEV_CYCLE_QUEUES.notifyPrApproval,  activityType: "notify-pr-approval", nextQueue: null,                               priority: 7 },
     ]
 

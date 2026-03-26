@@ -5,7 +5,8 @@
  *   dev-cycle.implement-code      ← job created
  *   dev-cycle.generate-docs       ← implement-code completed
  *   dev-cycle.open-pr             ← generate-docs completed
- *   dev-cycle.notify-pr-approval  ← open-pr completed
+ *   dev-cycle.validate-ci         ← open-pr completed
+ *   dev-cycle.notify-pr-approval  ← validate-ci completed
  *   dev-cycle.error               ← any step failed
  */
 import amqp from "amqplib"
@@ -14,6 +15,7 @@ export const DEV_CYCLE_QUEUES = {
   implementCode: "dev-cycle.implement-code",
   generateDocs: "dev-cycle.generate-docs",
   openPr: "dev-cycle.open-pr",
+  validateCi: "dev-cycle.validate-ci",
   notifyPrApproval: "dev-cycle.notify-pr-approval",
   error: "dev-cycle.error",
 } as const

@@ -59,12 +59,24 @@ export const notifyPrApprovalActivity: Activity = {
       } catch { /* empty */ }
     }
 
+    // Build message based on CI status
+    let ciLine = ""
+    if (job.ci_status === "passing") {
+      ciLine = `CI passou ✅ — PR pronto para review`
+    } else if (job.ci_status === "failing") {
+      ciLine = `CI falhou ❌ — verifique os checks antes de fazer merge`
+    } else if (job.ci_status === "pending") {
+      ciLine = `CI ainda em execução ⏳ — aguarde antes de fazer merge`
+    }
+
     const msg = [
       `<b>PR draft — aprovação humana</b>`,
       ``,
       `<b>${job.issueTitle}</b>`,
       ``,
       `<a href="${job.prUrl}">Abrir PR no GitHub</a>`,
+      ``,
+      ciLine,
       ``,
       criteria ? `<b>Critérios:</b>\n${criteria}` : "",
       ``,

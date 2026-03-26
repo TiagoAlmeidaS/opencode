@@ -373,6 +373,14 @@ export const repoIssueJobs = sqliteTable("repo_issue_jobs", {
   pr_review_comments: text("pr_review_comments"),
   /** Number of times the pipeline has auto-retried this job after failure. */
   retry_count: integer("retry_count").notNull().default(0),
+  /** CI check status recorded by validate-ci step: pending | passing | failing | skipped. */
+  ci_status: text("ci_status"),
+  /** Unix timestamp of the last CI check (from validate-ci or pr-monitor). */
+  ci_checked_at: integer("ci_checked_at"),
+  /** 1 if a commit not authored by the agent was detected on the PR branch. */
+  pr_human_modified: integer("pr_human_modified").notNull().default(0),
+  /** Unix timestamp of the latest human commit detected on the PR branch. */
+  pr_last_human_activity_at: integer("pr_last_human_activity_at"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 })

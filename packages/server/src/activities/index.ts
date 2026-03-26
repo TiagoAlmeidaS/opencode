@@ -31,6 +31,7 @@ import { generateTddTestsActivity } from "./generate-tdd-tests"
 import { implementCodeActivity } from "./implement-code"
 import { generateDocsActivity } from "./generate-docs"
 import { openPrActivity } from "./open-pr"
+import { validateCiActivity } from "./validate-ci"
 import { notifyPrApprovalActivity } from "./notify-pr-approval"
 import { prOutcomeCheckActivity } from "./pr-outcome-check"
 import { discoverNichesActivity } from "./discover-niches"
@@ -69,6 +70,7 @@ registerActivity(generateTddTestsActivity)
 registerActivity(implementCodeActivity)
 registerActivity(generateDocsActivity)
 registerActivity(openPrActivity)
+registerActivity(validateCiActivity)
 registerActivity(notifyPrApprovalActivity)
 registerActivity(prOutcomeCheckActivity)
 registerActivity(discoverNichesActivity)

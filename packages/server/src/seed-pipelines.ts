@@ -82,6 +82,16 @@ const DEFAULTS: Array<{
       send_telegram: true,
     },
   },
+  {
+    strategy: "pr-monitor",
+    name: "PR Monitor",
+    scheduleCron: "*/30 * * * *", // a cada 30min
+    configJson: {
+      stale_days: 7,
+      batch_size: 20,
+      agent_bot_login: "opencode-agent",
+    },
+  },
 ]
 
 export async function seedDefaultPipelines(db: ServerDb) {

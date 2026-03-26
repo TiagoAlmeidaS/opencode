@@ -416,6 +416,10 @@ export function getDb(dbPath: string) {
     "CREATE INDEX IF NOT EXISTS idx_si_proposals_status ON self_improvement_proposals(status)",
     "CREATE INDEX IF NOT EXISTS idx_si_proposals_repo ON self_improvement_proposals(repo)",
     "ALTER TABLE repo_issue_jobs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN ci_status TEXT",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN ci_checked_at INTEGER",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN pr_human_modified INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE repo_issue_jobs ADD COLUMN pr_last_human_activity_at INTEGER",
     `CREATE TABLE IF NOT EXISTS opp_crypto_signals (
   id TEXT PRIMARY KEY,
   symbol TEXT NOT NULL,
